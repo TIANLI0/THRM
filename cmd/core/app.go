@@ -570,6 +570,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		cfg := a.configManager.Get()
 		temp := a.tempReader.Read(types.TemperatureSelection{
 			TempSource: cfg.TempSource,
+			GpuDevice:  cfg.GpuDevice,
 			CpuSensor:  cfg.CpuSensor,
 			GpuSensor:  cfg.GpuSensor,
 		})
@@ -579,6 +580,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		cfg := a.configManager.Get()
 		data := a.bridgeManager.GetTemperature(types.TemperatureSelection{
 			TempSource: cfg.TempSource,
+			GpuDevice:  cfg.GpuDevice,
 			CpuSensor:  cfg.CpuSensor,
 			GpuSensor:  cfg.GpuSensor,
 		})
@@ -927,6 +929,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
+	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
 	normalizeCurveProfilesConfig(&cfg)
@@ -1585,6 +1588,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	recentControlTemps := make([]int, 0, 24)
 	initialSelection := types.TemperatureSelection{
 		TempSource: cfg.TempSource,
+		GpuDevice:  cfg.GpuDevice,
 		CpuSensor:  cfg.CpuSensor,
 		GpuSensor:  cfg.GpuSensor,
 	}
@@ -1607,6 +1611,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			updateInterval = time.Duration(cfg.TempUpdateRate) * time.Second
 			selection := types.TemperatureSelection{
 				TempSource: cfg.TempSource,
+				GpuDevice:  cfg.GpuDevice,
 				CpuSensor:  cfg.CpuSensor,
 				GpuSensor:  cfg.GpuSensor,
 			}

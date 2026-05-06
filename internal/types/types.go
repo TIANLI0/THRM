@@ -15,6 +15,7 @@ const (
 	TempSourceMax          = "max"
 	TempSourceCPU          = "cpu"
 	TempSourceGPU          = "gpu"
+	TempDeviceAuto         = "auto"
 	TempSensorAuto         = "auto"
 )
 
@@ -50,9 +51,18 @@ func NormalizeSensorSelection(selection string) string {
 	return selection
 }
 
+// NormalizeDeviceSelection 归一化设备选择，空值回退为 auto。
+func NormalizeDeviceSelection(selection string) string {
+	if selection == "" {
+		return TempDeviceAuto
+	}
+	return selection
+}
+
 // TemperatureSelection 温度读取选择配置。
 type TemperatureSelection struct {
 	TempSource string `json:"tempSource"`
+	GpuDevice  string `json:"gpuDevice"`
 	CpuSensor  string `json:"cpuSensor"`
 	GpuSensor  string `json:"gpuSensor"`
 }
@@ -60,6 +70,7 @@ type TemperatureSelection struct {
 // NormalizeTemperatureSelection 归一化温度选择配置。
 func NormalizeTemperatureSelection(selection TemperatureSelection) TemperatureSelection {
 	selection.TempSource = NormalizeTempSource(selection.TempSource)
+	selection.GpuDevice = NormalizeDeviceSelection(selection.GpuDevice)
 	selection.CpuSensor = NormalizeSensorSelection(selection.CpuSensor)
 	selection.GpuSensor = NormalizeSensorSelection(selection.GpuSensor)
 	return selection
@@ -69,6 +80,7 @@ func NormalizeTemperatureSelection(selection TemperatureSelection) TemperatureSe
 func GetDefaultTemperatureSelection() TemperatureSelection {
 	return TemperatureSelection{
 		TempSource: TempSourceMax,
+		GpuDevice:  TempDeviceAuto,
 		CpuSensor:  TempSensorAuto,
 		GpuSensor:  TempSensorAuto,
 	}
@@ -79,6 +91,14 @@ type TemperatureSensor struct {
 	Key   string `json:"key"`
 	Name  string `json:"name"`
 	Value int    `json:"value"`
+}
+
+// TemperatureGPUDevice 可选 GPU 设备信息。
+type TemperatureGPUDevice struct {
+	Key     string              `json:"key"`
+	Name    string              `json:"name"`
+	Vendor  string              `json:"vendor"`
+	Sensors []TemperatureSensor `json:"sensors"`
 }
 
 // FanCurveProfile 温控曲线方案
@@ -119,34 +139,38 @@ type GearCommand struct {
 
 // TemperatureData 温度数据
 type TemperatureData struct {
-	CPUTemp       int                 `json:"cpuTemp"`       // CPU温度
-	GPUTemp       int                 `json:"gpuTemp"`       // GPU温度
-	MaxTemp       int                 `json:"maxTemp"`       // 最高温度
-	ControlTemp   int                 `json:"controlTemp"`   // 当前控温基准温度
-	ControlSource string              `json:"controlSource"` // 当前控温基准来源
-	CpuModel      string              `json:"cpuModel"`      // 当前识别的 CPU 型号
-	GpuModel      string              `json:"gpuModel"`      // 当前识别的 GPU 型号
-	CpuSensors    []TemperatureSensor `json:"cpuSensors"`    // 当前识别到的 CPU 温度传感器
-	GpuSensors    []TemperatureSensor `json:"gpuSensors"`    // 当前识别到的 GPU 温度传感器
-	UpdateTime    int64               `json:"updateTime"`    // 更新时间戳
-	BridgeOk      bool                `json:"bridgeOk"`      // 桥接程序是否正常
-	BridgeMsg     string              `json:"bridgeMessage"` // 桥接故障提示
+	CPUTemp           int                    `json:"cpuTemp"`           // CPU温度
+	GPUTemp           int                    `json:"gpuTemp"`           // GPU温度
+	MaxTemp           int                    `json:"maxTemp"`           // 最高温度
+	ControlTemp       int                    `json:"controlTemp"`       // 当前控温基准温度
+	ControlSource     string                 `json:"controlSource"`     // 当前控温基准来源
+	SelectedGpuDevice string                 `json:"selectedGpuDevice"` // 当前选中的 GPU 设备 key
+	CpuModel          string                 `json:"cpuModel"`          // 当前识别的 CPU 型号
+	GpuModel          string                 `json:"gpuModel"`          // 当前识别的 GPU 型号
+	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`        // 当前识别到的 CPU 温度传感器
+	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`        // 当前识别到的 GPU 温度传感器
+	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`        // 当前识别到的 GPU 设备列表
+	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
+	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
+	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
 }
 
 // BridgeTemperatureData 桥接程序返回的温度数据
 type BridgeTemperatureData struct {
-	CpuTemp       int                 `json:"cpuTemp"`
-	GpuTemp       int                 `json:"gpuTemp"`
-	MaxTemp       int                 `json:"maxTemp"`
-	ControlTemp   int                 `json:"controlTemp"`
-	ControlSource string              `json:"controlSource"`
-	CpuModel      string              `json:"cpuModel"`
-	GpuModel      string              `json:"gpuModel"`
-	CpuSensors    []TemperatureSensor `json:"cpuSensors"`
-	GpuSensors    []TemperatureSensor `json:"gpuSensors"`
-	UpdateTime    int64               `json:"updateTime"`
-	Success       bool                `json:"success"`
-	Error         string              `json:"error"`
+	CpuTemp           int                    `json:"cpuTemp"`
+	GpuTemp           int                    `json:"gpuTemp"`
+	MaxTemp           int                    `json:"maxTemp"`
+	ControlTemp       int                    `json:"controlTemp"`
+	ControlSource     string                 `json:"controlSource"`
+	SelectedGpuDevice string                 `json:"selectedGpuDevice"`
+	CpuModel          string                 `json:"cpuModel"`
+	GpuModel          string                 `json:"gpuModel"`
+	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`
+	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`
+	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`
+	UpdateTime        int64                  `json:"updateTime"`
+	Success           bool                   `json:"success"`
+	Error             string                 `json:"error"`
 }
 
 // BridgeCommand 桥接程序命令
@@ -222,6 +246,7 @@ type AppConfig struct {
 	TempUpdateRate           int                `json:"tempUpdateRate"`           // 温度更新频率(秒)
 	TempSampleCount          int                `json:"tempSampleCount"`          // 温度采样次数(用于平均)
 	TempSource               string             `json:"tempSource"`               // 控温温度来源: max/cpu/gpu
+	GpuDevice                string             `json:"gpuDevice"`                // GPU 设备选择: auto 或设备 key
 	CpuSensor                string             `json:"cpuSensor"`                // CPU 传感器选择: auto 或传感器 key
 	GpuSensor                string             `json:"gpuSensor"`                // GPU 传感器选择: auto 或传感器 key
 	ConfigPath               string             `json:"configPath"`               // 配置文件路径
@@ -424,6 +449,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		TempUpdateRate:          2,
 		TempSampleCount:         1,
 		TempSource:              defaultTempSelection.TempSource,
+		GpuDevice:               defaultTempSelection.GpuDevice,
 		CpuSensor:               defaultTempSelection.CpuSensor,
 		GpuSensor:               defaultTempSelection.GpuSensor,
 		ConfigPath:              "",

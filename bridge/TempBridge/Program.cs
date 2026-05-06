@@ -17,10 +17,12 @@ namespace TempBridge
         public int MaxTemp { get; set; }
         public int ControlTemp { get; set; }
         public string ControlSource { get; set; }
+        public string SelectedGpuDevice { get; set; }
         public string CpuModel { get; set; }
         public string GpuModel { get; set; }
         public TemperatureSensor[] CpuSensors { get; set; }
         public TemperatureSensor[] GpuSensors { get; set; }
+        public TemperatureGpuDevice[] GpuDevices { get; set; }
         public long UpdateTime { get; set; }
         public bool Success { get; set; }
         public string Error { get; set; }
@@ -28,10 +30,12 @@ namespace TempBridge
         public TemperatureData()
         {
             ControlSource = "max";
+            SelectedGpuDevice = "auto";
             CpuModel = string.Empty;
             GpuModel = string.Empty;
             CpuSensors = Array.Empty<TemperatureSensor>();
             GpuSensors = Array.Empty<TemperatureSensor>();
+            GpuDevices = Array.Empty<TemperatureGpuDevice>();
             Error = string.Empty;
         }
     }
@@ -49,17 +53,52 @@ namespace TempBridge
         }
     }
 
+    public class TemperatureGpuDevice
+    {
+        public string Key { get; set; }
+        public string Name { get; set; }
+        public string Vendor { get; set; }
+        public TemperatureSensor[] Sensors { get; set; }
+
+        public TemperatureGpuDevice()
+        {
+            Key = "auto";
+            Name = string.Empty;
+            Vendor = string.Empty;
+            Sensors = Array.Empty<TemperatureSensor>();
+        }
+    }
+
     public class TemperatureSelection
     {
         public string TempSource { get; set; }
+        public string GpuDevice { get; set; }
         public string CpuSensor { get; set; }
         public string GpuSensor { get; set; }
 
         public TemperatureSelection()
         {
             TempSource = "max";
+            GpuDevice = "auto";
             CpuSensor = "auto";
             GpuSensor = "auto";
+        }
+    }
+
+    public class GpuCandidate
+    {
+        public string Key { get; set; }
+        public string Model { get; set; }
+        public string Vendor { get; set; }
+        public HardwareType HardwareType { get; set; }
+        public System.Collections.Generic.List<TemperatureSensor> Sensors { get; set; }
+
+        public GpuCandidate()
+        {
+            Key = "auto";
+            Model = string.Empty;
+            Vendor = string.Empty;
+            Sensors = new System.Collections.Generic.List<TemperatureSensor>();
         }
     }
 
@@ -689,6 +728,7 @@ namespace TempBridge
             }
 
             selection.TempSource = NormalizeTempSource(selection.TempSource);
+            selection.GpuDevice = NormalizeDeviceSelection(selection.GpuDevice);
             selection.CpuSensor = NormalizeSensorSelection(selection.CpuSensor);
             selection.GpuSensor = NormalizeSensorSelection(selection.GpuSensor);
             return selection;
@@ -705,6 +745,11 @@ namespace TempBridge
                 return "gpu";
             }
             return "max";
+        }
+
+        static string NormalizeDeviceSelection(string deviceKey)
+        {
+            return string.IsNullOrWhiteSpace(deviceKey) ? "auto" : deviceKey;
         }
 
         static string NormalizeSensorSelection(string sensorKey)
@@ -728,7 +773,8 @@ namespace TempBridge
                 string cpuModel = string.Empty;
                 string gpuModel = string.Empty;
                 var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
-                var gpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
+                var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
+                int gpuIndex = 0;
 
                 foreach (IHardware hardware in computer.Hardware)
                 {
@@ -744,13 +790,23 @@ namespace TempBridge
                              hardware.HardwareType == HardwareType.GpuAmd ||
                              hardware.HardwareType == HardwareType.GpuIntel)
                     {
-                        	if (gpuSensors.Count == 0)
+                        	var sensors = new System.Collections.Generic.List<TemperatureSensor>();
+                        	CollectTemperatureSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, sensors);
+                        	gpuCandidates.Add(new GpuCandidate
                         	{
-                        		gpuModel = hardware.Name ?? string.Empty;
-                        		CollectTemperatureSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, gpuSensors);
-                        	}
+                        		Key = BuildGpuDeviceKey(hardware, gpuIndex),
+                        		Model = hardware.Name ?? string.Empty,
+                        		Vendor = GetGpuVendor(hardware.HardwareType),
+                        		HardwareType = hardware.HardwareType,
+                        		Sensors = sensors,
+                        	});
+                        	gpuIndex++;
                     }
                 }
+
+                    var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor);
+                    var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
+                    gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
 
 	                int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core" });
 	                int gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, new[] { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" });
@@ -759,10 +815,18 @@ namespace TempBridge
                 result.GpuTemp = gpuTemp;
                 result.MaxTemp = Math.Max(cpuTemp, gpuTemp);
 	                result.ControlTemp = ResolveControlTemp(cpuTemp, gpuTemp, selection.TempSource);
+                    result.SelectedGpuDevice = selectedGpu != null ? selectedGpu.Key : selection.GpuDevice;
 	                result.CpuModel = cpuModel;
 	                result.GpuModel = gpuModel;
 	                result.CpuSensors = cpuSensors.ToArray();
 	                result.GpuSensors = gpuSensors.ToArray();
+                    result.GpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
+                    {
+                        Key = candidate.Key,
+                        Name = candidate.Model,
+                        Vendor = candidate.Vendor,
+                        Sensors = candidate.Sensors != null ? candidate.Sensors.ToArray() : Array.Empty<TemperatureSensor>()
+                    }).ToArray();
                 if (cpuTemp == 0 && gpuTemp == 0)
                 {
                     result.Success = false;
@@ -885,6 +949,126 @@ namespace TempBridge
 
                 return sensors[0].Value;
             }
+
+        static GpuCandidate SelectGpuCandidate(System.Collections.Generic.IReadOnlyList<GpuCandidate> candidates, string selectedDeviceKey, string selectedSensorKey)
+        {
+            if (candidates == null || candidates.Count == 0)
+            {
+                return null;
+            }
+
+                if (!string.Equals(selectedDeviceKey, "auto", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var candidate in candidates)
+                    {
+                        if (candidate != null && string.Equals(candidate.Key, selectedDeviceKey, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+
+                if (!string.Equals(selectedSensorKey, "auto", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var candidate in candidates)
+                {
+                    if (candidate == null || candidate.Sensors == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var sensor in candidate.Sensors)
+                    {
+                            if (string.Equals(sensor.Key, selectedSensorKey, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return candidate;
+                        }
+                    }
+                }
+            }
+
+            GpuCandidate bestWithSensors = null;
+            GpuCandidate bestFallback = null;
+
+            foreach (var candidate in candidates)
+            {
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                if (bestFallback == null || CompareGpuCandidate(candidate, bestFallback) > 0)
+                {
+                    bestFallback = candidate;
+                }
+
+                if (candidate.Sensors != null && candidate.Sensors.Count > 0)
+                {
+                    if (bestWithSensors == null || CompareGpuCandidate(candidate, bestWithSensors) > 0)
+                    {
+                        bestWithSensors = candidate;
+                    }
+                }
+            }
+
+            return bestWithSensors ?? bestFallback;
+        }
+
+            static string BuildGpuDeviceKey(IHardware hardware, int index)
+            {
+                string vendor = GetGpuVendor(hardware.HardwareType);
+                string name = hardware != null && !string.IsNullOrWhiteSpace(hardware.Name) ? hardware.Name.Trim() : "gpu";
+                return string.Format("{0}:{1}:{2}", vendor, index, name);
+            }
+
+            static string GetGpuVendor(HardwareType hardwareType)
+            {
+                switch (hardwareType)
+                {
+                    case HardwareType.GpuNvidia:
+                        return "nvidia";
+                    case HardwareType.GpuAmd:
+                        return "amd";
+                    case HardwareType.GpuIntel:
+                        return "intel";
+                    default:
+                        return "gpu";
+                }
+            }
+
+        static int CompareGpuCandidate(GpuCandidate left, GpuCandidate right)
+        {
+            int leftPriority = GetGpuPriority(left);
+            int rightPriority = GetGpuPriority(right);
+            if (leftPriority != rightPriority)
+            {
+                return leftPriority - rightPriority;
+            }
+
+            int leftSensorCount = left != null && left.Sensors != null ? left.Sensors.Count : 0;
+            int rightSensorCount = right != null && right.Sensors != null ? right.Sensors.Count : 0;
+            return leftSensorCount - rightSensorCount;
+        }
+
+        static int GetGpuPriority(GpuCandidate candidate)
+        {
+            if (candidate == null)
+            {
+                return 0;
+            }
+
+            switch (candidate.HardwareType)
+            {
+                case HardwareType.GpuNvidia:
+                    return 300;
+                case HardwareType.GpuAmd:
+                    return 200;
+                case HardwareType.GpuIntel:
+                    return 100;
+                default:
+                    return 0;
+            }
+        }
 
             static int ResolveControlTemp(int cpuTemp, int gpuTemp, string source)
             {

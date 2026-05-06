@@ -264,6 +264,24 @@ function HotkeyField({
   );
 }
 
+function SelectionField({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+      {children}
+      {hint && <div className="text-[11px] leading-relaxed text-muted-foreground">{hint}</div>}
+    </div>
+  );
+}
+
 /* ── Main ControlPanel ── */
 
 export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, deviceModel }: ControlPanelProps) {
@@ -298,14 +316,35 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
   const gpuSensors = useMemo(() => (Array.isArray(temperature?.gpuSensors) ? temperature.gpuSensors : []), [temperature?.gpuSensors]);
+  const gpuDevices = useMemo(() => (Array.isArray((temperature as any)?.gpuDevices) ? (temperature as any).gpuDevices as types.TemperatureGPUDevice[] : []), [temperature]);
+  const selectedGpuDevice = useMemo(() => {
+    const configured = (((config as any).gpuDevice as string) || 'auto');
+    return configured === 'auto' || gpuDevices.some((device) => device.key === configured) ? configured : 'auto';
+  }, [config, gpuDevices]);
+  const activeGpuDeviceKey = useMemo(() => {
+    if (selectedGpuDevice !== 'auto') {
+      return selectedGpuDevice;
+    }
+    const detected = ((temperature as any)?.selectedGpuDevice as string) || 'auto';
+    return gpuDevices.some((device) => device.key === detected) ? detected : 'auto';
+  }, [selectedGpuDevice, temperature, gpuDevices]);
+  const activeGpuDevice = useMemo(() => {
+    return gpuDevices.find((device) => device.key === activeGpuDeviceKey) || null;
+  }, [activeGpuDeviceKey, gpuDevices]);
+  const effectiveGpuSensors = useMemo(() => {
+    if (activeGpuDevice && Array.isArray(activeGpuDevice.sensors) && activeGpuDevice.sensors.length > 0) {
+      return activeGpuDevice.sensors;
+    }
+    return gpuSensors;
+  }, [activeGpuDevice, gpuSensors]);
   const selectedCpuSensor = useMemo(() => {
     const configured = (((config as any).cpuSensor as string) || 'auto');
     return cpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
   }, [config, cpuSensors]);
   const selectedGpuSensor = useMemo(() => {
     const configured = (((config as any).gpuSensor as string) || 'auto');
-    return gpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
-  }, [config, gpuSensors]);
+    return effectiveGpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
+  }, [config, effectiveGpuSensors]);
 
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
 
@@ -464,6 +503,21 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, [config, onConfigChange]);
 
+  const handleGpuDeviceChange = useCallback(async (deviceKey: string) => {
+    setLoading('gpuDevice', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        gpuDevice: deviceKey,
+        gpuSensor: 'auto',
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('gpuDevice', false);
+    }
+  }, [config, onConfigChange]);
+
   const handleTempSensorChange = useCallback(async (kind: 'cpu' | 'gpu', sensorKey: string) => {
     const loadingKey = kind === 'cpu' ? 'cpuSensor' : 'gpuSensor';
     setLoading(loadingKey, true);
@@ -554,14 +608,22 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     { value: 'gpu', label: '仅 GPU' },
   ];
 
+  const gpuDeviceOptions = [
+    { value: 'auto', label: gpuDevices.length > 0 ? '自动选择 (优先独显)' : '自动选择' },
+    ...gpuDevices.map((device) => ({
+      value: device.key,
+      label: `${device.vendor ? `${device.vendor.toUpperCase()} · ` : ''}${device.name}`,
+    })),
+  ];
+
   const cpuSensorOptions = [
     { value: 'auto', label: cpuSensors.length > 0 ? '自动选择 (推荐)' : '自动选择' },
     ...cpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
   ];
 
   const gpuSensorOptions = [
-    { value: 'auto', label: gpuSensors.length > 0 ? '自动选择 (推荐)' : '自动选择' },
-    ...gpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
+    { value: 'auto', label: effectiveGpuSensors.length > 0 ? '自动选择 (推荐)' : '自动选择' },
+    ...effectiveGpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
   ];
 
   const themeModeOptions = [
@@ -874,7 +936,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                   </div>
                   <div className="min-w-0">
                     <div className="text-base font-medium text-foreground">温度基准</div>
-                    <div className="text-sm text-muted-foreground">选择智能温控参考传感器。</div>
+                    <div className="text-sm text-muted-foreground">选择控温器件、显卡设备以及具体传感器。多显卡笔记本可在这里直接锁定独显。</div>
                   </div>
                 </div>
                 <div className="w-full md:w-40">
@@ -894,18 +956,26 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     <Cpu className="h-4 w-4 text-primary" />
                     <span>CPU 基准</span>
                   </div>
-                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {temperature?.cpuModel?.trim() || '尚未识别到 CPU 型号，TempBridge 可用后会自动显示。'}
-                  </div>
-                  <div className="mt-3">
-                    <Select
-                      value={selectedCpuSensor}
-                      onChange={(value: string | number) => handleTempSensorChange('cpu', String(value))}
-                      options={cpuSensorOptions}
-                      size="sm"
-                      className="w-full min-w-0"
-                      disabled={!cpuSensors.length}
-                    />
+                  <div className="mt-3 space-y-3">
+                    <SelectionField
+                      label="处理器设备"
+                      hint={temperature?.cpuModel?.trim() ? '当前已识别的处理器，会随 TempBridge 检测自动更新。' : '尚未识别到 CPU 型号，TempBridge 可用后会自动显示。'}
+                    >
+                      <div className="flex h-10 items-center rounded-lg border border-border/70 bg-background px-3 text-sm text-foreground">
+                        <span className="truncate">{temperature?.cpuModel?.trim() || '等待识别...'}</span>
+                      </div>
+                    </SelectionField>
+
+                    <SelectionField label="温度传感器">
+                      <Select
+                        value={selectedCpuSensor}
+                        onChange={(value: string | number) => handleTempSensorChange('cpu', String(value))}
+                        options={cpuSensorOptions}
+                        size="sm"
+                        className="w-full min-w-0"
+                        disabled={!cpuSensors.length}
+                      />
+                    </SelectionField>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
                     {temperature?.cpuTemp && temperature.cpuTemp > 0 ? `当前基准温度 ${temperature.cpuTemp}°C` : '当前无可用 CPU 温度数据'}
@@ -917,18 +987,33 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                     <Gpu className="h-4 w-4 text-primary" />
                     <span>GPU 基准</span>
                   </div>
-                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {temperature?.gpuModel?.trim() || '尚未识别到 GPU 型号，TempBridge 可用后会自动显示。'}
-                  </div>
-                  <div className="mt-3">
-                    <Select
-                      value={selectedGpuSensor}
-                      onChange={(value: string | number) => handleTempSensorChange('gpu', String(value))}
-                      options={gpuSensorOptions}
-                      size="sm"
-                      className="w-full min-w-0"
-                      disabled={!gpuSensors.length}
-                    />
+                  <div className="mt-3 space-y-3">
+                    <SelectionField
+                      label="显卡设备"
+                      hint={selectedGpuDevice === 'auto'
+                        ? (temperature?.gpuModel?.trim() ? `自动模式当前命中：${temperature.gpuModel}` : '自动模式会优先尝试独显。')
+                        : '已锁定为你选择的显卡设备。'}
+                    >
+                      <Select
+                        value={selectedGpuDevice}
+                        onChange={(value: string | number) => handleGpuDeviceChange(String(value))}
+                        options={gpuDeviceOptions}
+                        size="sm"
+                        className="w-full min-w-0"
+                        disabled={gpuDevices.length === 0}
+                      />
+                    </SelectionField>
+
+                    <SelectionField label="温度传感器">
+                      <Select
+                        value={selectedGpuSensor}
+                        onChange={(value: string | number) => handleTempSensorChange('gpu', String(value))}
+                        options={gpuSensorOptions}
+                        size="sm"
+                        className="w-full min-w-0"
+                        disabled={!effectiveGpuSensors.length}
+                      />
+                    </SelectionField>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
                     {temperature?.gpuTemp && temperature.gpuTemp > 0 ? `当前基准温度 ${temperature.gpuTemp}°C` : '当前无可用 GPU 温度数据'}
