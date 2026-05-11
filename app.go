@@ -129,6 +129,12 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 			runtime.EventsEmit(a.ctx, "hotkey-triggered", payload)
 		}
 
+	case ipc.EventLegionPowerModeUpdate:
+		var payload map[string]any
+		if err := json.Unmarshal(event.Data, &payload); err == nil {
+			runtime.EventsEmit(a.ctx, "legion-power-mode-update", payload)
+		}
+
 	case ipc.EventHealthPing:
 		var timestamp int64
 		json.Unmarshal(event.Data, &timestamp)

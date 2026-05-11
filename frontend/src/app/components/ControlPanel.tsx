@@ -101,6 +101,51 @@ function getRequiredColorCount(mode: string): number {
   }
 }
 
+const LEGION_POWER_MODES = [
+  { value: 'Quiet', label: '安静模式' },
+  { value: 'Balance', label: '均衡模式' },
+  { value: 'Performance', label: '野兽模式' },
+  { value: 'Extreme', label: '超能模式' },
+  { value: 'GodMode', label: '自定义模式' },
+];
+
+const FAN_GEAR_OPTIONS = [
+  { value: '静音', label: '静音' },
+  { value: '标准', label: '标准' },
+  { value: '强劲', label: '强劲' },
+  { value: '超频', label: '超频' },
+];
+
+const FAN_LEVEL_OPTIONS = [
+  { value: '低', label: '低' },
+  { value: '中', label: '中' },
+  { value: '高', label: '高' },
+];
+
+function getDefaultLegionFnQConfig() {
+  return {
+    enabled: false,
+    takeOverFan: false,
+    modeMapping: {
+      Quiet: { gear: '静音', level: '中' },
+      Balance: { gear: '标准', level: '中' },
+      Performance: { gear: '强劲', level: '中' },
+      Extreme: { gear: '超频', level: '中' },
+      GodMode: { gear: '超频', level: '高' },
+    },
+  };
+}
+
+function normalizeLegionFnQConfig(raw: any) {
+  const defaults = getDefaultLegionFnQConfig();
+  const mapping = { ...defaults.modeMapping, ...(raw?.modeMapping || {}) };
+  return {
+    enabled: !!raw?.enabled,
+    takeOverFan: !!raw?.takeOverFan,
+    modeMapping: mapping,
+  };
+}
+
 function normalizeHotkeyForDisplay(value: string): string {
   return (value || '').trim();
 }
@@ -345,6 +390,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     const configured = (((config as any).gpuSensor as string) || 'auto');
     return effectiveGpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
   }, [config, effectiveGpuSensors]);
+  const legionFnQConfig = useMemo(() => normalizeLegionFnQConfig((config as any).legionFnQ), [config]);
 
   const setLoading = (key: string, value: boolean) => setLoadingStates((prev) => ({ ...prev, [key]: value }));
 
@@ -548,6 +594,40 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('transientSpikeFilter', false);
     }
   }, [config, onConfigChange]);
+
+  const updateLegionFnQConfig = useCallback(async (patch: any) => {
+    setLoading('legionFnQ', true);
+    try {
+      const nextLegionFnQ = normalizeLegionFnQConfig({
+        ...legionFnQConfig,
+        ...patch,
+        modeMapping: patch.modeMapping || legionFnQConfig.modeMapping,
+      });
+      const newCfg = types.AppConfig.createFrom({
+        ...config,
+        legionFnQ: nextLegionFnQ,
+      });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch (e) {
+      toast.error(`保存 Fn+Q 插件设置失败: ${e}`);
+    } finally {
+      setLoading('legionFnQ', false);
+    }
+  }, [config, legionFnQConfig, onConfigChange]);
+
+  const handleLegionFnQMappingChange = useCallback(async (mode: string, patch: { gear?: string; level?: string }) => {
+    const current = legionFnQConfig.modeMapping[mode] || (getDefaultLegionFnQConfig().modeMapping as any)[mode];
+    await updateLegionFnQConfig({
+      modeMapping: {
+        ...legionFnQConfig.modeMapping,
+        [mode]: {
+          ...current,
+          ...patch,
+        },
+      },
+    });
+  }, [legionFnQConfig, updateLegionFnQConfig]);
 
   const loadCurveProfiles = useCallback(async () => {
     try {
@@ -1163,6 +1243,81 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             </div>
           </SettingRow>
           )}
+        </Section>
+
+        <Section title="拯救者 Fn+Q 联动" icon={Zap}>
+          <SettingRow
+            icon={<Zap className={clsx('h-4 w-4', legionFnQConfig.enabled ? 'text-primary' : '')} />}
+            title="启用插件"
+            description="监听拯救者性能模式变化，包括 Fn+Q 和系统软件切换。"
+          >
+            <ToggleSwitch
+              enabled={legionFnQConfig.enabled}
+              onChange={(enabled) => updateLegionFnQConfig({ enabled })}
+              loading={loadingStates.legionFnQ}
+              size="sm"
+            />
+          </SettingRow>
+
+          <SettingRow
+            icon={<Flame className={clsx('h-4 w-4', legionFnQConfig.takeOverFan ? 'text-orange-500' : '')} />}
+            title="接管风扇转速"
+            description="检测到性能模式变化后，将散热器切换到下方映射的手动档位。"
+            disabled={!legionFnQConfig.enabled}
+          >
+            <ToggleSwitch
+              enabled={legionFnQConfig.takeOverFan}
+              onChange={(takeOverFan) => updateLegionFnQConfig({ takeOverFan })}
+              disabled={!legionFnQConfig.enabled}
+              loading={loadingStates.legionFnQ}
+              size="sm"
+              color="orange"
+            />
+          </SettingRow>
+
+          <div className={clsx('px-5 py-4', (!legionFnQConfig.enabled || !legionFnQConfig.takeOverFan) && 'opacity-60')}>
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <div className="text-sm font-medium text-foreground">模式映射</div>
+                <div className="mt-1 text-xs text-muted-foreground">右侧“转速级别”是同一风扇档位内的低/中/高子档，影响实际 RPM。</div>
+              </div>
+            </div>
+            <div className="mb-1 hidden grid-cols-[minmax(96px,1fr)_120px_96px] gap-3 px-3 text-xs text-muted-foreground sm:grid">
+              <div>拯救者模式</div>
+              <div>风扇档位</div>
+              <div>转速级别</div>
+            </div>
+            <div className="space-y-2">
+              {LEGION_POWER_MODES.map((mode) => {
+                const target = legionFnQConfig.modeMapping[mode.value] || (getDefaultLegionFnQConfig().modeMapping as any)[mode.value];
+                return (
+                  <div key={mode.value} className="grid grid-cols-1 items-center gap-3 rounded-xl border border-border/70 bg-background/45 px-3 py-2.5 sm:grid-cols-[minmax(96px,1fr)_120px_96px]">
+                    <div className="text-sm font-medium text-foreground">{mode.label}</div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground sm:hidden">风扇档位</div>
+                      <Select
+                        value={target.gear}
+                        onChange={(value) => handleLegionFnQMappingChange(mode.value, { gear: String(value) })}
+                        options={FAN_GEAR_OPTIONS}
+                        disabled={!legionFnQConfig.enabled || !legionFnQConfig.takeOverFan || loadingStates.legionFnQ}
+                        size="sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-muted-foreground sm:hidden">转速级别</div>
+                      <Select
+                        value={target.level}
+                        onChange={(value) => handleLegionFnQMappingChange(mode.value, { level: String(value) })}
+                        options={FAN_LEVEL_OPTIONS}
+                        disabled={!legionFnQConfig.enabled || !legionFnQConfig.takeOverFan || loadingStates.legionFnQ}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </Section>
 
         {/* ═══════════ 4. 系统设置 ═══════════ */}

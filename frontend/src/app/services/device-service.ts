@@ -1,5 +1,6 @@
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from './api';
+import type { LegionPowerModePayload } from '../types/app';
 
 export interface DeviceStatusPayload {
   connected?: boolean;
@@ -44,6 +45,10 @@ class DeviceService {
 
   onHotkeyTriggered(callback: (payload: { action: string; shortcut: string; success: boolean; message: string }) => void) {
     return apiService.onHotkeyTriggered(callback);
+  }
+
+  onLegionPowerModeUpdate(callback: (payload: LegionPowerModePayload) => void) {
+    return apiService.onLegionPowerModeUpdate(callback);
   }
 }
 

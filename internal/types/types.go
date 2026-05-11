@@ -202,6 +202,17 @@ type LightStripConfig struct {
 }
 
 // SmartControlConfig 智能控温配置
+type FanGearTarget struct {
+	Gear  string `json:"gear"`
+	Level string `json:"level"`
+}
+
+type LegionFnQConfig struct {
+	Enabled     bool                     `json:"enabled"`
+	TakeOverFan bool                     `json:"takeOverFan"`
+	ModeMapping map[string]FanGearTarget `json:"modeMapping"`
+}
+
 type SmartControlConfig struct {
 	Enabled              bool  `json:"enabled"`              // 智能耦合控制开关
 	Learning             bool  `json:"learning"`             // 学习开关
@@ -229,6 +240,7 @@ type SmartControlConfig struct {
 
 // AppConfig 应用配置
 type AppConfig struct {
+	LegionFnQ                LegionFnQConfig    `json:"legionFnQ"`
 	AutoControl              bool               `json:"autoControl"`              // 智能变频开关
 	ManualGearToggleHotkey   string             `json:"manualGearToggleHotkey"`   // 切换手动挡位快捷键
 	AutoControlToggleHotkey  string             `json:"autoControlToggleHotkey"`  // 开关智能变频快捷键
@@ -310,6 +322,57 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 }
 
 // Logger 日志记录器接口
+func GetDefaultLegionFnQConfig() LegionFnQConfig {
+	return LegionFnQConfig{
+		Enabled:     false,
+		TakeOverFan: false,
+		ModeMapping: map[string]FanGearTarget{
+			"Quiet":       {Gear: "静音", Level: "中"},
+			"Balance":     {Gear: "标准", Level: "中"},
+			"Performance": {Gear: "强劲", Level: "中"},
+			"Extreme":     {Gear: "超频", Level: "中"},
+			"GodMode":     {Gear: "超频", Level: "高"},
+		},
+	}
+}
+
+func NormalizeLegionFnQConfig(cfg LegionFnQConfig) LegionFnQConfig {
+	defaults := GetDefaultLegionFnQConfig()
+	if cfg.ModeMapping == nil {
+		cfg.ModeMapping = map[string]FanGearTarget{}
+	}
+
+	for mode, target := range defaults.ModeMapping {
+		existing, ok := cfg.ModeMapping[mode]
+		if !ok {
+			cfg.ModeMapping[mode] = target
+			continue
+		}
+		cfg.ModeMapping[mode] = normalizeFanGearTarget(existing, target)
+	}
+
+	for mode, target := range cfg.ModeMapping {
+		defaultTarget, ok := defaults.ModeMapping[mode]
+		if !ok {
+			delete(cfg.ModeMapping, mode)
+			continue
+		}
+		cfg.ModeMapping[mode] = normalizeFanGearTarget(target, defaultTarget)
+	}
+
+	return cfg
+}
+
+func normalizeFanGearTarget(target, fallback FanGearTarget) FanGearTarget {
+	if _, ok := GearCommands[target.Gear]; !ok {
+		target.Gear = fallback.Gear
+	}
+	if target.Level != "低" && target.Level != "中" && target.Level != "高" {
+		target.Level = fallback.Level
+	}
+	return target
+}
+
 type Logger interface {
 	Info(format string, v ...any)
 	Error(format string, v ...any)
@@ -462,5 +525,6 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		IgnoreDeviceOnReconnect: true, // 默认开启，防止断连后误判用户手动切换
 		SmartControl:            GetDefaultSmartControlConfig(defaultCurve),
 		LightStrip:              GetDefaultLightStripConfig(),
+		LegionFnQ:               GetDefaultLegionFnQConfig(),
 	}
 }

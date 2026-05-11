@@ -22,6 +22,8 @@ import (
 	"github.com/TIANLI0/BS2PRO-Controller/internal/ipc"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/logger"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/notifier"
+	"github.com/TIANLI0/BS2PRO-Controller/internal/plugins"
+	"github.com/TIANLI0/BS2PRO-Controller/internal/plugins/fnqpowermode"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/smartcontrol"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/temperature"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/tray"
@@ -45,6 +47,7 @@ type CoreApp struct {
 	hotkeyManager    *hotkeysvc.Manager
 	notifier         *notifier.Manager
 	autostartManager *autostart.Manager
+	pluginManager    *plugins.Manager
 	logger           *logger.CustomLogger
 	ipcServer        *ipc.Server
 
@@ -93,6 +96,7 @@ func NewCoreApp(debugMode, isAutoStart bool) *CoreApp {
 	configMgr := config.NewManager(installDir, customLogger)
 	trayMgr := tray.NewManager(customLogger, iconData)
 	autostartMgr := autostart.NewManager(customLogger)
+	pluginMgr := plugins.NewManager(customLogger)
 
 	app := &CoreApp{
 		ctx:                context.Background(),
@@ -103,6 +107,7 @@ func NewCoreApp(debugMode, isAutoStart bool) *CoreApp {
 		configManager:      configMgr,
 		trayManager:        trayMgr,
 		autostartManager:   autostartMgr,
+		pluginManager:      pluginMgr,
 		logger:             customLogger,
 		isConnected:        false,
 		monitoringTemp:     false,
@@ -124,6 +129,7 @@ func NewCoreApp(debugMode, isAutoStart bool) *CoreApp {
 	}
 	app.notifier = notifier.NewManager(customLogger, iconData)
 	app.hotkeyManager = hotkeysvc.NewManager(customLogger, app.handleHotkeyAction)
+	app.registerPlugins()
 
 	return app
 }
@@ -223,6 +229,7 @@ func (a *CoreApp) Start() error {
 	a.logInfo("开始初始化系统托盘")
 	a.initSystemTray()
 	a.applyHotkeyBindings(cfg)
+	a.applyPluginConfig(cfg)
 
 	// 启动健康监控
 	if cfg.GuiMonitoring {
@@ -260,6 +267,9 @@ func (a *CoreApp) Stop() {
 	a.stopTemperatureMonitoring()
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()
+	}
+	if a.pluginManager != nil {
+		a.pluginManager.StopAll()
 	}
 
 	// 清理资源
@@ -349,6 +359,85 @@ func (a *CoreApp) initSystemTray() {
 		},
 	)
 	a.trayManager.Init()
+}
+
+func (a *CoreApp) registerPlugins() {
+	if a.pluginManager == nil {
+		return
+	}
+
+	a.pluginManager.Register(fnqpowermode.New(fnqpowermode.Options{
+		Logger: a.logger,
+		OnModeChange: func(state fnqpowermode.PowerModeState) {
+			a.handleLegionPowerModeChange(state)
+		},
+	}))
+}
+
+func (a *CoreApp) handleLegionPowerModeChange(state fnqpowermode.PowerModeState) {
+	a.logInfo("Lenovo Legion Fn+Q power mode changed: raw=%d mapped=%d mode=%s source=%s",
+		state.Raw, state.Mapped, state.Mode, state.Source)
+
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventLegionPowerModeUpdate, state)
+	}
+
+	a.applyLegionFnQFanMapping(state)
+}
+
+func (a *CoreApp) applyPluginConfig(cfg types.AppConfig) {
+	if a.pluginManager == nil {
+		return
+	}
+
+	if cfg.LegionFnQ.Enabled {
+		if err := a.pluginManager.Start(fnqpowermode.PluginID); err != nil {
+			a.logError("failed to start Lenovo Legion Fn+Q plugin: %v", err)
+		}
+		return
+	}
+
+	if err := a.pluginManager.Stop(fnqpowermode.PluginID); err != nil {
+		a.logError("failed to stop Lenovo Legion Fn+Q plugin: %v", err)
+	}
+}
+
+func (a *CoreApp) applyLegionFnQFanMapping(state fnqpowermode.PowerModeState) {
+	cfg := a.configManager.Get()
+	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
+	if !cfg.LegionFnQ.Enabled || !cfg.LegionFnQ.TakeOverFan {
+		return
+	}
+	if !a.isConnected {
+		a.logDebug("Lenovo Legion Fn+Q takeover skipped: device not connected")
+		return
+	}
+
+	target, ok := cfg.LegionFnQ.ModeMapping[state.Mode]
+	if !ok {
+		a.logDebug("Lenovo Legion Fn+Q takeover skipped: no mapping for mode=%s", state.Mode)
+		return
+	}
+
+	if cfg.AutoControl || cfg.CustomSpeedEnabled {
+		cfg.AutoControl = false
+		cfg.CustomSpeedEnabled = false
+		a.configManager.Set(cfg)
+		if err := a.configManager.Save(); err != nil {
+			a.logError("failed to save Lenovo Legion Fn+Q takeover config: %v", err)
+		}
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+		}
+	}
+
+	a.safeGo("applyLegionFnQFanMapping", func() {
+		if ok := a.SetManualGear(target.Gear, target.Level); !ok {
+			a.logError("Lenovo Legion Fn+Q takeover failed: mode=%s gear=%s level=%s", state.Mode, target.Gear, target.Level)
+			return
+		}
+		a.logInfo("Lenovo Legion Fn+Q takeover applied: mode=%s gear=%s level=%s", state.Mode, target.Gear, target.Level)
+	})
 }
 
 // onShowWindowRequest 显示窗口请求回调
@@ -937,6 +1026,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		cfg.FanCurveProfiles[idx].Curve = cloneFanCurve(cfg.FanCurve)
 	}
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
 	normalizeHotkeyConfig(&cfg)
 	normalizeManualGearMemoryConfig(&cfg)
 
@@ -946,6 +1036,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	}
 	a.syncManualGearLevelMemoryLocked(cfg)
 	a.applyHotkeyBindings(cfg)
+	a.applyPluginConfig(cfg)
 	return nil
 }
 
@@ -1513,6 +1604,9 @@ func (a *CoreApp) GetDebugInfo() map[string]any {
 		"monitoringTemp":  a.monitoringTemp,
 		"autoStartLaunch": a.isAutoStartLaunch,
 		"hasGUIClients":   a.ipcServer != nil && a.ipcServer.HasClients(),
+	}
+	if a.pluginManager != nil {
+		info["plugins"] = a.pluginManager.Statuses()
 	}
 	return info
 }

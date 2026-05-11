@@ -52,6 +52,7 @@ export interface TemperatureSensor {
 
 // 应用配置
 export interface AppConfig {
+  legionFnQ?: LegionFnQConfig;
   autoControl: boolean;         // 智能变频开关
   curveProfileToggleHotkey?: string; // 切换曲线方案快捷键
   fanCurve: FanCurvePoint[];   // 风扇曲线
@@ -104,6 +105,25 @@ export interface SmartControlConfig {
 }
 
 // 调试信息
+export interface FanGearTarget {
+  gear: string;
+  level: string;
+}
+
+export interface LegionFnQConfig {
+  enabled: boolean;
+  takeOverFan: boolean;
+  modeMapping: Record<string, FanGearTarget>;
+}
+
+export interface LegionPowerModePayload {
+  raw: number;
+  mapped: number;
+  mode: string;
+  source: string;
+  timestamp: number;
+}
+
 export interface DebugInfo {
   debugMode: boolean;
   trayReady: boolean;
@@ -112,6 +132,7 @@ export interface DebugInfo {
   guiLastResponse: string;
   monitoringTemp: boolean;
   autoStartLaunch: boolean;
+  plugins?: Array<{ id: string; name: string; running: boolean; lastError?: string }>;
 }
 
 // 自启动方式

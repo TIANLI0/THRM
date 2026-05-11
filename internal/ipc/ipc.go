@@ -108,15 +108,16 @@ type Event struct {
 
 // EventType 事件类型
 const (
-	EventFanDataUpdate      = "fan-data-update"
-	EventTemperatureUpdate  = "temperature-update"
-	EventDeviceConnected    = "device-connected"
-	EventDeviceDisconnected = "device-disconnected"
-	EventDeviceError        = "device-error"
-	EventConfigUpdate       = "config-update"
-	EventHotkeyTriggered    = "hotkey-triggered"
-	EventHealthPing         = "health-ping"
-	EventHeartbeat          = "heartbeat"
+	EventFanDataUpdate         = "fan-data-update"
+	EventTemperatureUpdate     = "temperature-update"
+	EventDeviceConnected       = "device-connected"
+	EventDeviceDisconnected    = "device-disconnected"
+	EventDeviceError           = "device-error"
+	EventConfigUpdate          = "config-update"
+	EventHotkeyTriggered       = "hotkey-triggered"
+	EventLegionPowerModeUpdate = "legion-power-mode-update"
+	EventHealthPing            = "health-ping"
+	EventHeartbeat             = "heartbeat"
 )
 
 // Server IPC 服务器

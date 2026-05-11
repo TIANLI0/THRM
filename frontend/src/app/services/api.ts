@@ -30,8 +30,9 @@ import {
 
 import { types } from '../../../wailsjs/go/models';
 
-import type { 
-  DeviceInfo 
+import type {
+  DeviceInfo,
+  LegionPowerModePayload,
 } from '../types/app';
 
 class ApiService {
@@ -224,6 +225,11 @@ class ApiService {
   }
 
   // 调试相关方法
+  onLegionPowerModeUpdate(callback: (payload: LegionPowerModePayload) => void): () => void {
+    EventsOn('legion-power-mode-update', callback);
+    return () => EventsOff('legion-power-mode-update');
+  }
+
   async getDebugInfo(): Promise<any> {
     return await GetDebugInfo();
   }

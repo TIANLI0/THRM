@@ -173,6 +173,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
       })
     );
 
+    unsubscribers.push(
+      deviceService.onLegionPowerModeUpdate((payload) => {
+        const mode = typeof payload?.mode === 'string' ? payload.mode : '';
+        if (!mode) return;
+        const modeLabel: Record<string, string> = {
+          Quiet: '安静模式',
+          Balance: '均衡模式',
+          Performance: '野兽模式',
+          Extreme: '超能模式',
+          GodMode: '自定义模式',
+        };
+        toast.success('拯救者性能模式变化', {
+          description: `当前模式：${modeLabel[mode] || mode}`,
+          duration: 2600,
+        });
+      })
+    );
+
     return () => {
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };

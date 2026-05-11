@@ -89,6 +89,7 @@ func (m *Manager) tryLoadFromPath(configPath string) bool {
 
 	applyMissingHotkeyDefaults(&config, rawConfig)
 	applyMissingSmartControlDefaults(&config, rawConfig)
+	applyMissingLegionFnQDefaults(&config, rawConfig)
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
 
@@ -133,6 +134,17 @@ func applyMissingSmartControlDefaults(cfg *types.AppConfig, rawConfig map[string
 	if _, ok := smartControlConfig["filterTransientSpike"]; !ok {
 		cfg.SmartControl.FilterTransientSpike = defaults.FilterTransientSpike
 	}
+}
+
+func applyMissingLegionFnQDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
+	if cfg == nil {
+		return
+	}
+	if _, ok := rawConfig["legionFnQ"]; !ok {
+		cfg.LegionFnQ = types.GetDefaultLegionFnQConfig()
+		return
+	}
+	cfg.LegionFnQ = types.NormalizeLegionFnQConfig(cfg.LegionFnQ)
 }
 
 func applyMissingThemeDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
