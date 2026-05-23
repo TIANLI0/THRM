@@ -37,6 +37,32 @@ const WINDOWS_SCROLLBAR_TOP_OFFSET = WINDOWS_TITLEBAR_HEIGHT + 8;
 
 type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | typeof ABOUT_TAB.id;
 
+const TAB_TRANSITION_ORDER: ActiveTab[] = [...MAIN_TAB_ITEMS.map((tab) => tab.id), ABOUT_TAB.id];
+
+function getTabTransitionDirection(fromTab: ActiveTab, toTab: ActiveTab) {
+  const fromIndex = TAB_TRANSITION_ORDER.indexOf(fromTab);
+  const toIndex = TAB_TRANSITION_ORDER.indexOf(toTab);
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+    return 0;
+  }
+  return toIndex > fromIndex ? 1 : -1;
+}
+
+const TAB_CONTENT_VARIANTS = {
+  enter: (direction: number) => ({
+    opacity: 0,
+    y: direction === 0 ? 8 : direction * 18,
+  }),
+  center: {
+    opacity: 1,
+    y: 0,
+  },
+  exit: (direction: number) => ({
+    opacity: 0,
+    y: direction === 0 ? -6 : direction * -14,
+  }),
+};
+
 interface AppShellProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
@@ -407,6 +433,7 @@ export default function AppShell({
   const [isWindowsChrome, setIsWindowsChrome] = useState(false);
   const [isMaximised, setIsMaximised] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const previousActiveTabRef = useRef<ActiveTab>(activeTab);
 
   const syncWindowState = useCallback(async () => {
     try {
@@ -470,6 +497,19 @@ export default function AppShell({
     control: controlContent,
     about: aboutContent,
   };
+  const transitionDirection = getTabTransitionDirection(previousActiveTabRef.current, activeTab);
+
+  useEffect(() => {
+    if (previousActiveTabRef.current === activeTab) {
+      return;
+    }
+    const scrollElement = scrollRef.current;
+    if (scrollElement) {
+      scrollElement.scrollTop = 0;
+      scrollElement.scrollLeft = 0;
+    }
+    previousActiveTabRef.current = activeTab;
+  }, [activeTab]);
 
   return (
     <div className="relative flex h-dvh w-full overflow-hidden bg-background text-foreground">
@@ -623,8 +663,24 @@ export default function AppShell({
           </div>
 
           {/* Tab content */}
-          <main className="mx-auto max-w-[1120px]">
-            {contentMap[activeTab]}
+          <main className="mx-auto w-full max-w-[1120px] min-w-0 overflow-hidden">
+            <AnimatePresence mode="wait" initial={false} custom={transitionDirection}>
+              <motion.div
+                key={activeTab}
+                custom={transitionDirection}
+                variants={TAB_CONTENT_VARIANTS}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{
+                  duration: 0.2,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                className="w-full min-w-0 overflow-hidden will-change-transform"
+              >
+                {contentMap[activeTab]}
+              </motion.div>
+            </AnimatePresence>
           </main>
           </div>
         </div>
