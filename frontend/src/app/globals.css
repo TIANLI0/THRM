@@ -188,10 +188,7 @@ body {
   width: 100%;
   scrollbar-gutter: auto;
   overscroll-behavior: none;
-  /* 高清字体渲染：避免中英文混排时发虚 */
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  text-rendering: auto;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   font-synthesis-weight: none;
 }
