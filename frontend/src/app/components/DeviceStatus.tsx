@@ -274,15 +274,12 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
           <div className="text-xs font-semibold text-foreground">风扇转速曲线</div>
           <div className="text-[11px] text-muted-foreground">RPM</div>
         </div>
-        <div className="flex items-center gap-2">
-          {onOpen && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-              曲线页
-              <ArrowUpRight className="h-3 w-3" />
-            </span>
-          )}
-          <div className="text-[11px] font-medium text-muted-foreground">{maxTemp} °C</div>
-        </div>
+        {onOpen && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+            曲线页
+            <ArrowUpRight className="h-3 w-3" />
+          </span>
+        )}
       </div>
       <div className="aspect-[520/146] w-full overflow-hidden">
         <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="xMidYMid meet" aria-hidden="true">

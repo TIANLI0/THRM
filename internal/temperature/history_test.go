@@ -17,12 +17,12 @@ func enableRecorderForTest(t *testing.T, recorder *HistoryRecorder) {
 	}
 }
 
-func TestHistoryRecorderDefaultsDisabled(t *testing.T) {
+func TestHistoryRecorderDefaultsEnabled(t *testing.T) {
 	t.Parallel()
 
 	recorder := NewHistoryRecorder(filepath.Join(t.TempDir(), "history.bin"), 8, 5*time.Second, nil)
-	if recorder.IsEnabled() {
-		t.Fatal("expected history recorder to default disabled")
+	if !recorder.IsEnabled() {
+		t.Fatal("expected history recorder to default enabled")
 	}
 }
 
@@ -71,6 +71,9 @@ func TestHistoryRecorderPersistsBinarySnapshot(t *testing.T) {
 	enableRecorderForTest(t, recorder)
 	_, _ = recorder.Add(types.TemperatureData{CPUTemp: 60, GPUTemp: 54, UpdateTime: 1_717_000_000}, &types.FanData{CurrentRPM: 1500})
 	_, _ = recorder.Add(types.TemperatureData{CPUTemp: 62, GPUTemp: 55, UpdateTime: 1_717_000_005}, &types.FanData{CurrentRPM: 1550})
+	if err := recorder.Flush(); err != nil {
+		t.Fatalf("flush binary history: %v", err)
+	}
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {

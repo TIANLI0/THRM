@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DefaultHistoryCapacity              = 360
+	DefaultHistoryCapacity              = 720
 	DefaultHistorySampleInterval        = 5 * time.Second
 	DefaultHistoryRelativePath          = "telemetry/history.bin"
 	historyBinaryMagic                  = "THST"
@@ -55,7 +55,7 @@ func NewHistoryRecorder(filePath string, capacity int, sampleInterval time.Durat
 		filePath:       filePath,
 		capacity:       capacity,
 		sampleInterval: sampleInterval,
-		enabled:        false,
+		enabled:        true,
 		points:         make([]types.TemperatureHistoryPoint, capacity),
 	}
 	recorder.load()

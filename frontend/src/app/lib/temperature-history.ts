@@ -7,9 +7,9 @@ export interface TemperatureHistoryPoint {
 
 export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan';
 
-export const CORE_HISTORY_LIMIT = 360;
+export const CORE_HISTORY_LIMIT = 720;
 export const SESSION_HISTORY_LIMIT = 60;
-export const CORE_HISTORY_RETENTION_MS = 30 * 60 * 1000;
+export const CORE_HISTORY_RETENTION_MS = 60 * 60 * 1000;
 export const SESSION_HISTORY_RETENTION_MS = 5 * 60 * 1000;
 export const HISTORY_SAMPLE_INTERVAL_MS = 5 * 1000;
 export const HISTORY_LIMIT = CORE_HISTORY_LIMIT;
