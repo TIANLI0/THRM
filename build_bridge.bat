@@ -15,9 +15,10 @@ set "LHM_PROJECT=%LHM_REPO%\LibreHardwareMonitorLib\LibreHardwareMonitorLib.cspr
 set "PAWNIO_URL=https://github.com/namazso/PawnIO.Setup/releases/latest/download/PawnIO_setup.exe"
 set "PAWNIO_OUT=%BUILDROOT%\PawnIO_setup.exe"
 
-if not exist "%OUTDIR%" mkdir "%OUTDIR%"
 if not exist "%BUILDROOT%" mkdir "%BUILDROOT%"
 if not exist "%TEMPROOT%" mkdir "%TEMPROOT%"
+if exist "%OUTDIR%" rmdir /s /q "%OUTDIR%"
+if not exist "%OUTDIR%" mkdir "%OUTDIR%"
 
 where git >nul 2>nul
 if errorlevel 1 (
@@ -50,8 +51,13 @@ dotnet restore "%PROJECT%" /p:Platform=x64 /p:UseLibreHardwareMonitorProjectRefe
 if errorlevel 1 goto :error
 
 echo Publishing TempBridge...
-dotnet publish "%PROJECT%" -c Release --self-contained false -o "%OUTDIR%" /p:Platform=x64 /p:UseLibreHardwareMonitorProjectReference=true /p:LibreHardwareMonitorRepoRoot="%LHM_REPO%"
+dotnet publish "%PROJECT%" -c Release --self-contained false -o "%OUTDIR%" /p:Platform=x64 /p:DebugType=none /p:DebugSymbols=false /p:UseLibreHardwareMonitorProjectReference=true /p:LibreHardwareMonitorRepoRoot="%LHM_REPO%"
 if errorlevel 1 goto :error
+
+echo Removing non-runtime bridge artifacts...
+del /q "%OUTDIR%\*.pdb" 2>nul
+del /q "%OUTDIR%\*.xml" 2>nul
+for /d %%D in ("%OUTDIR%\??-??") do if exist "%%~D" rmdir /s /q "%%~D"
 
 echo Downloading PawnIO installer...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PAWNIO_URL%' -OutFile '%PAWNIO_OUT%' -UseBasicParsing; exit 0 } catch { Write-Error $_; exit 1 }"

@@ -12,6 +12,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
+    <ApplicationIcon>$(MSBuildProjectDirectory)\..\..\build\windows\icon.ico</ApplicationIcon>
     <AssemblyName>THRM TempBridge</AssemblyName>
     <RootNamespace>THRM.TempBridge</RootNamespace>
     <StartupObject>THRM.TempBridge.Program</StartupObject>

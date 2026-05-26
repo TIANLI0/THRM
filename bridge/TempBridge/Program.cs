@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Linq;
 using System.Management;
+using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Threading;
 using Newtonsoft.Json;
@@ -143,12 +144,18 @@ namespace THRM.TempBridge
         private const int InitRetryDelayMs = 2000;
         private const int ConsecutiveFailuresBeforeReinit = 5;
         private const int MaxReasonableTemperature = 150;
+        private const int MemoryTrimIntervalSeconds = 60;
         private static Computer computer;
         private static bool running = true;
         private static readonly object lockObject = new object();
         private static Mutex singleInstanceMutex;
         private static int consecutiveFailures = 0;
         private static string lastHardwareMonitorError = string.Empty;
+        private static DateTime lastMemoryTrimUtc = DateTime.MinValue;
+        private static readonly IntPtr TrimWorkingSetSentinel = new IntPtr(-1);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool SetProcessWorkingSetSize(IntPtr process, IntPtr minimumWorkingSetSize, IntPtr maximumWorkingSetSize);
 
         static void Main(string[] args)
         {
@@ -389,6 +396,7 @@ namespace THRM.TempBridge
                     {
                         consecutiveFailures = 0;
                         lastHardwareMonitorError = string.Empty;
+                        TrimWorkingSetIfIdle(true);
                         return;
                     }
 
@@ -417,6 +425,7 @@ namespace THRM.TempBridge
             // If we get here, all retries exhausted but computer may still be open
             // (just without working sensors). Keep it - it might recover on next update.
             lastHardwareMonitorError = BuildHardwareMonitorError(lastException, pawnIoMessage);
+            TrimWorkingSetIfIdle(true);
         }
 
         static string BuildHardwareMonitorError(Exception exception, string pawnIoMessage)
@@ -525,6 +534,29 @@ namespace THRM.TempBridge
             return EnsurePawnIoReady();
         }
 
+        static void TrimWorkingSetIfIdle(bool force = false)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (!force && (now - lastMemoryTrimUtc).TotalSeconds < MemoryTrimIntervalSeconds)
+            {
+                return;
+            }
+
+            lastMemoryTrimUtc = now;
+
+            try
+            {
+                GC.Collect(0, GCCollectionMode.Optimized, false);
+                using (var currentProcess = Process.GetCurrentProcess())
+                {
+                    SetProcessWorkingSetSize(currentProcess.Handle, TrimWorkingSetSentinel, TrimWorkingSetSentinel);
+                }
+            }
+            catch
+            {
+            }
+        }
+
         static void StartPipeServer()
         {
             while (running)
@@ -553,6 +585,7 @@ namespace THRM.TempBridge
                                     string responseJson = JsonConvert.SerializeObject(response);
                                     writer.WriteLine(responseJson);
                                     writer.Flush();
+                                    TrimWorkingSetIfIdle();
 
                                     if (command.Type == "Exit")
                                     {
