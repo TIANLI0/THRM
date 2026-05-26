@@ -165,11 +165,30 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 // sendRequest 发送请求到核心服务
 func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, error) {
 	if !a.ipcClient.IsConnected() {
-		// 尝试重新连接
+		if !ensureCoreServiceRunning() {
+			return nil, fmt.Errorf("核心服务未运行且启动失败")
+		}
 		if err := a.ipcClient.Connect(); err != nil {
 			return nil, fmt.Errorf("未连接到核心服务: %v", err)
 		}
+		a.ipcClient.SetEventHandler(a.handleCoreEvent)
 	}
+
+	resp, err := a.ipcClient.SendRequest(reqType, data)
+	if err == nil {
+		return resp, nil
+	}
+
+	guiLogger.Warnf("IPC 请求失败，尝试重新连接核心服务后重试: %v", err)
+	a.ipcClient.Close()
+	if !ensureCoreServiceRunning() {
+		return nil, fmt.Errorf("核心服务连接断开且重新启动失败: %v", err)
+	}
+	if connectErr := a.ipcClient.Connect(); connectErr != nil {
+		return nil, fmt.Errorf("重新连接核心服务失败: %v；原始错误: %v", connectErr, err)
+	}
+	a.ipcClient.SetEventHandler(a.handleCoreEvent)
+
 	return a.ipcClient.SendRequest(reqType, data)
 }
 
@@ -566,6 +585,22 @@ func (a *App) RestartPawnIO() BridgeTemperatureData {
 	var data BridgeTemperatureData
 	json.Unmarshal(resp.Data, &data)
 	return data
+}
+
+// ReinstallPawnIO 重新运行安装目录中的 PawnIO 安装包
+func (a *App) ReinstallPawnIO() (map[string]any, error) {
+	resp, err := a.sendRequest(ipc.ReqReinstallPawnIO, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // SetWindowsAutoStart 设置Windows开机自启动

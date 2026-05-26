@@ -20,6 +20,7 @@ import (
 type Manager struct {
 	mu         sync.RWMutex
 	config     types.AppConfig
+	revision   uint64
 	installDir string
 	logger     types.Logger
 }
@@ -50,6 +51,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	if m.tryLoadFromPathLocked(defaultConfigPath) {
 		m.config.ConfigPath = defaultConfigPath
 		m.logInfo("从默认目录加载配置成功: %s", defaultConfigPath)
+		m.bumpRevisionLocked()
 		return m.config
 	}
 
@@ -61,6 +63,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 		if err := m.saveLocked(); err != nil {
 			m.logError("迁移旧目录配置失败: %v", err)
 		}
+		m.bumpRevisionLocked()
 		return m.config
 	}
 
@@ -70,6 +73,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	if m.tryLoadFromPathLocked(installConfigPath) {
 		m.config.ConfigPath = installConfigPath
 		m.logInfo("从安装目录加载配置成功: %s", installConfigPath)
+		m.bumpRevisionLocked()
 		return m.config
 	}
 
@@ -80,6 +84,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	if err := m.saveLocked(); err != nil {
 		m.logError("保存默认配置失败: %v", err)
 	}
+	m.bumpRevisionLocked()
 
 	return m.config
 }
@@ -296,10 +301,17 @@ func (m *Manager) Get() types.AppConfig {
 	return m.config
 }
 
+func (m *Manager) GetWithRevision() (types.AppConfig, uint64) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.config, m.revision
+}
+
 // Set 设置配置（线程安全）
 func (m *Manager) Set(config types.AppConfig) {
 	m.mu.Lock()
 	m.config = config
+	m.bumpRevisionLocked()
 	m.mu.Unlock()
 }
 
@@ -308,7 +320,12 @@ func (m *Manager) Update(config types.AppConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.config = config
+	m.bumpRevisionLocked()
 	return m.saveLocked()
+}
+
+func (m *Manager) bumpRevisionLocked() {
+	m.revision++
 }
 
 // 日志辅助方法

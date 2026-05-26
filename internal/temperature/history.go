@@ -300,7 +300,7 @@ func (r *HistoryRecorder) applyLoadedPointsLocked(points []types.TemperatureHist
 }
 
 func (r *HistoryRecorder) snapshotPointsLocked() []types.TemperatureHistoryPoint {
-	points := make([]types.TemperatureHistoryPoint, 0, r.capacity)
+	points := make([]types.TemperatureHistoryPoint, 0, r.pointCountLocked())
 	if r.filled {
 		points = append(points, r.points[r.next:]...)
 		points = append(points, r.points[:r.next]...)
@@ -310,28 +310,47 @@ func (r *HistoryRecorder) snapshotPointsLocked() []types.TemperatureHistoryPoint
 	return points
 }
 
+func (r *HistoryRecorder) pointCountLocked() int {
+	if r.filled {
+		return r.capacity
+	}
+	return r.next
+}
+
 func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 	if r.filePath == "" {
 		return nil, nil
 	}
-	snapshot := r.snapshotPointsLocked()
+	pointCount := r.pointCountLocked()
 	var flags uint8
 	if r.enabled {
 		flags |= historyEnabledFlag
 	}
 	// header 24B + 每点 20B
-	buf := make([]byte, 0, len(historyBinaryMagic)+24+len(snapshot)*20)
+	buf := make([]byte, 0, len(historyBinaryMagic)+24+pointCount*20)
 	buf = append(buf, historyBinaryMagic...)
 	buf = binary.LittleEndian.AppendUint16(buf, historyBinaryVersion)
 	buf = append(buf, flags, 0) // flags + reserved
 	buf = binary.LittleEndian.AppendUint32(buf, uint32(r.sampleInterval/time.Second))
-	buf = binary.LittleEndian.AppendUint32(buf, uint32(len(snapshot)))
+	buf = binary.LittleEndian.AppendUint32(buf, uint32(pointCount))
 	buf = binary.LittleEndian.AppendUint64(buf, uint64(time.Now().UnixMilli()))
-	for _, p := range snapshot {
+	appendPoint := func(p types.TemperatureHistoryPoint) {
 		buf = binary.LittleEndian.AppendUint64(buf, uint64(normalizeTimestampMillis(p.Timestamp)))
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.CPUTemp)))
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.GPUTemp)))
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.FanRPM)))
+	}
+	if r.filled {
+		for _, p := range r.points[r.next:] {
+			appendPoint(p)
+		}
+		for _, p := range r.points[:r.next] {
+			appendPoint(p)
+		}
+	} else {
+		for _, p := range r.points[:r.next] {
+			appendPoint(p)
+		}
 	}
 	return buf, nil
 }

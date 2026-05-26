@@ -22,6 +22,7 @@ const (
 	LegacyBridgePipeName   = "BS2PRO_TempBridge"
 	BridgeMutexName        = `Global\THRM_TempBridge_Singleton`
 	LegacyBridgeMutexName  = `Global\BS2PRO_TempBridge_Singleton`
+	PawnIOInstallerName    = "PawnIO_setup.exe"
 	ConfigDirName          = ".thrm"
 	LegacyConfigDirName    = ".bs2pro-controller"
 	NotificationCacheDir   = "THRM"
@@ -53,6 +54,17 @@ func BridgeExecutableCandidates(baseDir string) []string {
 		filepath.Join(baseDir, "bridge", LegacyBridgeExecutable),
 		filepath.Join(baseDir, "..", "bridge", LegacyBridgeExecutable),
 		filepath.Join(baseDir, LegacyBridgeExecutable),
+	}
+}
+
+func PawnIOInstallerPath(baseDir string) string {
+	return filepath.Join(baseDir, "drivers", "PawnIO", PawnIOInstallerName)
+}
+
+func PawnIOInstallerCandidates(baseDir string) []string {
+	return []string{
+		PawnIOInstallerPath(baseDir),
+		filepath.Join(baseDir, PawnIOInstallerName),
 	}
 }
 

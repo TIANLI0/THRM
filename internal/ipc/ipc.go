@@ -71,6 +71,7 @@ const (
 	ReqTestBridgeProgram            RequestType = "TestBridgeProgram"
 	ReqGetBridgeProgramStatus       RequestType = "GetBridgeProgramStatus"
 	ReqRestartPawnIO                RequestType = "RestartPawnIO"
+	ReqReinstallPawnIO              RequestType = "ReinstallPawnIO"
 
 	// 自启动相关
 	ReqSetWindowsAutoStart    RequestType = "SetWindowsAutoStart"

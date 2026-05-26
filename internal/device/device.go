@@ -323,12 +323,18 @@ func (m *Manager) monitorDeviceData() {
 		}
 	}
 
-	m.handleDeviceDisconnected()
+	m.handleDeviceDisconnected(device)
 }
 
 // handleDeviceDisconnected 处理设备断开
-func (m *Manager) handleDeviceDisconnected() {
+func (m *Manager) handleDeviceDisconnected(device *hid.Device) {
 	m.mutex.Lock()
+	if device != nil && m.device != device {
+		m.mutex.Unlock()
+		m.logDebug("忽略过期 HID 监控协程的断开事件")
+		return
+	}
+
 	wasConnected := m.isConnected
 
 	if m.device != nil {
@@ -344,6 +350,8 @@ func (m *Manager) handleDeviceDisconnected() {
 	}
 
 	m.isConnected = false
+	m.deviceType = ""
+	m.productID = 0
 	m.mutex.Unlock()
 
 	if wasConnected {
@@ -403,28 +411,27 @@ func (m *Manager) parseGearSettings(gearByte uint8) (maxGear, setGear string) {
 	maxGearCode := (gearByte >> 4) & 0x0F
 	setGearCode := gearByte & 0x0F
 
-	maxGearMap := map[uint8]string{
-		0x2: "标准",
-		0x4: "强劲",
-		0x6: "超频",
-	}
-
-	setGearMap := map[uint8]string{
-		0x8: "静音",
-		0xA: "标准",
-		0xC: "强劲",
-		0xE: "超频",
-	}
-
-	if val, ok := maxGearMap[maxGearCode]; ok {
-		maxGear = val
-	} else {
+	switch maxGearCode {
+	case 0x2:
+		maxGear = "标准"
+	case 0x4:
+		maxGear = "强劲"
+	case 0x6:
+		maxGear = "超频"
+	default:
 		maxGear = fmt.Sprintf("未知(0x%X)", maxGearCode)
 	}
 
-	if val, ok := setGearMap[setGearCode]; ok {
-		setGear = val
-	} else {
+	switch setGearCode {
+	case 0x8:
+		setGear = "静音"
+	case 0xA:
+		setGear = "标准"
+	case 0xC:
+		setGear = "强劲"
+	case 0xE:
+		setGear = "超频"
+	default:
 		setGear = fmt.Sprintf("未知(0x%X)", setGearCode)
 	}
 

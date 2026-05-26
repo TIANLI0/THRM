@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +33,7 @@ func init() {
 }
 
 var wailsContext *context.Context
+var ensureCoreServiceRunningMu sync.Mutex
 
 // onSecondInstanceLaunch 当第二个实例启动时的回调函数
 func onSecondInstanceLaunch(secondInstanceData options.SecondInstanceData) {
@@ -53,6 +55,9 @@ func onSecondInstanceLaunch(secondInstanceData options.SecondInstanceData) {
 
 // ensureCoreServiceRunning 确保核心服务正在运行
 func ensureCoreServiceRunning() bool {
+	ensureCoreServiceRunningMu.Lock()
+	defer ensureCoreServiceRunningMu.Unlock()
+
 	// 检测是否在 Wails 绑定生成模式下运行
 	exePath, err := os.Executable()
 	if err == nil {

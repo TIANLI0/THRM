@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,6 +31,7 @@ import (
 	"github.com/TIANLI0/BS2PRO-Controller/internal/tray"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/types"
 	"github.com/TIANLI0/BS2PRO-Controller/internal/version"
+	"golang.org/x/sys/windows/registry"
 )
 
 //go:embed icon.ico
@@ -65,6 +67,7 @@ type CoreApp struct {
 	legionFnQSupportChecked atomic.Bool
 	legionFnQRegistered     atomic.Bool
 	reconnectInProgress     atomic.Bool
+	autoReconnectSuppressed atomic.Bool
 	resumeRecoveryRunning   atomic.Bool
 	lastResumeRecoveryUnix  int64
 
@@ -86,6 +89,9 @@ const (
 	systemResumeDetectionCeiling = 45 * time.Second
 	systemResumeRecoveryCooldown = 15 * time.Second
 	systemResumeReconnectDelay   = 3 * time.Second
+	pawnIOInstallerTimeout       = 90 * time.Second
+	pawnIOAlreadyExistsExitCode  = 183
+	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO`
 )
 
 func systemResumeDetectionThreshold(expectedInterval time.Duration) time.Duration {
@@ -861,6 +867,13 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(result)
 
+	case ipc.ReqReinstallPawnIO:
+		result, err := a.ReinstallPawnIO()
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(result)
+
 	// 自启动相关
 	case ipc.ReqSetWindowsAutoStart:
 		var params ipc.SetBoolParams
@@ -1027,6 +1040,11 @@ func (a *CoreApp) onDeviceDisconnect() {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}
 
+	if a.autoReconnectSuppressed.Load() {
+		a.logInfo("设备已手动断开，跳过自动重连")
+		return
+	}
+
 	a.requestReconnect("device-disconnect", nil)
 }
 
@@ -1049,6 +1067,11 @@ func cloneReconnectDelays(delays []time.Duration) []time.Duration {
 }
 
 func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
+	if a.autoReconnectSuppressed.Load() {
+		a.logInfo("自动重连已被手动断开抑制，忽略请求: %s", reason)
+		return
+	}
+
 	if !a.reconnectInProgress.CompareAndSwap(false, true) {
 		a.logDebug("重连流程已在进行中，忽略新的请求: %s", reason)
 		return
@@ -1066,6 +1089,11 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 	a.logInfo("启动设备重连流程: %s", reason)
 
 	for i, delay := range retryDelays {
+		if a.autoReconnectSuppressed.Load() {
+			a.logInfo("自动重连已被手动断开抑制，停止重连流程: %s", reason)
+			return
+		}
+
 		// 检查是否已经连接（可能其他途径已重连）
 		a.mutex.RLock()
 		connected := a.isConnected
@@ -1079,6 +1107,11 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 		if delay > 0 {
 			a.logInfo("等待 %v 后尝试第 %d 次重连...", delay, i+1)
 			time.Sleep(delay)
+		}
+
+		if a.autoReconnectSuppressed.Load() {
+			a.logInfo("自动重连已被手动断开抑制，停止重连流程: %s", reason)
+			return
 		}
 
 		// 再次检查连接状态
@@ -1168,6 +1201,8 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration) {
 
 // ConnectDevice 连接设备
 func (a *CoreApp) ConnectDevice() bool {
+	a.autoReconnectSuppressed.Store(false)
+
 	success, deviceInfo := a.deviceManager.Connect()
 	if success {
 		a.mutex.Lock()
@@ -1195,6 +1230,8 @@ func (a *CoreApp) ConnectDevice() bool {
 
 // DisconnectDevice 断开设备连接
 func (a *CoreApp) DisconnectDevice() {
+	a.autoReconnectSuppressed.Store(true)
+
 	a.mutex.Lock()
 	a.isConnected = false
 	a.mutex.Unlock()
@@ -1204,6 +1241,142 @@ func (a *CoreApp) DisconnectDevice() {
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}
+}
+
+// ReinstallPawnIO runs the bundled PawnIO installer stored under the install directory.
+func (a *CoreApp) ReinstallPawnIO() (map[string]any, error) {
+	installDir := config.GetInstallDir()
+	installerPath := appmeta.FirstExistingPath(appmeta.PawnIOInstallerCandidates(installDir))
+	if installerPath == "" {
+		return nil, fmt.Errorf("未找到 PawnIO 安装包，已尝试路径: %v", appmeta.PawnIOInstallerCandidates(installDir))
+	}
+
+	result := map[string]any{
+		"success": false,
+		"path":    installerPath,
+	}
+	installedVersionBefore := readInstalledPawnIOVersion()
+	if installedVersionBefore != "" {
+		result["installedVersionBefore"] = installedVersionBefore
+	}
+
+	a.logInfo("开始重新安装 PawnIO: %s", installerPath)
+	a.bridgeManager.Stop()
+
+	if installedVersionBefore != "" {
+		a.logInfo("检测到已安装 PawnIO (版本: %s)，先执行卸载再安装", installedVersionBefore)
+		uninstallStep, uninstallErr := a.runPawnIOInstaller(installerPath, "uninstall", "-uninstall", "-silent")
+		result["uninstall"] = uninstallStep
+		if uninstallErr != nil {
+			if isPawnIOInstallerTimeout(uninstallErr) {
+				result["error"] = "PawnIO 卸载超时"
+				return result, fmt.Errorf("PawnIO 卸载超时，请稍后检查驱动状态或手动运行 %s", installerPath)
+			}
+			result["uninstallWarning"] = uninstallErr.Error()
+			a.logError("PawnIO 卸载返回错误，将继续尝试安装: %v", uninstallErr)
+		}
+	}
+
+	installStep, installErr := a.runPawnIOInstaller(installerPath, "install", "-install", "-silent")
+	result["install"] = installStep
+	installedVersionAfter := readInstalledPawnIOVersion()
+	if installedVersionAfter != "" {
+		result["installedVersionAfter"] = installedVersionAfter
+	}
+
+	if installErr != nil {
+		if isPawnIOInstallerTimeout(installErr) {
+			result["error"] = "PawnIO 安装超时"
+			return result, fmt.Errorf("PawnIO 安装超时，请稍后检查驱动状态或手动运行 %s", installerPath)
+		}
+
+		if pawnIOInstallerExitCode(installErr) == pawnIOAlreadyExistsExitCode && installedVersionAfter != "" {
+			result["alreadyInstalled"] = true
+			result["warning"] = "PawnIO 安装器返回 183（已存在），已确认系统中仍有 PawnIO 安装记录。"
+			a.logInfo("PawnIO 安装器返回 183，检测到已安装版本 %s，按非致命结果处理", installedVersionAfter)
+		} else {
+			result["error"] = installErr.Error()
+			return result, formatPawnIOInstallerError("PawnIO 安装失败", installErr, installStep)
+		}
+	} else {
+		a.logInfo("PawnIO 安装程序执行完成")
+	}
+
+	result["success"] = true
+	bridgeResult, bridgeErr := a.bridgeManager.RestartPawnIO()
+	if bridgeErr != nil {
+		result["bridgeWarning"] = bridgeErr.Error()
+		a.logError("PawnIO 安装后重新初始化温度监控失败: %v", bridgeErr)
+	} else {
+		result["bridge"] = bridgeResult
+	}
+
+	return result, nil
+}
+
+func (a *CoreApp) runPawnIOInstaller(installerPath, action string, args ...string) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, pawnIOInstallerTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, installerPath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	output, err := cmd.CombinedOutput()
+	outputText := strings.TrimSpace(string(output))
+	step := map[string]any{
+		"action":   action,
+		"args":     args,
+		"success":  err == nil,
+		"exitCode": pawnIOInstallerExitCode(err),
+	}
+	if outputText != "" {
+		step["output"] = outputText
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		step["timeout"] = true
+		step["success"] = false
+		return step, ctx.Err()
+	}
+	if err != nil {
+		step["error"] = err.Error()
+	}
+	return step, err
+}
+
+func readInstalledPawnIOVersion() string {
+	for _, access := range []uint32{registry.QUERY_VALUE | registry.WOW64_64KEY, registry.QUERY_VALUE | registry.WOW64_32KEY} {
+		key, err := registry.OpenKey(registry.LOCAL_MACHINE, pawnIORegistryPath, access)
+		if err != nil {
+			continue
+		}
+		version, _, err := key.GetStringValue("DisplayVersion")
+		_ = key.Close()
+		if err == nil && strings.TrimSpace(version) != "" {
+			return strings.TrimSpace(version)
+		}
+	}
+	return ""
+}
+
+func pawnIOInstallerExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
+}
+
+func isPawnIOInstallerTimeout(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+func formatPawnIOInstallerError(prefix string, err error, step map[string]any) error {
+	if output, ok := step["output"].(string); ok && output != "" {
+		return fmt.Errorf("%s: %v；输出: %s", prefix, err, output)
+	}
+	return fmt.Errorf("%s: %v", prefix, err)
 }
 
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
@@ -1888,15 +2061,17 @@ func (a *CoreApp) SetWindowsAutoStart(enable bool) error {
 // GetDebugInfo 获取调试信息
 func (a *CoreApp) GetDebugInfo() map[string]any {
 	info := map[string]any{
-		"debugMode":          a.debugMode,
-		"trayReady":          a.trayManager.IsReady(),
-		"trayInitialized":    a.trayManager.IsInitialized(),
-		"isConnected":        a.isConnected,
-		"legionFnQSupported": a.legionFnQSupported.Load(),
-		"guiLastResponse":    time.Unix(atomic.LoadInt64(&a.guiLastResponse), 0).Format("2006-01-02 15:04:05"),
-		"monitoringTemp":     a.monitoringTemp.Load(),
-		"autoStartLaunch":    a.isAutoStartLaunch,
-		"hasGUIClients":      a.ipcServer != nil && a.ipcServer.HasClients(),
+		"debugMode":               a.debugMode,
+		"trayReady":               a.trayManager.IsReady(),
+		"trayInitialized":         a.trayManager.IsInitialized(),
+		"isConnected":             a.isConnected,
+		"autoReconnectSuppressed": a.autoReconnectSuppressed.Load(),
+		"legionFnQSupported":      a.legionFnQSupported.Load(),
+		"guiLastResponse":         time.Unix(atomic.LoadInt64(&a.guiLastResponse), 0).Format("2006-01-02 15:04:05"),
+		"monitoringTemp":          a.monitoringTemp.Load(),
+		"autoStartLaunch":         a.isAutoStartLaunch,
+		"hasGUIClients":           a.ipcServer != nil && a.ipcServer.HasClients(),
+		"pawnIOInstallerPath":     appmeta.FirstExistingPath(appmeta.PawnIOInstallerCandidates(config.GetInstallDir())),
 	}
 	if a.pluginManager != nil {
 		info["plugins"] = a.pluginManager.Statuses()
@@ -1963,8 +2138,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	// 如果在温度读取成功之前切换到软件控制模式，设备将不会收到转速指令，导致风扇停转。
 	// EnterAutoMode 和转速设置会在首次成功读取温度后，由 SetFanSpeed 内部统一完成。
 
-	cfg := a.configManager.Get()
-	updateInterval := time.Duration(cfg.TempUpdateRate) * time.Second
+	cfg, cfgRevision := a.configManager.GetWithRevision()
+	updateInterval := temperatureMonitorInterval(cfg.TempUpdateRate)
 
 	// 温度采样使用 EMA 平滑。
 	sampleCount := max(cfg.TempSampleCount, 1)
@@ -1988,25 +2163,30 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	learningDirty := false
 	lastLearningSave := time.Now()
 	lastMonitorTick := time.Now()
+	var smartCfg types.SmartControlConfig
+	smartCfgRevision := cfgRevision - 1
 
 	// 每个曲线点对应一个稳态采样桶。
 	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
+	timer := time.NewTimer(updateInterval)
+	defer timer.Stop()
 
 	for a.monitoringTemp.Load() {
 		select {
 		case <-a.stopMonitoring:
 			a.monitoringTemp.Store(false)
 			return
-		case <-time.After(updateInterval):
+		case <-timer.C:
 			now := time.Now()
 			gap := now.Sub(lastMonitorTick)
 			lastMonitorTick = now
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
+				timer.Reset(updateInterval)
 				continue
 			}
 
-			cfg = a.configManager.Get()
-			updateInterval = time.Duration(cfg.TempUpdateRate) * time.Second
+			cfg, cfgRevision = a.configManager.GetWithRevision()
+			updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
 			selection := types.TemperatureSelection{
 				TempSource: cfg.TempSource,
 				GpuDevice:  cfg.GpuDevice,
@@ -2029,12 +2209,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 			}
 
-			smartCfg, smartChanged := smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
-			if smartChanged {
-				cfg.SmartControl = smartCfg
-				a.configManager.Set(cfg)
-				if err := a.configManager.Save(); err != nil {
-					a.logError("保存智能控温配置失败: %v", err)
+			if cfgRevision != smartCfgRevision {
+				smartChanged := false
+				smartCfg, smartChanged = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+				smartCfgRevision = cfgRevision
+				if smartChanged {
+					cfg.SmartControl = smartCfg
+					a.configManager.Set(cfg)
+					if err := a.configManager.Save(); err != nil {
+						a.logError("保存智能控温配置失败: %v", err)
+					}
 				}
 			}
 
@@ -2157,6 +2341,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			if !cfg.AutoControl {
 				lastTargetRPM = -1
 			}
+
+			timer.Reset(updateInterval)
 		}
 	}
 
@@ -2165,6 +2351,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			a.logError("退出监控时保存学习曲线失败: %v", err)
 		}
 	}
+}
+
+func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
+	if updateRateSeconds < 1 {
+		updateRateSeconds = 1
+	}
+	return time.Duration(updateRateSeconds) * time.Second
 }
 
 // startHealthMonitoring 启动健康监控
