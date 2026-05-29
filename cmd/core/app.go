@@ -2401,11 +2401,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				}
 
 				if smartCfg.Learning && !spikeSuppressed {
-					bucketIdx, steadyMean, ready := steadyObserver.Observe(controlTemp, cfg.FanCurve)
-					if ready && bucketIdx >= 0 {
+					steady := steadyObserver.Observe(controlTemp, targetRPM, cfg.FanCurve)
+					if steady.Ready && steady.BucketIdx >= 0 {
 						newOffsets, changed := smartcontrol.LearnSteadyOffset(
-							bucketIdx,
-							steadyMean,
+							steady.BucketIdx,
+							steady.MeanTemp,
+							steady.LocalEff,
+							steady.HaveEff,
 							cfg.FanCurve,
 							smartCfg.LearnedOffsets,
 							smartCfg,

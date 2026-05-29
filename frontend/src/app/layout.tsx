@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BRAND } from "./lib/brand";
 import { AppI18nProvider } from "./lib/i18n";
+import { getThemeBootstrapScript } from "./lib/theme-bootstrap";
 
 const uiSans = Manrope({
   variable: "--font-ui-sans",
@@ -35,8 +36,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const themeBootstrapScript = getThemeBootstrapScript();
+
   return (
     <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script
+          id="thrm-theme-bootstrap"
+          dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
+        />
+      </head>
       <body
         className={`${uiSans.variable} ${uiCjk.variable} ${geistMono.variable}`}
       >

@@ -921,6 +921,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
                 loading={profileOpLoading}
               />
               <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>
+                  {t('fanCurve.actions.reset')}
+                </Button>
+                <Button variant="primary" size="sm" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>
+                  {t('common.actions.save')}
+                </Button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -1105,16 +1113,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, t
           </div>
         </section>
 
-        {/* ── Tips + Actions ── */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.dragPoint')}</span>
-            {showCoupledCurve && <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.curveLegend')}</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={resetCurve} icon={<RotateCw className="h-3.5 w-3.5" />}>{t('fanCurve.actions.reset')}</Button>
-            <Button variant="primary" size="sm" onClick={saveCurve} disabled={!hasUnsavedChanges} loading={isSaving} icon={<Check className="h-3.5 w-3.5" />}>{t('common.actions.save')}</Button>
-          </div>
+        {/* ── Tips ── */}
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.dragPoint')}</span>
+          {showCoupledCurve && <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-lg">{t('fanCurve.hints.curveLegend')}</span>}
         </div>
 
         <section ref={historyDetailsRef} className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
