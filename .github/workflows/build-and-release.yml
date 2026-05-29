@@ -1,0 +1,121 @@
+name: Build and Release
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+    tags:
+      - 'v*'
+      - 'V*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install Wails CLI and go-winres
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          go install github.com/tc-hib/go-winres@latest
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:USERPROFILE 'go\bin')
+
+      - name: Ensure NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+          }
+          $nsisPath = 'C:\Program Files (x86)\NSIS'
+          if (Test-Path $nsisPath) {
+            Add-Content -Path $env:GITHUB_PATH -Value $nsisPath
+          }
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/node_modules
+            C:\Users\runneradmin\.bun\install\cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('frontend/package.json', 'frontend/bun.lock', 'frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Build TempBridge
+        shell: cmd
+        run: build_bridge.bat
+
+      - name: Build THRM
+        shell: cmd
+        run: build.bat
+
+      - name: Collect release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/output | Out-Null
+          Copy-Item build/bin/THRM.exe build/output/THRM.exe
+          Copy-Item 'build/bin/THRM Core.exe' 'build/output/THRM Core.exe'
+          Copy-Item build/bin/PawnIO_setup.exe build/output/PawnIO_setup.exe
+          Copy-Item -Recurse build/bin/bridge build/output/bridge
+          if (Test-Path 'build/bin/THRM-amd64-installer.exe') {
+            Copy-Item 'build/bin/THRM-amd64-installer.exe' 'build/output/THRM-amd64-installer.exe'
+          }
+          Compress-Archive -Path build/output/* -DestinationPath build/bin/THRM-windows-portable.zip -Force
+
+      - name: Upload PR artifacts
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: THRM-windows-${{ github.event.pull_request.number }}
+          path: |
+            build/bin/THRM-amd64-installer.exe
+            build/bin/THRM-windows-portable.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload branch artifacts
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: THRM-windows-${{ github.sha }}
+          path: |
+            build/bin/THRM-amd64-installer.exe
+            build/bin/THRM-windows-portable.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            build/bin/THRM-amd64-installer.exe
+            build/bin/THRM-windows-portable.zip

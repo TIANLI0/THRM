@@ -107,6 +107,13 @@ build.bat
 
 如果本机安装了 NSIS，构建脚本还会一并生成 Windows 安装程序。
 
+### GitHub Actions 自动构建
+
+- Pull Request 会自动执行 Windows 构建，并在对应的 Actions 运行中上传构建产物。
+- 推送到 `main` 或 `dev` 的普通提交也会自动构建，并保留一份短期 Actions 产物，便于快速回归验证。
+- 推送 `v*` 或 `V*` 标签时，会自动构建并创建 GitHub Release。
+- Release 默认附带安装包 `THRM-amd64-installer.exe` 和便携包 `THRM-windows-portable.zip`。
+
 ### 项目结构
 
 ```text
