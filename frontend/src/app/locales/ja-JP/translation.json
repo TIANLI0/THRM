@@ -218,7 +218,7 @@
       "checkingShort": "確認中…",
       "checkingButton": "確認中",
       "checkUpdate": "アップデートを確認",
-      "openReleasePage": "リリースノートを開く",
+      "openReleasePage": "リリースページ",
       "updatable": "アップデートがあります",
       "checkFailed": "アップデートの確認に失敗しました。しばらくしてから再試行してください。",
       "newVersionFound": "新しいバージョン {{version}} が見つかりました",
@@ -228,8 +228,8 @@
       "title": "開発者と連絡先",
       "tagline": "無名の開発者",
       "email": "メール",
-      "feedbackGroup": "フィードバックグループ",
-      "feedbackGroupEntry": "QQ グループ入口",
+      "feedbackGroup": "フィードバック",
+      "feedbackGroupEntry": "QQ グループ",
       "repository": "Open Source リポジトリ",
       "repositoryPlatform": "GitHub"
     },
@@ -293,7 +293,7 @@
     "learning": {
       "title": "適応学習",
       "paused": "一時停止中",
-      "description": "長時間の動作後、各温度ポイントの目標回転数を自動で微調整し、実際の温度がカーブの設定値に近づくようにします。学習したオフセットはいつでもリセットできます。",
+      "description": "実際の温度が設定値に近づくよう各ポイントの目標回転数を微調整します。オフセットはいつでもリセットできます。",
       "toggleAria": "適応学習を切り替える",
       "biasTitle": "学習傾向",
       "offsetTitle": "学習オフセット",
@@ -355,7 +355,7 @@
       "currentCurveName": "現在のカーブ",
       "newCurveName": "新しいカーブ",
       "namePlaceholder": "現在のプロファイル名（最大 6 文字）",
-      "saveName": "プロファイル名を保存",
+      "saveName": "名前を変更",
       "saveAsNew": "新規プロファイルとして保存",
       "deleteCurrent": "現在のプロファイルを削除"
     },
@@ -365,7 +365,7 @@
       "exportTitle": "エクスポート",
       "generate": "作成",
       "exportPlaceholder": "「作成」ボタンを押すと文字列が表示されます",
-      "importTitle": "インポート",
+      "importTitle": "適用",
       "importPlaceholder": "B2C1. で始まる文字列を貼り付けてください"
     },
     "warning": {
@@ -424,13 +424,13 @@
       "sectionTitle": "ファン制御",
       "autoControlTitle": "スマート温度制御",
       "autoControlDescription": "温度カーブに基き、ファン回転数を自動で調整します",
-      "sampleSmoothingTitle": "温度スムージング",
+      "sampleSmoothingTitle": "動作スムージング",
       "sampleSmoothingDescription": "EMA 指数加重: 値が大きいほど滑らか、値が小さいほどリニアに動作します。迷ったらデフォルトのままにしてください。",
       "temperatureBaselineTitle": "温度基準",
       "temperatureBaselineDescription": "制御に使う温度ソース、GPU デバイス、センサーを選択します。複数 GPU 搭載のノート PC はここで dGPU に固定できます。",
       "cpuBaseline": "CPU 基準",
       "processorDevice": "CPU デバイス",
-      "processorDeviceHintDetected": "現在認識された CPU は TempBridge の検出結果に応じて自動更新されます。",
+      "processorDeviceHintDetected": "認識された CPU は TempBridge の検出結果に応じて自動更新されます。",
       "processorDeviceHintWaiting": "CPU モデルはまだ認識されていません。TempBridge が利用可能になると自動表示されます。",
       "waitingRecognition": "認識待ち...",
       "temperatureSensor": "温度センサー",
@@ -492,8 +492,8 @@
     "system": {
       "sectionTitle": "システム設定",
       "themeTitle": "テーマ",
-      "themeDescription": "既定ではシステムに追従し、ライト/ダーク固定のほか、インストール先の themes フォルダーにあるカスタムテーマも選べます。",
-      "themeOpenFolder": "テーマフォルダーを開く",
+      "themeDescription": "システム設定に従う、ライト/ダーク固定のほか、themes フォルダーからカスタムテーマも選択できます。",
+      "themeOpenFolder": "themes フォルダー",
       "languageTitle": "言語",
       "languageDescription": "アプリの表示言語を切り替え、選択した言語は自動で保存されます。",
       "hotkeys": {
