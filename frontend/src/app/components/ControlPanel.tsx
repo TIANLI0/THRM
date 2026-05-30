@@ -32,7 +32,7 @@ import { DebugInfo, type ThemeMeta } from '../types/app';
 import { type AppLocale, useLocale } from '../lib/i18n';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
-import { ToggleSwitch, Button, Select, ScrollArea, Slider } from './ui/index';
+import { ToggleSwitch, Button, Select, Slider } from './ui/index';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -1671,9 +1671,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                 </div>
 
                 {debugInfo && (
-                  <ScrollArea className="max-h-72 rounded-xl border border-border bg-background">
-                    <pre className="whitespace-pre-wrap break-all p-3 text-xs text-foreground/90">{JSON.stringify(debugInfo, null, 2)}</pre>
-                  </ScrollArea>
+                  <div className="min-h-56 max-h-[min(55vh,30rem)] w-full overflow-auto rounded-xl border border-border bg-background overscroll-contain">
+                    <pre className="min-w-max p-3 font-mono text-xs leading-5 text-foreground/90 whitespace-pre">{JSON.stringify(debugInfo, null, 2)}</pre>
+                  </div>
                 )}
               </div>
             </CollapsibleContent>
