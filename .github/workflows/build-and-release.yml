@@ -16,7 +16,7 @@ on:
       - 'ota/**'
       - '**/*.md'
   schedule:
-    - cron: '10 16 * * *'
+    - cron: '30 12 * * *'
   workflow_dispatch:
 
 jobs:
