@@ -28,6 +28,7 @@ jobs:
       release_label: ${{ steps.plan.outputs.release_label }}
       release_date: ${{ steps.plan.outputs.release_date }}
       release_guidance: ${{ steps.plan.outputs.release_guidance }}
+      build_version: ${{ steps.plan.outputs.build_version }}
       target_commitish: ${{ steps.plan.outputs.target_commitish }}
       target_branch: ${{ steps.plan.outputs.target_branch }}
       window_start: ${{ steps.plan.outputs.window_start }}
@@ -55,6 +56,7 @@ jobs:
             echo "release_label="
             echo "release_date=$(TZ=Asia/Shanghai date +%F)"
             echo "release_guidance="
+            echo "build_version="
             echo "target_commitish=${GITHUB_SHA}"
             echo "target_branch=main"
             echo "window_start="
@@ -77,6 +79,7 @@ jobs:
                 echo "release_name=Daily Pre-release $target_day"
                 echo "release_label=daily pre-release"
                 echo "release_guidance=This is a daily prerelease built from that day's main branch changes. Make it clear that details may still change and do not phrase it as a final stability promise."
+                echo "build_version=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
                 echo "release_date=$target_day"
                 echo "target_commitish=$(git rev-parse origin/main)"
                 echo "target_branch=main"
@@ -85,6 +88,8 @@ jobs:
               } >> "$GITHUB_OUTPUT"
             fi
           elif [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            normalized_tag="${GITHUB_REF_NAME#v}"
+            normalized_tag="${normalized_tag#V}"
             {
               echo "should_build=true"
               echo "should_publish_release=true"
@@ -94,6 +99,7 @@ jobs:
               echo "release_name=${GITHUB_REF_NAME}"
               echo "release_label=formal release"
               echo "release_guidance=This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
+              echo "build_version=$normalized_tag"
             } >> "$GITHUB_OUTPUT"
           else
             echo "should_build=true" >> "$GITHUB_OUTPUT"
@@ -162,6 +168,8 @@ jobs:
 
       - name: Build THRM
         shell: cmd
+        env:
+          THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
         run: build.bat
 
       - name: Collect release files

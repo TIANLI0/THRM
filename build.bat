@@ -2,10 +2,15 @@
 setlocal enabledelayedexpansion
 echo Building THRM...
 
-REM Extract version from wails.json
-for /f "tokens=2 delims=:, " %%a in ('findstr /C:"\"productVersion\"" wails.json') do (
-    set VERSION=%%a
-    set VERSION=!VERSION:"=!
+if not "%THRM_BUILD_VERSION%"=="" (
+    set "VERSION=%THRM_BUILD_VERSION%"
+    echo Building version from THRM_BUILD_VERSION: !VERSION!
+) else (
+    REM Extract version from wails.json
+    for /f "tokens=2 delims=:, " %%a in ('findstr /C:"\"productVersion\"" wails.json') do (
+        set VERSION=%%a
+        set VERSION=!VERSION:"=!
+    )
 )
 
 if "!VERSION!"=="" (
