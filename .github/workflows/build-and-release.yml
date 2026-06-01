@@ -18,6 +18,16 @@ on:
   schedule:
     - cron: '30 12 * * *'
   workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Backfill date in Asia/Shanghai (YYYY-MM-DD). Leave empty for yesterday.'
+        required: false
+        type: string
+      publish_release:
+        description: 'Publish prerelease for target_date (nightly-* tag)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   prepare-release:
@@ -49,6 +59,9 @@ jobs:
       - name: Determine release plan
         id: plan
         shell: bash
+        env:
+          MANUAL_TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
+          MANUAL_PUBLISH: ${{ github.event.inputs.publish_release || 'false' }}
         run: |
           set -euo pipefail
 
@@ -80,6 +93,45 @@ jobs:
 
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             target_day=$(TZ=Asia/Shanghai date -d 'yesterday' +%F)
+            start_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00" +%Y-%m-%dT%H:%M:%SZ)
+            end_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00 +1 day" +%Y-%m-%dT%H:%M:%SZ)
+
+            commit_count=0
+            while IFS= read -r sha; do
+              if has_effective_changes "$sha"; then
+                commit_count=$((commit_count + 1))
+              fi
+            done < <(git log origin/main --since="$start_utc" --until="$end_utc" --pretty=format:%H)
+
+            if [[ "$commit_count" != "0" ]]; then
+              {
+                echo "should_build=true"
+                echo "should_publish_release=true"
+                echo "release_type=prerelease"
+                echo "is_prerelease=true"
+                echo "release_tag=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
+                echo "release_name=Daily Pre-release $target_day"
+                echo "release_label=daily pre-release"
+                echo "release_guidance=This is a daily prerelease built from that day's main branch changes. Make it clear that details may still change and do not phrase it as a final stability promise."
+                echo "build_version=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
+                echo "release_date=$target_day"
+                echo "target_commitish=$(git rev-parse origin/main)"
+                echo "target_branch=main"
+                echo "window_start=$start_utc"
+                echo "window_end=$end_utc"
+              } >> "$GITHUB_OUTPUT"
+            fi
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${MANUAL_PUBLISH}" == "true" ]]; then
+            target_day="${MANUAL_TARGET_DATE:-}"
+            if [[ -z "$target_day" ]]; then
+              target_day=$(TZ=Asia/Shanghai date -d 'yesterday' +%F)
+            fi
+
+            if ! TZ=Asia/Shanghai date -d "$target_day" +%F >/dev/null 2>&1; then
+              echo "Invalid target_date: $target_day. Expected YYYY-MM-DD in Asia/Shanghai." >&2
+              exit 1
+            fi
+
             start_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00" +%Y-%m-%dT%H:%M:%SZ)
             end_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00 +1 day" +%Y-%m-%dT%H:%M:%SZ)
 
