@@ -165,7 +165,7 @@ func DecodeFrame(frame Frame) DecodedFrame {
 		}
 		labels := []string{"quiet", "standard", "performance", "extreme"}
 		table := make([]GearRPM, 0, 4)
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			table = append(table, GearRPM{
 				Gear:  i,
 				Label: labels[i],

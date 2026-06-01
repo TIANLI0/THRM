@@ -8,10 +8,10 @@ template: |
   Scope summary: {{compare_summary}}
   Additional guidance: {{release_guidance}}
 
-  Commit list:
+  User-visible commit list:
   {{commit_summary}}
 
-  Changed files:
+  User-visible changed files:
   {{changed_files}}
 
   Requirements:
@@ -25,3 +25,6 @@ template: |
   8. For a formal release, keep the tone polished and stable, but strictly factual.
   9. Do not mention AI, models, prompts, or internal generation process.
   10. Do not use code fences.
+  11. Only include changes that end users can directly perceive in behavior, UI, setup/install flow, performance, stability, compatibility, or error handling.
+  12. Explicitly exclude internal-only work with no user-visible effect, such as CI/workflow updates, refactors without behavioral change, tests, logging/telemetry adjustments, dependency/version bumps, or protocol/plumbing internals.
+  13. If no clearly user-visible change can be supported by the supplied data, state that this build mainly includes internal maintenance and avoid listing speculative items.

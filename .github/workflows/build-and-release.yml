@@ -2,6 +2,9 @@ name: Build and Release
 
 on:
   pull_request:
+    paths-ignore:
+      - 'ota/**'
+      - '**/*.md'
   push:
     branches:
       - main
@@ -9,6 +12,9 @@ on:
     tags:
       - 'v*'
       - 'V*'
+    paths-ignore:
+      - 'ota/**'
+      - '**/*.md'
   schedule:
     - cron: '10 16 * * *'
   workflow_dispatch:
@@ -63,11 +69,26 @@ jobs:
             echo "window_end="
           } >> "$GITHUB_OUTPUT"
 
+          has_effective_changes() {
+            local sha="$1"
+            if git show --pretty="" --name-only "$sha" | grep -Ev '^(ota/|.*\.md$)' | grep -q .; then
+              return 0
+            fi
+
+            return 1
+          }
+
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             target_day=$(TZ=Asia/Shanghai date -d 'yesterday' +%F)
             start_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00" +%Y-%m-%dT%H:%M:%SZ)
             end_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00 +1 day" +%Y-%m-%dT%H:%M:%SZ)
-            commit_count=$(git rev-list --count origin/main --since="$start_utc" --until="$end_utc")
+
+            commit_count=0
+            while IFS= read -r sha; do
+              if has_effective_changes "$sha"; then
+                commit_count=$((commit_count + 1))
+              fi
+            done < <(git log origin/main --since="$start_utc" --until="$end_utc" --pretty=format:%H)
 
             if [[ "$commit_count" != "0" ]]; then
               {
@@ -88,19 +109,21 @@ jobs:
               } >> "$GITHUB_OUTPUT"
             fi
           elif [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
-            normalized_tag="${GITHUB_REF_NAME#v}"
-            normalized_tag="${normalized_tag#V}"
-            {
-              echo "should_build=true"
-              echo "should_publish_release=true"
-              echo "release_type=stable"
-              echo "is_prerelease=false"
-              echo "release_tag=${GITHUB_REF_NAME}"
-              echo "release_name=${GITHUB_REF_NAME}"
-              echo "release_label=formal release"
-              echo "release_guidance=This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
-              echo "build_version=$normalized_tag"
-            } >> "$GITHUB_OUTPUT"
+            if has_effective_changes "${GITHUB_SHA}"; then
+              normalized_tag="${GITHUB_REF_NAME#v}"
+              normalized_tag="${normalized_tag#V}"
+              {
+                echo "should_build=true"
+                echo "should_publish_release=true"
+                echo "release_type=stable"
+                echo "is_prerelease=false"
+                echo "release_tag=${GITHUB_REF_NAME}"
+                echo "release_name=${GITHUB_REF_NAME}"
+                echo "release_label=formal release"
+                echo "release_guidance=This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
+                echo "build_version=$normalized_tag"
+              } >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "should_build=true" >> "$GITHUB_OUTPUT"
           fi
@@ -227,6 +250,7 @@ jobs:
           $compareSummary = ''
           $commitLines = @()
           $fileLines = @()
+          $rawFileLines = @()
 
           if ($releaseType -eq 'stable') {
             $currentTag = $env:RELEASE_TAG
@@ -260,14 +284,74 @@ jobs:
           }
 
           if (-not $fileLines -or $fileLines.Count -eq 0) {
+            $rawFileLines = @()
             $fileLines = @('- No file list could be extracted.')
           } else {
+            $rawFileLines = @($fileLines)
             $fileLines = $fileLines | ForEach-Object { "- $_" }
+          }
+
+          $allCommitLines = @($commitLines)
+          $nonUserFacingPathPattern = '^(?:\.github/|\.vscode/|scripts/|ota/|temp/|build/CMakeFiles/|bridge/TempBridge/(?:obj|bin)/|internal/(?:deviceproto|ipc|logger|record|types|version|plugins|hotkey|powernotify|appmeta)/|cmd/watchdog/|libmake/|docs/assets/)'
+          $nonUserFacingFilePattern = '(?i)\.md$'
+
+          $commitHasUserVisibleFiles = @{}
+          foreach ($line in $allCommitLines) {
+            $m = [System.Text.RegularExpressions.Regex]::Match($line, '^-\s+([0-9a-f]+)\s+')
+            if (-not $m.Success) {
+              continue
+            }
+
+            $shortHash = $m.Groups[1].Value
+            $changedInCommit = @(git show --pretty=format: --name-only $shortHash | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+            $effectiveInCommit = @(
+              $changedInCommit | Where-Object {
+                ($_ -notmatch $nonUserFacingPathPattern) -and
+                ($_ -notmatch $nonUserFacingFilePattern)
+              }
+            )
+            $commitHasUserVisibleFiles[$shortHash] = ($effectiveInCommit.Count -gt 0)
+          }
+
+          $nonUserFacingCommitPattern = '(?i)^-\s+[0-9a-f]+\s+(?:chore|ci|build|test|tests|refactor|style|perf|docs|revert)(?:\([^)]+\))?:'
+          $internalNoiseKeywordPattern = '(?i)(workflow|pipeline|lint|format|typo|internal only|debug log|telemetry|deps only|dependency bump|no user impact)'
+          $userVisibleCommitLines = @(
+            $allCommitLines | Where-Object {
+              $m = [System.Text.RegularExpressions.Regex]::Match($_, '^-\s+([0-9a-f]+)\s+')
+              $hasEffectiveFiles = $true
+              if ($m.Success -and $commitHasUserVisibleFiles.ContainsKey($m.Groups[1].Value)) {
+                $hasEffectiveFiles = [bool]$commitHasUserVisibleFiles[$m.Groups[1].Value]
+              }
+
+              $hasEffectiveFiles -and
+              ($_ -notmatch $nonUserFacingCommitPattern) -and
+              ($_ -notmatch $internalNoiseKeywordPattern)
+            }
+          )
+
+          if (-not $userVisibleCommitLines -or $userVisibleCommitLines.Count -eq 0) {
+            $userVisibleCommitLines = @('- No clearly user-visible changes could be confirmed from commit subjects. Keep notes minimal and do not infer hidden/internal changes.')
+          }
+
+          $userVisibleRawFiles = @(
+            $rawFileLines | Where-Object {
+              -not [string]::IsNullOrWhiteSpace($_) -and
+              ($_ -notmatch $nonUserFacingPathPattern) -and
+              ($_ -notmatch $nonUserFacingFilePattern)
+            }
+          )
+          $userVisibleFileLines = @()
+          if (-not $userVisibleRawFiles -or $userVisibleRawFiles.Count -eq 0) {
+            $userVisibleFileLines = @('- No clearly user-visible file changes could be confirmed. Do not list internal-only scope.')
+          } else {
+            $userVisibleFileLines = $userVisibleRawFiles | ForEach-Object { "- $_" }
           }
 
           $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
           [System.IO.File]::WriteAllLines((Join-Path $PWD 'build/release-context/commits.txt'), $commitLines, $utf8NoBom)
           [System.IO.File]::WriteAllLines((Join-Path $PWD 'build/release-context/files.txt'), $fileLines, $utf8NoBom)
+          [System.IO.File]::WriteAllLines((Join-Path $PWD 'build/release-context/user-visible-commits.txt'), $userVisibleCommitLines, $utf8NoBom)
+          [System.IO.File]::WriteAllLines((Join-Path $PWD 'build/release-context/user-visible-files.txt'), $userVisibleFileLines, $utf8NoBom)
 
           "compare_summary=$compareSummary" >> $env:GITHUB_OUTPUT
 
@@ -301,8 +385,8 @@ jobs:
           }
 
           $prompt = $templateMatch.Groups['body'].Value -replace '(?m)^  ', ''
-          $commitSummary = Get-Content 'build/release-context/commits.txt' -Raw
-          $changedFiles = Get-Content 'build/release-context/files.txt' -Raw
+          $commitSummary = Get-Content 'build/release-context/user-visible-commits.txt' -Raw
+          $changedFiles = Get-Content 'build/release-context/user-visible-files.txt' -Raw
 
           $replacements = @{
             '{{repo_name}}' = $env:REPO_NAME
@@ -325,7 +409,7 @@ jobs:
             messages = @(
               @{
                 role = 'system'
-                content = 'You are a meticulous release engineer. Write concise GitHub release notes in bilingual Markdown using Simplified Chinese first and English second. Only use facts supported by the supplied release scope, commit list, and file list. Do not invent features, fixes, compatibility claims, dates, migration steps, or internal details. Do not mention AI, models, prompts, or internal generation process. Do not use code fences.'
+                content = 'You are a meticulous user-facing release editor. Write concise GitHub release notes in bilingual Markdown using Simplified Chinese first and English second. Only use facts supported by the supplied release scope, user-visible commit list, and user-visible file list. Never output internal-only changes that users cannot perceive (for example CI/workflows, refactors without behavioral impact, logs, test-only changes, dependency bumps, protocol/internal plumbing). If user-visible impact is unclear, omit it. Do not invent features, fixes, compatibility claims, dates, migration steps, or internal details. Do not mention AI, models, prompts, or internal generation process. Do not use code fences.'
               },
               @{
                 role = 'user'

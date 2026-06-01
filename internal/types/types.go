@@ -1,6 +1,8 @@
 // Package types 定义了 BS2PRO 控制器应用中使用的所有共享类型
 package types
 
+import "maps"
+
 import "github.com/TIANLI0/THRM/internal/deviceproto"
 
 // FanCurvePoint 风扇曲线点
@@ -606,9 +608,7 @@ func CloneDefaultManualGearRPM() map[string]map[string]int {
 	out := make(map[string]map[string]int, len(DefaultManualGearRPM))
 	for gear, levels := range DefaultManualGearRPM {
 		inner := make(map[string]int, len(levels))
-		for level, rpm := range levels {
-			inner[level] = rpm
-		}
+		maps.Copy(inner, levels)
 		out[gear] = inner
 	}
 	return out
@@ -686,10 +686,7 @@ func NormalizeManualGearRPM(cfg *AppConfig) bool {
 			if !ok || rpm <= 0 {
 				rpm = DefaultGearRPM(gear, level)
 			}
-			rpm = clampManualGearRPM(rpm)
-			if rpm < prev {
-				rpm = prev
-			}
+			rpm = max(clampManualGearRPM(rpm), prev)
 			if levels[level] != rpm {
 				levels[level] = rpm
 				changed = true
