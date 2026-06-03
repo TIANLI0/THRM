@@ -206,6 +206,7 @@ func (a *CoreApp) initSystemTray() {
 	a.trayManager.SetCallbacks(
 		a.onShowWindowRequest,
 		a.onQuitRequest,
+		a.onRestartRequest,
 		func() bool {
 			cfg := a.configManager.Get()
 			newState := !cfg.AutoControl

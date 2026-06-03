@@ -25,6 +25,7 @@ type Manager struct {
 	menuItems       *MenuItems
 	onShowWindow    func()
 	onQuit          func()
+	onRestart       func()
 	onToggleAuto    func() bool
 	onSetCurve      func(profileID string) string
 	getCurveOptions func() ([]CurveOption, string)
@@ -42,6 +43,7 @@ type Manager struct {
 	// 防止托盘动作重入导致偶发无响应
 	showWindowInFlight int32
 	toggleAutoInFlight int32
+	restartInFlight    int32
 	quitInFlight       int32
 }
 
@@ -54,6 +56,7 @@ type MenuItems struct {
 	FanSpeed       *systray.MenuItem
 	CurveSelect    *systray.MenuItem
 	AutoControl    *systray.MenuItem
+	Restart        *systray.MenuItem
 	Quit           *systray.MenuItem
 }
 
@@ -89,6 +92,7 @@ func NewManager(logger types.Logger, iconData []byte) *Manager {
 func (m *Manager) SetCallbacks(
 	onShowWindow func(),
 	onQuit func(),
+	onRestart func(),
 	onToggleAuto func() bool,
 	onSetCurve func(profileID string) string,
 	getCurveOptions func() ([]CurveOption, string),
@@ -96,6 +100,7 @@ func (m *Manager) SetCallbacks(
 ) {
 	m.onShowWindow = onShowWindow
 	m.onQuit = onQuit
+	m.onRestart = onRestart
 	m.onToggleAuto = onToggleAuto
 	m.onSetCurve = onSetCurve
 	m.getCurveOptions = getCurveOptions
@@ -333,6 +338,7 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.AutoControl = systray.AddMenuItemCheckbox("智能变频", "启用/禁用智能变频", autoControlEnabled)
 
 	systray.AddSeparator()
+	items.Restart = systray.AddMenuItem("重启软件", "重启软件")
 	items.Quit = systray.AddMenuItem("退出", "完全退出应用")
 
 	return items, nil
@@ -346,7 +352,7 @@ func (m *Manager) handleMenuEvents(instanceDone <-chan struct{}) {
 		}
 	}()
 
-	if m.menuItems == nil || m.menuItems.Show == nil || m.menuItems.AutoControl == nil || m.menuItems.Quit == nil {
+	if m.menuItems == nil || m.menuItems.Show == nil || m.menuItems.AutoControl == nil || m.menuItems.Restart == nil || m.menuItems.Quit == nil {
 		m.logError("托盘菜单未正确初始化，无法处理菜单事件")
 		return
 	}
@@ -374,6 +380,11 @@ func (m *Manager) handleMenuEvents(instanceDone <-chan struct{}) {
 						}
 					})
 				})
+			}
+		case <-m.menuItems.Restart.ClickedCh:
+			m.logInfo("托盘菜单: 用户请求重启应用")
+			if m.onRestart != nil {
+				m.runTrayActionAsync("menu-restart", &m.restartInFlight, m.onRestart)
 			}
 		case <-m.menuItems.Quit.ClickedCh:
 			m.logInfo("托盘菜单: 用户请求退出应用")

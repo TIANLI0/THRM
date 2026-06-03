@@ -41,6 +41,25 @@ func (a *CoreApp) onQuitRequest() {
 	}
 }
 
+// onRestartRequest 重启请求回调
+func (a *CoreApp) onRestartRequest() {
+	a.logInfo("收到重启请求")
+
+	// 通知所有 GUI 客户端退出
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent("quit", nil)
+	}
+
+	// 等待 GUI 退出后重新启动 GUI
+	go func() {
+		time.Sleep(restartGUIDelay)
+		a.logInfo("重启: 正在启动 GUI")
+		if err := launchGUI(); err != nil {
+			a.logError("重启 GUI 失败: %v", err)
+		}
+	}()
+}
+
 func didDeviceSwitchToManualMode(previousMode, currentMode string) bool {
 	if currentMode != "挡位工作模式" {
 		return false

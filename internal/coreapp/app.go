@@ -77,6 +77,9 @@ const (
 	pawnIOInstallerTimeout       = 90 * time.Second
 	pawnIOAlreadyExistsExitCode  = 183
 	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO`
+
+	// restartGUIDelay 重启 GUI 前等待 GUI 客户端退出的时间
+	restartGUIDelay = 500 * time.Millisecond
 )
 
 func systemResumeDetectionThreshold(expectedInterval time.Duration) time.Duration {
