@@ -51,6 +51,8 @@ func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 		"pipe",
 		"broken",
 		"closed",
+		"timeout",
+		"bridge reconnect failed",
 	}
 	for _, hint := range restartHints {
 		if strings.Contains(msg, strings.ToLower(hint)) {
