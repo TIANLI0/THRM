@@ -19,7 +19,9 @@ func (a *CoreApp) fanCurveProfilesPayloadFromConfig(cfg types.AppConfig) types.F
 }
 
 func (a *CoreApp) applyCurveProfilesConfig(cfg types.AppConfig) error {
+	syncSmartControlOffsetsForActiveProfile(&cfg)
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+	storeSmartControlOffsetsForActiveProfile(&cfg)
 	if err := a.configManager.Update(cfg); err != nil {
 		return err
 	}
@@ -49,6 +51,7 @@ func (a *CoreApp) SetActiveFanCurveProfile(profileID string) (types.FanCurveProf
 
 	cfg := a.configManager.Get()
 	curveprofiles.NormalizeConfig(&cfg)
+	storeSmartControlOffsetsForActiveProfile(&cfg)
 
 	idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, profileID)
 	if idx < 0 {
@@ -73,6 +76,7 @@ func (a *CoreApp) CycleFanCurveProfile() (types.FanCurveProfile, error) {
 
 	cfg := a.configManager.Get()
 	curveprofiles.NormalizeConfig(&cfg)
+	storeSmartControlOffsetsForActiveProfile(&cfg)
 
 	if len(cfg.FanCurveProfiles) == 0 {
 		return types.FanCurveProfile{}, fmt.Errorf("暂无可用温控曲线方案")
@@ -100,6 +104,7 @@ func (a *CoreApp) SaveFanCurveProfile(params ipc.SaveFanCurveProfileParams) (typ
 
 	cfg := a.configManager.Get()
 	curveprofiles.NormalizeConfig(&cfg)
+	storeSmartControlOffsetsForActiveProfile(&cfg)
 
 	curve := curveprofiles.CloneCurve(params.Curve)
 	if err := cfgpkg.ValidateFanCurve(curve); err != nil {

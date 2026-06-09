@@ -50,8 +50,13 @@ func (a *CoreApp) Start() error {
 			a.logError("保存温控曲线方案默认配置失败: %v", err)
 		}
 	}
-	if normalizedSmart, changed := smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode); changed {
+	syncChanged := syncSmartControlOffsetsForActiveProfile(&cfg)
+	normalizedSmart, smartChanged := smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
+	if smartChanged {
 		cfg.SmartControl = normalizedSmart
+	}
+	storeSmartControlOffsetsForActiveProfile(&cfg)
+	if syncChanged || smartChanged {
 		a.configManager.Set(cfg)
 		if err := a.configManager.Save(); err != nil {
 			a.logError("保存智能控温默认配置失败: %v", err)

@@ -101,6 +101,7 @@ export namespace types {
 	    trendGain: number;
 	    maxLearnOffset: number;
 	    learnedOffsets: number[];
+	    learnedOffsetsByProfile: Record<string, Array<number>>;
 	    learnedOffsetsHeat: number[];
 	    learnedOffsetsCool: number[];
 	    learnedRateHeat: number[];
@@ -131,6 +132,7 @@ export namespace types {
 	        this.trendGain = source["trendGain"];
 	        this.maxLearnOffset = source["maxLearnOffset"];
 	        this.learnedOffsets = source["learnedOffsets"];
+	        this.learnedOffsetsByProfile = source["learnedOffsetsByProfile"];
 	        this.learnedOffsetsHeat = source["learnedOffsetsHeat"];
 	        this.learnedOffsetsCool = source["learnedOffsetsCool"];
 	        this.learnedRateHeat = source["learnedRateHeat"];

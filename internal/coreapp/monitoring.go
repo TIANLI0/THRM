@@ -295,7 +295,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 				}
 
-				if prevTargetRPM >= 0 {
+				if shouldApplyRampLimit(targetRPM, prevTargetRPM) {
 					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
 					if targetRPM > 0 {
 						targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
@@ -331,6 +331,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 						if changed {
 							smartCfg.LearnedOffsets = newOffsets
 							cfg.SmartControl = smartCfg
+							storeSmartControlOffsetsForActiveProfile(&cfg)
 							a.configManager.Set(cfg)
 							learningDirty = true
 						}
@@ -378,8 +379,12 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 	return time.Duration(updateRateSeconds) * time.Second
 }
 
+func shouldApplyRampLimit(targetRPM, prevTargetRPM int) bool {
+	return prevTargetRPM > 0 || targetRPM == 0
+}
+
 func shouldSendTargetRPM(targetRPM, prevTargetRPM, minRPMChange int, fanData *types.FanData) bool {
-	if targetRPM <= 0 {
+	if targetRPM < 0 {
 		return false
 	}
 	if prevTargetRPM < 0 {
@@ -392,7 +397,10 @@ func shouldSendTargetRPM(targetRPM, prevTargetRPM, minRPMChange int, fanData *ty
 		return false
 	}
 	deviceTargetRPM := int(fanData.TargetRPM)
-	return deviceTargetRPM == 0 || absRPMDelta(targetRPM, deviceTargetRPM) >= minRPMChange
+	if targetRPM > 0 && (deviceTargetRPM == 0 || fanData.CurrentRPM == 0) {
+		return true
+	}
+	return absRPMDelta(targetRPM, deviceTargetRPM) >= minRPMChange
 }
 
 func absRPMDelta(a, b int) int {
