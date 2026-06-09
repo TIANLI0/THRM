@@ -14,7 +14,6 @@ import (
 func CapturePanic(app *CoreApp, source string, recovered any) string {
 	stack := debug.Stack()
 	logDir := resolveCrashLogDir(app)
-
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "创建崩溃日志目录失败: %v\n", err)
 		fmt.Fprintf(os.Stderr, "panic来源: %s, panic: %v\n%s\n", source, recovered, string(stack))
@@ -26,11 +25,11 @@ func CapturePanic(app *CoreApp, source string, recovered any) string {
 
 	var builder strings.Builder
 	builder.WriteString("=== THRM Core Crash Report ===\n")
-	builder.WriteString(fmt.Sprintf("time: %s\n", time.Now().Format(time.RFC3339Nano)))
-	builder.WriteString(fmt.Sprintf("source: %s\n", source))
-	builder.WriteString(fmt.Sprintf("panic: %v\n", recovered))
-	builder.WriteString(fmt.Sprintf("pid: %d\n", os.Getpid()))
-	builder.WriteString(fmt.Sprintf("args: %v\n", os.Args))
+	fmt.Fprintf(&builder, "time: %s\n", time.Now().Format(time.RFC3339Nano))
+	fmt.Fprintf(&builder, "source: %s\n", source)
+	fmt.Fprintf(&builder, "panic: %v\n", recovered)
+	fmt.Fprintf(&builder, "pid: %d\n", os.Getpid())
+	fmt.Fprintf(&builder, "args: %v\n", os.Args)
 	builder.WriteString("\n--- stack ---\n")
 	builder.Write(stack)
 	builder.WriteString("\n")

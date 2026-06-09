@@ -15,6 +15,8 @@ var iconData []byte
 
 func main() {
 	var app *coreapp.CoreApp
+	cleanupFatalOutput, _ := setupFatalOutput()
+	defer cleanupFatalOutput()
 
 	defer func() {
 		if r := recover(); r != nil {
