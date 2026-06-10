@@ -205,14 +205,24 @@ func (s *Server) Start() error {
 
 // acceptConnections 接受客户端连接
 func (s *Server) acceptConnections() {
+	consecutiveFailures := 0
 	for s.running {
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if s.running {
-				s.logError("接受连接失败: %v", err)
+			if !s.running {
+				return
 			}
+			// 监听器持续故障时退避重试，避免热循环空转占满 CPU 并刷爆日志。
+			consecutiveFailures++
+			s.logError("接受连接失败（连续第 %d 次）: %v", consecutiveFailures, err)
+			backoff := time.Duration(consecutiveFailures*100) * time.Millisecond
+			if backoff > 3*time.Second {
+				backoff = 3 * time.Second
+			}
+			time.Sleep(backoff)
 			continue
 		}
+		consecutiveFailures = 0
 
 		state := &clientState{
 			conn:    conn,
@@ -340,6 +350,10 @@ func (s *Server) shouldDropEvent(eventType string) bool {
 
 // BroadcastEvent 广播事件给所有客户端
 func (s *Server) BroadcastEvent(eventType string, data any) {
+	if !s.HasClients() {
+		return
+	}
+
 	if s.shouldDropEvent(eventType) {
 		return
 	}
@@ -598,7 +612,7 @@ func (c *Client) SendRequest(reqType RequestType, data any) (*Response, error) {
 	select {
 	case resp := <-respCh:
 		return resp, nil
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()

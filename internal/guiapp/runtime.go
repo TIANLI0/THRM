@@ -95,15 +95,15 @@ func EnsureCoreServiceRunning() bool {
 		cmd.Process.Release()
 	}
 
-	for range 50 {
+	for i := range 100 {
 		time.Sleep(100 * time.Millisecond)
 		if ipc.CheckCoreServiceRunning() {
-			mainLogger.Info("核心服务已就绪")
+			mainLogger.Infof("核心服务已就绪（等待 %d ms）", (i+1)*100)
 			return true
 		}
 	}
 
-	mainLogger.Warn("等待核心服务就绪超时")
+	mainLogger.Warn("等待核心服务就绪超时（10秒）")
 	return false
 }
 

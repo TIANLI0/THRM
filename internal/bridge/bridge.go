@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,86 +16,25 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+// Manager 管理温度桥接子进程的生命周期与 stdio 通信。
+//
+// 重要设计说明：stdin/stdout 匿名管道不支持 SetDeadline，直接在调用方协程上做阻塞读，
+// 一旦桥接进程卡死（例如 LibreHardwareMonitor 在睡眠/唤醒前后卡在传感器读取上），
+// 调用方会在持有 mutex 的情况下永久阻塞，进而拖死温度监控循环、挂起/唤醒回调等所有
+// 依赖桥接的路径。因此所有 stdout 读取都由一个持久的行读取协程完成，命令的收发通过
+// channel + 超时实现真正可取消的等待。
 type Manager struct {
-	cmd          *exec.Cmd
-	conn         net.Conn
-	stdin        io.WriteCloser
-	stdout       io.ReadCloser
-	stdoutReader *bufio.Reader
-	pipeName     string
-	transport    string
-	ownsCmd      bool
-	state        string
-	lastError    string
-	mutex        sync.Mutex
-	logger       types.Logger
-}
-
-type stdioConn struct {
-	reader *bufio.Reader
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-}
-
-type stdioAddr string
-
-func newStdioConn(stdin io.WriteCloser, stdout io.ReadCloser, reader *bufio.Reader) net.Conn {
-	return &stdioConn{
-		reader: reader,
-		stdin:  stdin,
-		stdout: stdout,
-	}
-}
-
-func (c *stdioConn) Read(p []byte) (int, error) {
-	return c.reader.Read(p)
-}
-
-func (c *stdioConn) Write(p []byte) (int, error) {
-	return c.stdin.Write(p)
-}
-
-func (c *stdioConn) Close() error {
-	var closeErr error
-	if c.stdin != nil {
-		closeErr = c.stdin.Close()
-		c.stdin = nil
-	}
-	if c.stdout != nil {
-		if err := c.stdout.Close(); closeErr == nil {
-			closeErr = err
-		}
-		c.stdout = nil
-	}
-	return closeErr
-}
-
-func (c *stdioConn) LocalAddr() net.Addr {
-	return stdioAddr("stdio-local")
-}
-
-func (c *stdioConn) RemoteAddr() net.Addr {
-	return stdioAddr("stdio-remote")
-}
-
-func (c *stdioConn) SetDeadline(time.Time) error {
-	return nil
-}
-
-func (c *stdioConn) SetReadDeadline(time.Time) error {
-	return nil
-}
-
-func (c *stdioConn) SetWriteDeadline(time.Time) error {
-	return nil
-}
-
-func (a stdioAddr) Network() string {
-	return "stdio"
-}
-
-func (a stdioAddr) String() string {
-	return string(a)
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	lineCh    chan string
+	pipeName  string
+	transport string
+	ownsCmd   bool
+	state     string
+	lastError string
+	mutex     sync.Mutex
+	logger    types.Logger
 }
 
 const (
@@ -104,8 +42,8 @@ const (
 	bridgeGetTemperatureTimeout = 10 * time.Second
 	bridgeRestartPawnIOTimeout  = 20 * time.Second
 	bridgeExitTimeout           = 2 * time.Second
-	bridgeProcessExitWait       = 8 * time.Second
-	bridgeStartupTimeout        = 5 * time.Second
+	bridgeProcessExitWait       = 3 * time.Second
+	bridgeStartupTimeout        = 30 * time.Second
 
 	BridgeStateNotStarted = "not_started"
 	BridgeStateStarting   = "starting"
@@ -141,17 +79,16 @@ func (m *Manager) EnsureRunning() error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if m.stdin != nil && m.stdoutReader != nil {
+	if m.stdin != nil && m.lineCh != nil {
 		if isProcessRunning(m.cmd) {
 			m.setState(BridgeStateRunning, nil)
 			return nil
 		}
 
 		err := fmt.Errorf("bridge process exited unexpectedly")
+		m.logger.Error("检测到桥接进程已意外退出，准备重新启动")
 		m.setState(BridgeStateDegraded, err)
-		m.closeConnUnsafe()
-		m.releaseOwnedProcessUnsafe()
-		m.pipeName = ""
+		m.teardownProcessUnsafe(false)
 	}
 
 	return m.startStdio()
@@ -197,27 +134,22 @@ func (m *Manager) startStdio() error {
 		return fmt.Errorf("创建 stderr 管道失败: %v", err)
 	}
 
+	startAt := time.Now()
 	if err := cmd.Start(); err != nil {
 		m.setState(BridgeStateFailed, err)
 		return fmt.Errorf("启动桥接程序失败: %v", err)
 	}
 
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line != "" {
-				m.logger.Error("桥接程序 stderr: %s", line)
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			m.logger.Debug("读取桥接程序 stderr 失败: %v", err)
-		}
-	}()
+	go m.forwardBridgeStderr(stderr)
 
-	stdoutReader := bufio.NewReader(stdout)
-	if err := m.waitForReady(stdoutReader, bridgeStartupTimeout); err != nil {
+	lineCh := startLineReader(stdout)
+	if err := m.waitForReady(lineCh, bridgeStartupTimeout); err != nil {
+		m.logger.Error("桥接程序启动握手失败（已等待 %s）: %v", time.Since(startAt).Round(time.Millisecond), err)
+		_ = stdin.Close()
 		_ = cmd.Process.Kill()
+		// 异步回收进程，避免句柄/僵尸进程泄漏；Wait 会同时关闭残留管道。
+		go func() { _ = cmd.Wait() }()
+		go drainLines(lineCh)
 		m.setState(BridgeStateFailed, err)
 		return err
 	}
@@ -225,43 +157,91 @@ func (m *Manager) startStdio() error {
 	m.cmd = cmd
 	m.stdin = stdin
 	m.stdout = stdout
-	m.stdoutReader = stdoutReader
-	m.conn = newStdioConn(stdin, stdout, stdoutReader)
+	m.lineCh = lineCh
 	m.pipeName = ""
 	m.transport = "stdio"
 	m.ownsCmd = true
 	m.setState(BridgeStateRunning, nil)
-	m.logger.Info("桥接程序启动成功，通信方式: stdio")
+	m.logger.Info("桥接程序启动成功（耗时 %s），通信方式: stdio", time.Since(startAt).Round(time.Millisecond))
 	return nil
 }
 
-func (m *Manager) waitForReady(reader *bufio.Reader, timeout time.Duration) error {
-	readyCh := make(chan error, 1)
-	go func() {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			readyCh <- fmt.Errorf("read bridge startup handshake failed: %v", err)
-			return
+// forwardBridgeStderr 把桥接进程的 stderr 输出转发到日志。
+func (m *Manager) forwardBridgeStderr(stderr io.Reader) {
+	scanner := bufio.NewScanner(stderr)
+	scanner.Buffer(make([]byte, 0, 4096), 256*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
 		}
+		if strings.HasPrefix(line, "[init]") {
+			m.logger.Info("桥接程序: %s", line)
+		} else {
+			m.logger.Error("桥接程序 stderr: %s", line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		m.logger.Debug("读取桥接程序 stderr 失败: %v", err)
+	}
+}
 
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.EqualFold(line, "READY:STDIO"):
-			readyCh <- nil
-		case strings.HasPrefix(line, "ERROR:"):
-			readyCh <- fmt.Errorf("bridge startup failed: %s", strings.TrimSpace(strings.TrimPrefix(line, "ERROR:")))
-		case line == "":
-			readyCh <- fmt.Errorf("bridge did not return a startup handshake")
-		default:
-			readyCh <- fmt.Errorf("bridge returned an unexpected startup line: %s", line)
+// startLineReader 启动持久的 stdout 行读取协程，所有 stdout 数据均经由返回的 channel 交付。
+func startLineReader(stdout io.Reader) chan string {
+	ch := make(chan string, 8)
+	go func() {
+		defer close(ch)
+		reader := bufio.NewReaderSize(stdout, 64*1024)
+		for {
+			line, err := reader.ReadString('\n')
+			if line != "" {
+				ch <- strings.TrimRight(line, "\r\n")
+			}
+			if err != nil {
+				return
+			}
 		}
 	}()
+	return ch
+}
 
-	select {
-	case err := <-readyCh:
-		return err
-	case <-time.After(timeout):
-		return fmt.Errorf("waiting for bridge startup timed out")
+// drainLines 排空行通道，让阻塞在发送上的读取协程得以退出，避免协程泄漏。
+func drainLines(ch <-chan string) {
+	for range ch {
+	}
+}
+
+func (m *Manager) waitForReady(lineCh <-chan string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return fmt.Errorf("等待桥接程序启动握手超时 (timeout=%s)", timeout)
+		}
+
+		timer := time.NewTimer(remaining)
+		select {
+		case line, ok := <-lineCh:
+			timer.Stop()
+			if !ok {
+				return fmt.Errorf("桥接程序在输出启动握手前已退出")
+			}
+			line = strings.TrimSpace(line)
+			switch {
+			case strings.EqualFold(line, "READY:STDIO"):
+				return nil
+			case strings.HasPrefix(line, "ERROR:"):
+				return fmt.Errorf("桥接程序启动失败: %s", strings.TrimSpace(strings.TrimPrefix(line, "ERROR:")))
+			case line == "":
+				continue
+			default:
+				// 容忍握手前的额外输出（如调试信息），继续等待真正的握手，避免误判启动失败。
+				m.logger.Debug("等待桥接握手时收到额外输出: %s", line)
+				continue
+			}
+		case <-timer.C:
+			return fmt.Errorf("等待桥接程序启动握手超时 (timeout=%s)", timeout)
+		}
 	}
 }
 
@@ -285,19 +265,27 @@ func (m *Manager) SendCommand(cmdType, data string) (*types.BridgeResponse, erro
 }
 
 func (m *Manager) sendCommandUnsafe(cmdType, data string) (*types.BridgeResponse, error) {
-	if m.conn == nil {
+	if m.stdin == nil || m.lineCh == nil {
 		return nil, fmt.Errorf("桥接程序未连接")
 	}
 
-	conn := m.conn
 	timeout := bridgeCommandTimeoutFor(cmdType)
 
-	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-		m.logger.Debug("设置桥接命令超时失败: %v", err)
+	// 先丢弃残留的过期输出，防止上一条超时命令的迟到响应被错配到本次请求。
+drainLoop:
+	for {
+		select {
+		case line, ok := <-m.lineCh:
+			if !ok {
+				err := fmt.Errorf("桥接程序输出流已关闭")
+				m.failBridgeUnsafe(err)
+				return nil, err
+			}
+			m.logger.Debug("丢弃桥接程序过期输出: %s", line)
+		default:
+			break drainLoop
+		}
 	}
-	defer func() {
-		_ = conn.SetDeadline(time.Time{})
-	}()
 
 	cmdBytes, err := json.Marshal(types.BridgeCommand{
 		Type: cmdType,
@@ -307,39 +295,103 @@ func (m *Manager) sendCommandUnsafe(cmdType, data string) (*types.BridgeResponse
 		return nil, fmt.Errorf("序列化命令失败: %v", err)
 	}
 
-	if _, err := conn.Write(append(cmdBytes, '\n')); err != nil {
-		m.setState(BridgeStateDegraded, err)
-		m.closeConnUnsafe()
-		return nil, fmt.Errorf("发送 %s 命令失败 (timeout=%s): %v", cmdType, timeout, err)
+	// 写入也可能在桥接进程卡死、管道缓冲填满时阻塞，同样需要超时保护。
+	stdin := m.stdin
+	writeDone := make(chan error, 1)
+	go func() {
+		_, werr := stdin.Write(append(cmdBytes, '\n'))
+		writeDone <- werr
+	}()
+
+	writeTimer := time.NewTimer(timeout)
+	select {
+	case werr := <-writeDone:
+		writeTimer.Stop()
+		if werr != nil {
+			m.failBridgeUnsafe(werr)
+			return nil, fmt.Errorf("发送 %s 命令失败 (timeout=%s): %v", cmdType, timeout, werr)
+		}
+	case <-writeTimer.C:
+		timeoutErr := fmt.Errorf("发送 %s 命令超时 (timeout=%s)", cmdType, timeout)
+		m.failBridgeUnsafe(timeoutErr)
+		return nil, timeoutErr
 	}
 
-	responseBytes, err := bufio.NewReader(conn).ReadBytes('\n')
-	if err != nil {
-		m.setState(BridgeStateDegraded, err)
-		m.closeConnUnsafe()
-		return nil, fmt.Errorf("读取 %s 响应失败 (timeout=%s): %v", cmdType, timeout, err)
-	}
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			timeoutErr := fmt.Errorf("读取 %s 响应超时 (timeout=%s)", cmdType, timeout)
+			m.failBridgeUnsafe(timeoutErr)
+			return nil, timeoutErr
+		}
 
-	var response types.BridgeResponse
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
-		m.setState(BridgeStateDegraded, err)
-		return nil, fmt.Errorf("解析响应失败: %v", err)
-	}
+		readTimer := time.NewTimer(remaining)
+		select {
+		case line, ok := <-m.lineCh:
+			readTimer.Stop()
+			if !ok {
+				readErr := fmt.Errorf("读取 %s 响应失败: 桥接程序输出流已关闭", cmdType)
+				m.failBridgeUnsafe(readErr)
+				return nil, readErr
+			}
 
-	if m.ownsCmd {
-		m.setState(BridgeStateRunning, nil)
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+
+			var response types.BridgeResponse
+			if err := json.Unmarshal([]byte(trimmed), &response); err != nil {
+				// 跳过混入的非 JSON 输出，在剩余时间内继续等待真正的响应。
+				m.logger.Debug("忽略桥接程序非 JSON 输出: %s", trimmed)
+				continue
+			}
+
+			if m.ownsCmd {
+				m.setState(BridgeStateRunning, nil)
+			} else {
+				m.setState(BridgeStateAttached, nil)
+			}
+			return &response, nil
+		case <-readTimer.C:
+			timeoutErr := fmt.Errorf("读取 %s 响应超时 (timeout=%s)", cmdType, timeout)
+			m.failBridgeUnsafe(timeoutErr)
+			return nil, timeoutErr
+		}
+	}
+}
+
+// failBridgeUnsafe 在命令失败/超时后将桥接标记为降级，并终止已经不可信任的自有进程，
+func (m *Manager) failBridgeUnsafe(err error) {
+	m.setState(BridgeStateDegraded, err)
+	m.teardownProcessUnsafe(true)
+}
+
+// teardownProcessUnsafe 关闭通信管道并按需终止/回收桥接进程。调用方必须持有 m.mutex。
+func (m *Manager) teardownProcessUnsafe(kill bool) {
+	cmd := m.cmd
+	ownsCmd := m.ownsCmd
+	m.cmd = nil
+	m.ownsCmd = false
+	m.pipeName = ""
+	m.closeConnUnsafe()
+
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if ownsCmd {
+		if kill {
+			_ = cmd.Process.Kill()
+		}
+		// 异步回收，避免阻塞调用方；Wait 同时会关闭残留的管道句柄。
+		go func() { _ = cmd.Wait() }()
 	} else {
-		m.setState(BridgeStateAttached, nil)
+		_ = cmd.Process.Release()
 	}
-
-	return &response, nil
 }
 
 func (m *Manager) closeConnUnsafe() {
-	if m.conn != nil {
-		_ = m.conn.Close()
-		m.conn = nil
-	}
 	if m.stdin != nil {
 		_ = m.stdin.Close()
 		m.stdin = nil
@@ -348,16 +400,12 @@ func (m *Manager) closeConnUnsafe() {
 		_ = m.stdout.Close()
 		m.stdout = nil
 	}
-	m.stdoutReader = nil
-	m.transport = ""
-}
-
-func (m *Manager) releaseOwnedProcessUnsafe() {
-	if m.cmd != nil && m.cmd.Process != nil {
-		_ = m.cmd.Process.Release()
+	if m.lineCh != nil {
+		// 排空通道，让读取协程随管道关闭尽快退出，避免其阻塞在发送上泄漏。
+		go drainLines(m.lineCh)
+		m.lineCh = nil
 	}
-	m.cmd = nil
-	m.ownsCmd = false
+	m.transport = ""
 }
 
 func (m *Manager) Stop() {
@@ -367,21 +415,26 @@ func (m *Manager) Stop() {
 }
 
 func (m *Manager) stopUnsafe() {
+	if m.cmd == nil && m.stdin == nil {
+		m.setState(BridgeStateStopped, nil)
+		return
+	}
+
 	m.setState(BridgeStateStopping, nil)
+
+	if m.stdin != nil && m.ownsCmd {
+		// Exit 命令带 2 秒超时；若失败，sendCommandUnsafe 内部已终止并回收进程。
+		if _, err := m.sendCommandUnsafe("Exit", ""); err != nil {
+			m.logger.Debug("发送 Exit 命令失败（进程将被强制终止）: %v", err)
+		}
+	}
 
 	ownedCmd := m.cmd
 	ownsCmd := m.ownsCmd
-
 	m.cmd = nil
 	m.ownsCmd = false
 	m.pipeName = ""
-
-	if m.conn != nil {
-		if ownsCmd {
-			_, _ = m.sendCommandUnsafe("Exit", "")
-		}
-		m.closeConnUnsafe()
-	}
+	m.closeConnUnsafe()
 
 	if ownsCmd && ownedCmd != nil && ownedCmd.Process != nil {
 		done := make(chan error, 1)
@@ -389,9 +442,12 @@ func (m *Manager) stopUnsafe() {
 			done <- ownedCmd.Wait()
 		}()
 
+		exitTimer := time.NewTimer(bridgeProcessExitWait)
 		select {
 		case <-done:
-		case <-time.After(bridgeProcessExitWait):
+			exitTimer.Stop()
+		case <-exitTimer.C:
+			m.logger.Error("等待桥接进程退出超时（%s），强制终止", bridgeProcessExitWait)
 			_ = ownedCmd.Process.Kill()
 		}
 	}

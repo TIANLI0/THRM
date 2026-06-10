@@ -27,7 +27,11 @@
   </ItemGroup>
   
   <ItemGroup Condition="'$(UseLibreHardwareMonitorProjectReference)' == 'true'">
-    <ProjectReference Include="$(LibreHardwareMonitorLibProject)" />
+    <!-- Force x64 so CsWin32 generates the architecture-specific SetupDi* P/Invoke
+         APIs. Building the referenced lib as AnyCPU triggers PInvoke005 and leaves
+         SP_DEVINFO_DATA / SetupDiEnumDeviceInfo etc. ungenerated, which cascades into
+         CS0246 errors here. -->
+    <ProjectReference Include="$(LibreHardwareMonitorLibProject)" SetPlatform="Platform=x64" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseLibreHardwareMonitorProjectReference)' != 'true'">

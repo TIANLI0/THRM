@@ -222,7 +222,10 @@ namespace THRM.TempBridge
 
         static void RunStdioMode()
         {
+            var initStopwatch = Stopwatch.StartNew();
+            LogInitProgress("stdio 模式启动，开始初始化硬件监控");
             InitializeHardwareMonitor();
+            LogInitProgress(string.Format("硬件监控初始化完成，耗时 {0} ms", initStopwatch.ElapsedMilliseconds));
 
             using (var stdin = Console.OpenStandardInput())
             using (var stdout = Console.OpenStandardOutput())
@@ -231,6 +234,22 @@ namespace THRM.TempBridge
             {
                 writer.WriteLine("READY:STDIO");
                 ServeCommandLoop(reader, writer);
+            }
+        }
+
+        /// <summary>
+        /// 通过 stderr 输出初始化进度（以 "[init]" 前缀标记），主程序会将其记录到日志，
+        /// 用于诊断部分设备上桥接启动缓慢或失败的问题。
+        /// </summary>
+        static void LogInitProgress(string message)
+        {
+            try
+            {
+                Console.Error.WriteLine("[init] " + message);
+                Console.Error.Flush();
+            }
+            catch
+            {
             }
         }
 
@@ -392,11 +411,15 @@ namespace THRM.TempBridge
 
         static void InitializeHardwareMonitor()
         {
+            var pawnIoStopwatch = Stopwatch.StartNew();
             string pawnIoMessage = EnsurePawnIoReady();
+            LogInitProgress(string.Format("PawnIO 检查完成，耗时 {0} ms{1}", pawnIoStopwatch.ElapsedMilliseconds,
+                string.IsNullOrWhiteSpace(pawnIoMessage) ? string.Empty : "：" + pawnIoMessage));
 
             Exception lastException = null;
             for (int attempt = 1; attempt <= MaxInitRetries; attempt++)
             {
+                var attemptStopwatch = Stopwatch.StartNew();
                 try
                 {
                     if (computer != null)
@@ -404,6 +427,8 @@ namespace THRM.TempBridge
                         try { computer.Close(); } catch { }
                         computer = null;
                     }
+
+                    LogInitProgress(string.Format("LibreHardwareMonitor 初始化尝试 {0}/{1}", attempt, MaxInitRetries));
 
                     computer = new Computer
                     {
@@ -424,11 +449,15 @@ namespace THRM.TempBridge
                     {
                         consecutiveFailures = 0;
                         lastHardwareMonitorError = string.Empty;
+                        LogInitProgress(string.Format("发现有效温度传感器，初始化成功（第 {0} 次尝试，耗时 {1} ms）",
+                            attempt, attemptStopwatch.ElapsedMilliseconds));
                         TrimWorkingSetIfIdle(true);
                         return;
                     }
 
                     lastException = new InvalidOperationException("LibreHardwareMonitor 未发现有效温度传感器");
+                    LogInitProgress(string.Format("第 {0} 次尝试未发现有效温度传感器（耗时 {1} ms）",
+                        attempt, attemptStopwatch.ElapsedMilliseconds));
 
                     // No sensors found - PawnIO may not be fully ready
                     if (attempt < MaxInitRetries)
@@ -441,6 +470,8 @@ namespace THRM.TempBridge
                 catch (Exception ex)
                 {
                     lastException = ex;
+                    LogInitProgress(string.Format("第 {0} 次初始化尝试异常（耗时 {1} ms）: {2}",
+                        attempt, attemptStopwatch.ElapsedMilliseconds, ex.Message));
                     if (attempt < MaxInitRetries)
                     {
                         try { computer?.Close(); } catch { }
@@ -453,6 +484,7 @@ namespace THRM.TempBridge
             // If we get here, all retries exhausted but computer may still be open
             // (just without working sensors). Keep it - it might recover on next update.
             lastHardwareMonitorError = BuildHardwareMonitorError(lastException, pawnIoMessage);
+            LogInitProgress("硬件监控初始化未完全成功，将使用兜底温度读取：" + lastHardwareMonitorError);
             TrimWorkingSetIfIdle(true);
         }
 

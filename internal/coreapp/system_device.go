@@ -226,24 +226,37 @@ func (a *CoreApp) onSystemSuspend() {
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}
+	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
 	a.autoReconnectSuppressed.Store(true)
 	a.stopTemperatureMonitoring()
 
-	a.safeRun("suspend-device-disconnect", func() {
-		a.deviceManager.DisconnectSilently()
-	})
-	a.mutex.Lock()
-	a.isConnected = false
-	a.mutex.Unlock()
+	done := make(chan struct{})
+	a.safeGo("suspend-cleanup", func() {
+		defer close(done)
 
-	a.safeRun("suspend-bridge-stop", func() {
-		a.bridgeManager.Stop()
+		a.safeRun("suspend-device-disconnect", func() {
+			a.deviceManager.DisconnectSilently()
+		})
+		a.mutex.Lock()
+		a.isConnected = false
+		a.mutex.Unlock()
+
+		a.safeRun("suspend-bridge-stop", func() {
+			a.bridgeManager.Stop()
+		})
+
+		if a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+		}
+		a.logInfo("挂起前清理完成，耗时 %s", time.Since(start).Round(time.Millisecond))
 	})
 
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
+	select {
+	case <-done:
+	case <-time.After(suspendCleanupGrace):
+		a.logError("挂起前清理超过 %s 仍未完成，转入后台继续执行，避免阻塞系统电源回调", suspendCleanupGrace)
 	}
 }
 
@@ -274,6 +287,11 @@ func (a *CoreApp) triggerResumeRecovery(source string, gap time.Duration, forceR
 }
 
 func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReconnect bool) {
+	start := time.Now()
+	defer func() {
+		a.logInfo("系统唤醒恢复流程结束（来源=%s，耗时=%s）", source, time.Since(start).Round(time.Millisecond))
+	}()
+
 	// 若之前收到过挂起通知（主动断开），唤醒后必须强制重连，且需要重启已停止的温度监控。
 	proactivelySuspended := a.systemSuspended.Swap(false)
 	forceReconnect = forceReconnect || proactivelySuspended

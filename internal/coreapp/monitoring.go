@@ -211,12 +211,11 @@ func (a *CoreApp) startTemperatureMonitoring() {
 			a.currentTemp = temp
 			a.mutex.Unlock()
 
-			eventTemp := compactTemperatureEventPayload(temp, previousTemp)
-
 			historyPoint, recorded := a.tempHistory.Add(temp, a.deviceManager.GetCurrentFanData())
 
-			// 广播温度更新
-			if a.ipcServer != nil {
+			// 广播温度更新（无 GUI 客户端时跳过差分与序列化，核心常驻后台时显著降低每秒开销）
+			if a.ipcServer != nil && a.ipcServer.HasClients() {
+				eventTemp := compactTemperatureEventPayload(temp, previousTemp)
 				a.ipcServer.BroadcastEvent(ipc.EventTemperatureUpdate, eventTemp)
 				if recorded {
 					a.ipcServer.BroadcastEvent(ipc.EventTemperatureHistoryUpdate, historyPoint)

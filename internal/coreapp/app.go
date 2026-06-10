@@ -74,6 +74,7 @@ const (
 	systemResumeDetectionCeiling = 45 * time.Second
 	systemResumeRecoveryCooldown = 15 * time.Second
 	systemResumeReconnectDelay   = 3 * time.Second
+	suspendCleanupGrace          = 2 * time.Second
 	pawnIOInstallerTimeout       = 90 * time.Second
 	pawnIOAlreadyExistsExitCode  = 183
 	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO`
