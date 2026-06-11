@@ -13,8 +13,10 @@
       "back": "返回",
       "cancel": "取消",
       "close": "关闭",
+      "confirm": "确认",
       "copy": "复制",
       "delete": "删除",
+      "done": "完成",
       "export": "导出",
       "import": "导入",
       "refresh": "刷新",
@@ -208,7 +210,11 @@
   },
   "fanCurveProfileSelect": {
     "placeholder": "选择曲线方案",
-    "empty": "暂无曲线方案"
+    "empty": "暂无曲线方案",
+    "addNewAria": "新增曲线方案",
+    "addNewTooltip": "新增曲线方案",
+    "manageAria": "管理曲线方案",
+    "manageTooltip": "管理曲线方案"
   },
   "aboutPanel": {
     "title": "关于 {{name}}",
@@ -484,7 +490,14 @@
       "namePlaceholder": "当前方案命名（最多6字）",
       "saveName": "保存命名",
       "saveAsNew": "另存为新方案",
-      "deleteCurrent": "删除当前方案"
+      "deleteCurrent": "删除当前方案",
+      "createTitle": "新增曲线方案",
+      "createDescription": "基于当前画布上的曲线创建一个新方案，名称最多 6 字。",
+      "manageTitle": "管理曲线方案",
+      "manageDescription": "在这里重命名或删除已有的曲线方案。",
+      "addAction": "新增方案",
+      "activeBadge": "当前",
+      "deleteLastError": "至少保留一个曲线方案"
     },
     "importExport": {
       "title": "导入 / 导出曲线方案",

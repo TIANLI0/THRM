@@ -426,6 +426,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [noiseTestOpen, setNoiseTestOpen] = useState(false);
   const [featureConfigLoading, setFeatureConfigLoading] = useState(false);
   const [scheduleTimeDrafts, setScheduleTimeDrafts] = useState<Record<string, string>>({});
+  const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const [profileCreateOpen, setProfileCreateOpen] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [isInteracting, setIsInteracting] = useState(false);
   const [showLowRpmWarning, setShowLowRpmWarning] = useState(false);
@@ -963,6 +968,65 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
   }, [activeProfileId, loadCurveProfiles, syncConfigFromBackend, t]);
 
+  // 删除指定 ID 的曲线方案（用于"管理曲线方案"弹窗中按行删除）。
+  const removeProfileById = useCallback(async (profileID: string) => {
+    if (!profileID) return;
+    if (curveProfiles.length <= 1) {
+      toast.error(t('fanCurve.profiles.deleteLastError'));
+      return;
+    }
+    try {
+      setProfileOpLoading(true);
+      await apiService.deleteFanCurveProfile(profileID);
+      await loadCurveProfiles();
+      await syncConfigFromBackend();
+      toast.success(t('fanCurve.toast.profileDeleted'));
+    } catch (e) {
+      toast.error(t('fanCurve.toast.deleteFailed', { error: getErrorMessage(e) }));
+    } finally {
+      setProfileOpLoading(false);
+    }
+  }, [curveProfiles.length, loadCurveProfiles, syncConfigFromBackend, t]);
+
+  // 用新名字保存指定 ID 的曲线（不改变其曲线本体）。
+  const renameProfileById = useCallback(async (profileID: string, name: string) => {
+    const target = curveProfiles.find((p) => p.id === profileID);
+    if (!target) return;
+    const fallback = target.name || t('fanCurve.profiles.currentCurveName');
+    const safeName = getSafeProfileName(name, fallback);
+    if (!safeName || safeName === target.name) return;
+    try {
+      setProfileOpLoading(true);
+      await apiService.saveFanCurveProfile(profileID, safeName, target.curve || [], false);
+      await loadCurveProfiles();
+      await syncConfigFromBackend();
+      toast.success(t('fanCurve.toast.profileRenamed'));
+    } catch (e) {
+      toast.error(t('fanCurve.toast.renameFailed', { error: getErrorMessage(e) }));
+    } finally {
+      setProfileOpLoading(false);
+    }
+  }, [curveProfiles, getSafeProfileName, loadCurveProfiles, syncConfigFromBackend, t]);
+
+  // 以指定名称基于"当前画布上的曲线"创建一个新方案（弹窗里"新增"流程）。
+  const createProfileWithName = useCallback(async (rawName: string) => {
+    const fallbackName = t('fanCurve.profiles.newCurveName');
+    const safeName = getSafeProfileName(rawName, fallbackName);
+    try {
+      setProfileOpLoading(true);
+      await apiService.saveFanCurveProfile('', safeName, localCurve, true);
+      await loadCurveProfiles();
+      await syncConfigFromBackend();
+      toast.success(t('fanCurve.toast.profileSavedAsNew'));
+      return true;
+    } catch (e) {
+      toast.error(t('fanCurve.toast.saveAsFailed', { error: getErrorMessage(e) }));
+      return false;
+    } finally {
+      setProfileOpLoading(false);
+    }
+  }, [getSafeProfileName, loadCurveProfiles, localCurve, syncConfigFromBackend, t]);
+
   const exportProfiles = useCallback(async () => {
     try {
       if (hasUnsavedChanges) {
@@ -1332,6 +1396,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 activeProfileId={activeProfileId}
                 onChange={switchProfile}
                 loading={profileOpLoading}
+                onAddNew={() => {
+                  setNewProfileName('');
+                  setProfileCreateOpen(true);
+                }}
+                onManage={() => {
+                  // 进入管理弹窗时，把当前所有曲线的名字注入草稿，便于直接编辑。
+                  const drafts: Record<string, string> = {};
+                  curveProfiles.forEach((profile) => { drafts[profile.id] = profile.name; });
+                  setRenameDrafts(drafts);
+                  setConfirmDeleteId(null);
+                  setProfileManagerOpen(true);
+                }}
               />
               <ToggleSwitch enabled={config.autoControl} onChange={handleAutoControlChange} label={t('fanCurve.actions.smartControl')} size="sm" color="blue" />
               <div className="flex items-center gap-2">
@@ -2021,47 +2097,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           )}
         </section>
 
-        <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{t('fanCurve.profiles.title')}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {curveProfiles.map((profile) => {
-              const isActive = profile.id === activeProfileId;
-              return (
-                <Button
-                  key={profile.id}
-                  variant={isActive ? 'primary' : 'outline'}
-                  size="sm"
-                  onClick={() => switchProfile(profile.id)}
-                  disabled={profileOpLoading}
-                >
-                  {profile.name}
-                </Button>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-[220px] flex-1">
-              <Input
-                value={profileNameInput}
-                onChange={(e) => handleProfileNameInputChange(e.target.value, Boolean((e.nativeEvent as InputEvent).isComposing))}
-                onCompositionStart={handleProfileNameCompositionStart}
-                onCompositionEnd={(e) => handleProfileNameCompositionEnd(e.currentTarget.value)}
-                placeholder={t('fanCurve.profiles.namePlaceholder')}
-                className="h-10"
-              />
-            </div>
-            <Button variant="secondary" size="sm" onClick={saveCurrentProfileName} loading={profileOpLoading} icon={<Check className="h-3.5 w-3.5" />}>{t('fanCurve.profiles.saveName')}</Button>
-            <Button variant="secondary" size="sm" onClick={createNewProfile} loading={profileOpLoading} icon={<Plus className="h-3.5 w-3.5" />}>{t('fanCurve.profiles.saveAsNew')}</Button>
-            <Button variant="danger" size="sm" onClick={removeActiveProfile} loading={profileOpLoading} icon={<Trash2 className="h-3.5 w-3.5" />} disabled={curveProfiles.length <= 1}>{t('fanCurve.profiles.deleteCurrent')}</Button>
-          </div>
-        </section>
-
         <section className="rounded-2xl border border-border/70 bg-card p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-medium">{t('fanCurve.importExport.title')}</span>
@@ -2115,6 +2150,169 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             </div>
           </div>
         </section>
+
+        {/* ── 新增曲线方案弹窗 ── */}
+        <Dialog
+          open={profileCreateOpen}
+          onOpenChange={(open) => {
+            setProfileCreateOpen(open);
+            if (!open) setNewProfileName('');
+          }}
+        >
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.createTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.createDescription')}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-1">
+              <Input
+                value={newProfileName}
+                onChange={(e) => setNewProfileName(trimProfileNameToLimit(e.target.value))}
+                placeholder={t('fanCurve.profiles.namePlaceholder')}
+                className="h-10"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void (async () => {
+                      const ok = await createProfileWithName(newProfileName);
+                      if (ok) {
+                        setProfileCreateOpen(false);
+                        setNewProfileName('');
+                      }
+                    })();
+                  }
+                }}
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setProfileCreateOpen(false);
+                  setNewProfileName('');
+                }}
+                icon={<X className="h-3.5 w-3.5" />}
+              >
+                {t('common.actions.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={profileOpLoading}
+                onClick={async () => {
+                  const ok = await createProfileWithName(newProfileName);
+                  if (ok) {
+                    setProfileCreateOpen(false);
+                    setNewProfileName('');
+                  }
+                }}
+                icon={<Check className="h-3.5 w-3.5" />}
+              >
+                {t('common.actions.confirm')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── 管理曲线方案弹窗（重命名 / 删除） ── */}
+        <Dialog
+          open={profileManagerOpen}
+          onOpenChange={(open) => {
+            setProfileManagerOpen(open);
+            if (!open) setConfirmDeleteId(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('fanCurve.profiles.manageTitle')}</DialogTitle>
+              <DialogDescription>{t('fanCurve.profiles.manageDescription')}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-1">
+              {curveProfiles.map((profile) => {
+                const draft = renameDrafts[profile.id] ?? profile.name;
+                const isActive = profile.id === activeProfileId;
+                const isDirty = draft.trim() !== profile.name;
+                const canDelete = curveProfiles.length > 1;
+                const isConfirming = confirmDeleteId === profile.id;
+                return (
+                  <div
+                    key={profile.id}
+                    className={clsx(
+                      'flex items-center gap-2 rounded-xl border p-2',
+                      isActive ? 'border-primary/40 bg-primary/5' : 'border-border/70 bg-background/40',
+                    )}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <Input
+                        value={draft}
+                        onChange={(e) => setRenameDrafts((prev) => ({ ...prev, [profile.id]: trimProfileNameToLimit(e.target.value) }))}
+                        placeholder={t('fanCurve.profiles.namePlaceholder')}
+                        className="h-9"
+                      />
+                    </div>
+                    {isActive && <Badge variant="info">{t('fanCurve.profiles.activeBadge')}</Badge>}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={!isDirty}
+                      loading={profileOpLoading && isDirty}
+                      onClick={() => renameProfileById(profile.id, draft)}
+                      icon={<Pencil className="h-3.5 w-3.5" />}
+                    >
+                      {t('fanCurve.profiles.saveName')}
+                    </Button>
+                    {isConfirming ? (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={profileOpLoading}
+                        disabled={!canDelete}
+                        onClick={async () => {
+                          await removeProfileById(profile.id);
+                          setConfirmDeleteId(null);
+                        }}
+                        icon={<Check className="h-3.5 w-3.5" />}
+                      >
+                        {t('common.actions.confirm')}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={!canDelete}
+                        onClick={() => setConfirmDeleteId(profile.id)}
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setProfileCreateOpen(true);
+                  setNewProfileName('');
+                }}
+                icon={<Plus className="h-3.5 w-3.5" />}
+              >
+                {t('fanCurve.profiles.addAction')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setProfileManagerOpen(false)}
+                icon={<Check className="h-3.5 w-3.5" />}
+              >
+                {t('common.actions.done')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={showLowRpmWarning} onOpenChange={setShowLowRpmWarning}>
           <DialogContent

@@ -13,8 +13,10 @@
       "back": "Back",
       "cancel": "Cancel",
       "close": "Close",
+      "confirm": "Confirm",
       "copy": "Copy",
       "delete": "Delete",
+      "done": "Done",
       "export": "Export",
       "import": "Import",
       "refresh": "Refresh",
@@ -208,7 +210,11 @@
   },
   "fanCurveProfileSelect": {
     "placeholder": "Select a curve profile",
-    "empty": "No curve profiles"
+    "empty": "No curve profiles",
+    "addNewAria": "Add new profile",
+    "addNewTooltip": "Add new profile",
+    "manageAria": "Manage profiles",
+    "manageTooltip": "Manage profiles"
   },
   "aboutPanel": {
     "title": "About {{name}}",
@@ -484,7 +490,14 @@
       "namePlaceholder": "Current profile name (max 6 chars)",
       "saveName": "Save name",
       "saveAsNew": "Save as new profile",
-      "deleteCurrent": "Delete current profile"
+      "deleteCurrent": "Delete current profile",
+      "createTitle": "Add new profile",
+      "createDescription": "Create a new profile based on the curve currently on the canvas. Names are limited to 6 characters.",
+      "manageTitle": "Manage profiles",
+      "manageDescription": "Rename or delete existing curve profiles here.",
+      "addAction": "Add",
+      "activeBadge": "Active",
+      "deleteLastError": "At least one curve profile must remain"
     },
     "importExport": {
       "title": "Import / export curve profiles",

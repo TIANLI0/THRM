@@ -13,8 +13,10 @@
       "back": "戻る",
       "cancel": "キャンセル",
       "close": "閉じる",
+      "confirm": "確認",
       "copy": "コピー",
       "delete": "削除",
+      "done": "完了",
       "export": "エクスポート",
       "import": "適用",
       "refresh": "更新",
@@ -207,7 +209,11 @@
   },
   "fanCurveProfileSelect": {
     "placeholder": "カーブプロファイルを選択",
-    "empty": "カーブプロファイルがありません"
+    "empty": "カーブプロファイルがありません",
+    "addNewAria": "プロファイルを追加",
+    "addNewTooltip": "プロファイルを追加",
+    "manageAria": "プロファイルを管理",
+    "manageTooltip": "プロファイルを管理"
   },
   "aboutPanel": {
     "title": "{{name}} について",
@@ -483,7 +489,14 @@
       "namePlaceholder": "現在のプロファイル名（最大 6 文字）",
       "saveName": "名前を変更",
       "saveAsNew": "新規プロファイルとして保存",
-      "deleteCurrent": "現在のプロファイルを削除"
+      "deleteCurrent": "現在のプロファイルを削除",
+      "createTitle": "プロファイルを追加",
+      "createDescription": "現在のキャンバス上のカーブから新しいプロファイルを作成します。名前は最大 6 文字です。",
+      "manageTitle": "プロファイルを管理",
+      "manageDescription": "既存のカーブプロファイルの名前を変更または削除できます。",
+      "addAction": "追加",
+      "activeBadge": "現在",
+      "deleteLastError": "少なくとも 1 つのプロファイルを残してください"
     },
     "importExport": {
       "title": "カーブプロファイルのインポート / エクスポート",
