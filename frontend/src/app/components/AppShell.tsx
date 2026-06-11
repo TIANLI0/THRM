@@ -531,7 +531,8 @@ export default function AppShell({
   return (
     <div
       className={clsx(
-        'glacier-shell app-shell--hide-scrollbar relative flex h-dvh w-full overflow-hidden bg-background text-foreground',
+        'glacier-shell relative flex h-dvh w-full overflow-hidden bg-background text-foreground',
+        activeTab === 'status' && 'app-shell--hide-scrollbar',
         isWindowsChrome && 'glacier-native-backdrop',
       )}
     >
