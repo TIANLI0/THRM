@@ -46,13 +46,15 @@ func modelNameForProductID(productID uint16) string {
 
 // Manager 设备管理器
 type Manager struct {
-	device         *hid.Device
-	isConnected    bool
-	productID      uint16 // 当前连接的产品ID
-	deviceType     string // "hid" 或 "ble"
-	mutex          sync.RWMutex
-	logger         types.Logger
-	currentFanData atomic.Pointer[types.FanData]
+	device           *hid.Device
+	isConnected      bool
+	productID        uint16 // 当前连接的产品ID
+	deviceType       string // "hid" 或 "ble"
+	mutex            sync.RWMutex
+	logger           types.Logger
+	currentFanData   atomic.Pointer[types.FanData]
+	lastCommandedRPM int
+	hasCommandedRPM  bool
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}
@@ -557,7 +559,37 @@ func (m *Manager) SetFanSpeed(rpm int) bool {
 		return false
 	}
 
-	// 首先进入实时转速模式
+	if rpm == 0 {
+		if m.hasCommandedRPM && m.lastCommandedRPM == 0 {
+			return true
+		}
+
+		if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.logError("进入实时转速模式失败: %v", err)
+			return false
+		}
+
+		time.Sleep(50 * time.Millisecond)
+
+		speedBytes := []byte{0x00, 0x00}
+		if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
+			m.logError("设置风扇转速失败: %v", err)
+			return false
+		}
+
+		time.Sleep(50 * time.Millisecond)
+
+		if err := m.writeHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.logError("退出实时转速模式失败: %v", err)
+			return false
+		}
+
+		m.lastCommandedRPM = 0
+		m.hasCommandedRPM = true
+		m.logDebug("已关闭风扇（RPM=0 + 退出实时模式）")
+		return true
+	}
+
 	if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
 		m.logError("进入实时转速模式失败: %v", err)
 		return false
@@ -573,6 +605,8 @@ func (m *Manager) SetFanSpeed(rpm int) bool {
 		return false
 	}
 
+	m.lastCommandedRPM = rpm
+	m.hasCommandedRPM = true
 	m.logDebug("已设置风扇转速: %d RPM", rpm)
 	return true
 }
@@ -596,6 +630,37 @@ func (m *Manager) SetCustomFanSpeed(rpm int) bool {
 
 	m.logWarn("警告：设置自定义转速 %d RPM（无上下限限制）", rpm)
 
+	if rpm == 0 {
+		if m.hasCommandedRPM && m.lastCommandedRPM == 0 {
+			return true
+		}
+
+		if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.logError("进入实时转速模式失败: %v", err)
+			return false
+		}
+
+		time.Sleep(50 * time.Millisecond)
+
+		speedBytes := []byte{0x00, 0x00}
+		if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
+			m.logError("设置自定义风扇转速失败: %v", err)
+			return false
+		}
+
+		time.Sleep(50 * time.Millisecond)
+
+		if err := m.writeHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.logError("退出实时转速模式失败: %v", err)
+			return false
+		}
+
+		m.lastCommandedRPM = 0
+		m.hasCommandedRPM = true
+		m.logInfo("已关闭风扇（自定义RPM=0 + 退出实时模式）")
+		return true
+	}
+
 	if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
 		m.logError("进入实时转速模式失败: %v", err)
 		return false
@@ -611,6 +676,8 @@ func (m *Manager) SetCustomFanSpeed(rpm int) bool {
 		return false
 	}
 
+	m.lastCommandedRPM = rpm
+	m.hasCommandedRPM = true
 	m.logInfo("已设置自定义风扇转速: %d RPM", rpm)
 	return true
 }

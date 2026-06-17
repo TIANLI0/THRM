@@ -115,3 +115,5 @@ export function TestTemperatureReading():Promise<types.TemperatureData>;
 export function UpdateConfig(arg1:types.AppConfig):Promise<void>;
 
 export function UpdateGuiResponseTime():Promise<void>;
+
+export function WindowBlurEnabled():Promise<boolean>;

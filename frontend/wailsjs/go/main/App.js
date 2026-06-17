@@ -225,3 +225,7 @@ export function UpdateConfig(arg1) {
 export function UpdateGuiResponseTime() {
   return window['go']['main']['App']['UpdateGuiResponseTime']();
 }
+
+export function WindowBlurEnabled() {
+  return window['go']['main']['App']['WindowBlurEnabled']();
+}

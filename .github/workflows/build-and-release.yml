@@ -577,96 +577,95 @@ jobs:
             return (($lines -join [Environment]::NewLine).Trim() + [Environment]::NewLine)
           }
 
-          if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
-            throw 'Missing GitHub secret DEEPSEEK_API_KEY for release note generation.'
-          }
-
-          $templateRaw = Get-Content '.github/prompts/release-notes.prompt.yml' -Raw
-          $templateMatch = [System.Text.RegularExpressions.Regex]::Match($templateRaw, '(?s)^template:\s*\|\r?\n(?<body>.*)$')
-          if (-not $templateMatch.Success) {
-            throw 'Release prompt template must use a template: | block scalar.'
-          }
-
-          $prompt = $templateMatch.Groups['body'].Value -replace '(?m)^  ', ''
-          $commitSummary = Get-Content 'build/release-context/ai-commits.txt' -Raw
-          $changedFiles = Get-Content 'build/release-context/ai-files.txt' -Raw
-          $codeContext = Get-Content 'build/release-context/code-context.txt' -Raw
-
-          $replacements = @{
-            '{{repo_name}}' = $env:REPO_NAME
-            '{{release_name}}' = $env:RELEASE_NAME
-            '{{release_tag}}' = $env:RELEASE_TAG
-            '{{release_label}}' = $env:RELEASE_LABEL
-            '{{release_date}}' = $env:RELEASE_DATE
-            '{{compare_summary}}' = $env:COMPARE_SUMMARY
-            '{{release_guidance}}' = $env:RELEASE_GUIDANCE
-            '{{commit_summary}}' = $commitSummary.Trim()
-            '{{changed_files}}' = $changedFiles.Trim()
-            '{{code_context}}' = $codeContext.Trim()
-          }
-
-          foreach ($entry in $replacements.GetEnumerator()) {
-            $prompt = $prompt.Replace($entry.Key, $entry.Value)
-          }
-
-          $payload = @{
-            model = $env:DEEPSEEK_MODEL
-            messages = @(
-              @{
-                role = 'system'
-                content = 'You are a meticulous user-facing release editor. Write concise GitHub release notes in bilingual Markdown using Simplified Chinese first and English second. Only use facts supported by the supplied release scope, user-visible commit list, and user-visible file list. Never output internal-only changes that users cannot perceive (for example CI/workflows, refactors without behavioral impact, logs, test-only changes, dependency bumps, protocol/internal plumbing). If user-visible impact is unclear, omit it. Do not invent features, fixes, compatibility claims, dates, migration steps, or internal details. Do not mention AI, models, prompts, or internal generation process. Do not use code fences.'
-              },
-              @{
-                role = 'user'
-                content = $prompt
-              }
-            )
-            thinking = @{ type = 'enabled' }
-            reasoning_effort = 'high'
-            max_tokens = 1800
-            response_format = @{ type = 'text' }
-            stream = $false
-            temperature = 0.4
-            user_id = "github-actions-$($env:GITHUB_RUN_ID)"
-          } | ConvertTo-Json -Depth 20
-
-          $uri = "$($env:DEEPSEEK_API_BASE_URL.TrimEnd('/'))/chat/completions"
-          $headers = @{
-            Authorization = "Bearer $($env:DEEPSEEK_API_KEY)"
-            Accept = 'application/json'
-          }
-
           $notes = ''
-          $maxAttempts = 3
-          $requiredHeadings = @(
-            '## 亮点 / Highlights',
-            '## 修复与改进 / Fixes and Improvements',
-            '## 涉及范围 / Scope',
-            '## 使用提示 / Notes'
-          )
 
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            try {
-              $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/json' -Body $payload
-              $candidate = "$($response.choices[0].message.content)".Trim()
-
-              if ([string]::IsNullOrWhiteSpace($candidate)) {
-                throw 'DeepSeek API returned empty release notes.'
-              }
-
-              foreach ($heading in $requiredHeadings) {
-                if ($candidate -notmatch [System.Text.RegularExpressions.Regex]::Escape($heading)) {
-                  throw "DeepSeek output missing required heading: $heading"
-                }
-              }
-
-              $notes = $candidate
-              break
+          if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
+            Write-Warning 'Missing GitHub secret DEEPSEEK_API_KEY. Falling back to conservative local release notes.'
+          } else {
+            $templateRaw = Get-Content '.github/prompts/release-notes.prompt.yml' -Raw
+            $templateMatch = [System.Text.RegularExpressions.Regex]::Match($templateRaw, '(?s)^template:\s*\|\r?\n(?<body>.*)$')
+            if (-not $templateMatch.Success) {
+              throw 'Release prompt template must use a template: | block scalar.'
             }
-            catch {
-              Write-Warning "DeepSeek release notes attempt $attempt/$maxAttempts failed: $($_.Exception.Message)"
-              if ($attempt -lt $maxAttempts) {
-                Start-Sleep -Seconds (4 * $attempt)
+
+            $prompt = $templateMatch.Groups['body'].Value -replace '(?m)^  ', ''
+            $commitSummary = Get-Content 'build/release-context/ai-commits.txt' -Raw
+            $changedFiles = Get-Content 'build/release-context/ai-files.txt' -Raw
+            $codeContext = Get-Content 'build/release-context/code-context.txt' -Raw
+
+            $replacements = @{
+              '{{repo_name}}' = $env:REPO_NAME
+              '{{release_name}}' = $env:RELEASE_NAME
+              '{{release_tag}}' = $env:RELEASE_TAG
+              '{{release_label}}' = $env:RELEASE_LABEL
+              '{{release_date}}' = $env:RELEASE_DATE
+              '{{compare_summary}}' = $env:COMPARE_SUMMARY
+              '{{release_guidance}}' = $env:RELEASE_GUIDANCE
+              '{{commit_summary}}' = $commitSummary.Trim()
+              '{{changed_files}}' = $changedFiles.Trim()
+              '{{code_context}}' = $codeContext.Trim()
+            }
+
+            foreach ($entry in $replacements.GetEnumerator()) {
+              $prompt = $prompt.Replace($entry.Key, $entry.Value)
+            }
+
+            $payload = @{
+              model = $env:DEEPSEEK_MODEL
+              messages = @(
+                @{
+                  role = 'system'
+                  content = 'You are a meticulous user-facing release editor. Write concise GitHub release notes in bilingual Markdown using Simplified Chinese first and English second. Only use facts supported by the supplied release scope, user-visible commit list, and user-visible file list. Never output internal-only changes that users cannot perceive (for example CI/workflows, refactors without behavioral impact, logs, test-only changes, dependency bumps, protocol/internal plumbing). If user-visible impact is unclear, omit it. Do not invent features, fixes, compatibility claims, dates, migration steps, or internal details. Do not mention AI, models, prompts, or internal generation process. Do not use code fences.'
+                },
+                @{
+                  role = 'user'
+                  content = $prompt
+                }
+              )
+              max_tokens = 1800
+              response_format = @{ type = 'text' }
+              stream = $false
+              temperature = 0.4
+              user_id = "github-actions-$($env:GITHUB_RUN_ID)"
+            } | ConvertTo-Json -Depth 20
+
+            $uri = "$($env:DEEPSEEK_API_BASE_URL.TrimEnd('/'))/chat/completions"
+            $headers = @{
+              Authorization = "Bearer $($env:DEEPSEEK_API_KEY)"
+              Accept = 'application/json'
+            }
+
+            $maxAttempts = 3
+            $requiredHeadings = @(
+              '## 亮点 / Highlights',
+              '## 修复与改进 / Fixes and Improvements',
+              '## 涉及范围 / Scope',
+              '## 使用提示 / Notes'
+            )
+
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+              try {
+                $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/json' -Body $payload
+                $candidate = "$($response.choices[0].message.content)".Trim()
+
+                if ([string]::IsNullOrWhiteSpace($candidate)) {
+                  throw 'DeepSeek API returned empty release notes.'
+                }
+
+                foreach ($heading in $requiredHeadings) {
+                  if ($candidate -notmatch [System.Text.RegularExpressions.Regex]::Escape($heading)) {
+                    throw "DeepSeek output missing required heading: $heading"
+                  }
+                }
+
+                $notes = $candidate
+                break
+              }
+              catch {
+                Write-Warning "DeepSeek release notes attempt $attempt/$maxAttempts failed: $($_.Exception.Message)"
+                if ($attempt -lt $maxAttempts) {
+                  Start-Sleep -Seconds (4 * $attempt)
+                }
               }
             }
           }

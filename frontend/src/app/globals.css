@@ -183,8 +183,13 @@ body:has(.glacier-native-backdrop) {
 }
 
 
-.glacier-native-backdrop .glacier-content-panel {
+/* 只要存在自定义顶栏(Windows 自绘标题栏)，内容面板就需下移让出顶栏高度，
+   与是否启用模糊材质无关，避免关闭模糊后内容被绝对定位的顶栏遮挡 */
+.glacier-shell:has(.glacier-titlebar) .glacier-content-panel {
   margin-top: 2.5rem; /* 顶栏高度 */
+}
+
+.glacier-native-backdrop .glacier-content-panel {
   background: var(--mica-content-surface);
   border-top: 1px solid var(--mica-content-border);
   border-left: 1px solid var(--mica-content-border);

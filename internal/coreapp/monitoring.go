@@ -132,6 +132,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		TempSource: cfg.TempSource,
 		GpuDevice:  cfg.GpuDevice,
 		CpuSensor:  cfg.CpuSensor,
+		CpuSensors: cfg.CpuSensors,
 		GpuSensor:  cfg.GpuSensor,
 	}
 	initialTemp := a.tempReader.Read(initialSelection)
@@ -176,6 +177,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				TempSource: cfg.TempSource,
 				GpuDevice:  cfg.GpuDevice,
 				CpuSensor:  cfg.CpuSensor,
+				CpuSensors: cfg.CpuSensors,
 				GpuSensor:  cfg.GpuSensor,
 			}
 			temp := a.tempReader.Read(selection)

@@ -388,7 +388,10 @@ export namespace types {
 	    tempSource: string;
 	    gpuDevice: string;
 	    cpuSensor: string;
+	    cpuSensors: string[];
 	    gpuSensor: string;
+	    windowBlur: string;
+	    suspendFanOff: boolean;
 	    configPath: string;
 	    manualGear: string;
 	    manualLevel: string;
@@ -430,7 +433,10 @@ export namespace types {
 	        this.tempSource = source["tempSource"];
 	        this.gpuDevice = source["gpuDevice"];
 	        this.cpuSensor = source["cpuSensor"];
+	        this.cpuSensors = source["cpuSensors"];
 	        this.gpuSensor = source["gpuSensor"];
+	        this.windowBlur = source["windowBlur"];
+	        this.suspendFanOff = source["suspendFanOff"];
 	        this.configPath = source["configPath"];
 	        this.manualGear = source["manualGear"];
 	        this.manualLevel = source["manualLevel"];

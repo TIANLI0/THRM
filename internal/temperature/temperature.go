@@ -67,6 +67,9 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 				return temp
 			}
 
+			// 用户多选 CPU 传感器时，按所选传感器温度的算术平均覆盖 CPU 基准温度。
+			applyMultiSensorCpuAverage(&temp, selection.CpuSensors)
+
 			temp.BridgeOk = true
 			temp.BridgeMsg = ""
 			return temp
@@ -124,6 +127,43 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 			temp.UpdateTime *= 1000
 		}
 	}
+}
+
+// applyMultiSensorCpuAverage 当用户多选 CPU 传感器时，用所选传感器温度的算术平均
+// 覆盖 CPU 基准温度，并同步刷新 MaxTemp 与 ControlTemp。未命中任何传感器时不改动。
+func applyMultiSensorCpuAverage(temp *types.TemperatureData, keys []string) {
+	if temp == nil {
+		return
+	}
+	avg, ok := averageSelectedCpuTemp(temp.CpuSensors, keys)
+	if !ok {
+		return
+	}
+	temp.CPUTemp = avg
+	temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
+	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, temp.ControlSource)
+}
+
+// averageSelectedCpuTemp 从已采集的传感器列表中按 key 匹配并计算算术平均(四舍五入)。
+// keys 为空或未命中任何传感器时返回 ok=false。
+func averageSelectedCpuTemp(sensors []types.TemperatureSensor, keys []string) (int, bool) {
+	if len(keys) == 0 || len(sensors) == 0 {
+		return 0, false
+	}
+	sum, n := 0, 0
+	for _, key := range keys {
+		for i := range sensors {
+			if strings.EqualFold(sensors[i].Key, key) {
+				sum += sensors[i].Value
+				n++
+				break
+			}
+		}
+	}
+	if n == 0 {
+		return 0, false
+	}
+	return (sum + n/2) / n, true
 }
 
 func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {

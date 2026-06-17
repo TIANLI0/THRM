@@ -32,7 +32,7 @@ import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type The
 import { type AppLocale, useLocale } from '../lib/i18n';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
-import { ToggleSwitch, Button, Select, Slider } from './ui/index';
+import { ToggleSwitch, Button, Select, MultiSelect, Slider } from './ui/index';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -492,9 +492,10 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
     return gpuSensors;
   }, [activeGpuDevice, gpuSensors]);
-  const selectedCpuSensor = useMemo(() => {
-    const configured = (((config as any).cpuSensor as string) || 'auto');
-    return cpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
+  // 多选 CPU 传感器（多核平均）：仅保留当前仍存在的传感器 key；为空表示自动。
+  const selectedCpuSensors = useMemo(() => {
+    const arr = Array.isArray((config as any).cpuSensors) ? ((config as any).cpuSensors as string[]) : [];
+    return arr.filter((key) => cpuSensors.some((sensor) => sensor.key === key));
   }, [config, cpuSensors]);
   const selectedGpuSensor = useMemo(() => {
     const configured = (((config as any).gpuSensor as string) || 'auto');
@@ -532,6 +533,14 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       ...customThemes.map((theme) => ({ value: theme.id, label: theme.name })),
     ],
     [locale, t, customThemes],
+  );
+  const windowBlurOptions = useMemo(
+    () => [
+      { value: 'auto', label: t('controlPanel.options.windowBlur.auto') },
+      { value: 'on', label: t('controlPanel.options.windowBlur.on') },
+      { value: 'off', label: t('controlPanel.options.windowBlur.off') },
+    ],
+    [locale, t],
   );
   const lightModeOptions = useMemo(
     () => LIGHT_MODE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
@@ -724,6 +733,39 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, [config, onConfigChange]);
 
+  const handleCpuSensorsChange = useCallback(async (keys: string[]) => {
+    setLoading('cpuSensors', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({ ...config, cpuSensors: keys });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('cpuSensors', false);
+    }
+  }, [config, onConfigChange]);
+
+  const handleWindowBlurChange = useCallback(async (mode: string) => {
+    setLoading('windowBlur', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({ ...config, windowBlur: mode });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('windowBlur', false);
+    }
+  }, [config, onConfigChange]);
+
+  const handleSuspendFanOffChange = useCallback(async (enabled: boolean) => {
+    setLoading('suspendFanOff', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({ ...config, suspendFanOff: enabled });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('suspendFanOff', false);
+    }
+  }, [config, onConfigChange]);
+
   const handleTransientSpikeFilterChange = useCallback(async (enabled: boolean) => {
     setLoading('transientSpikeFilter', true);
     try {
@@ -879,11 +921,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       label: `${device.vendor ? `${device.vendor.toUpperCase()} · ` : ''}${device.name}`,
     })),
   ], [gpuDevices, locale, t]);
-
-  const cpuSensorOptions = useMemo(() => [
-    { value: 'auto', label: cpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
-    ...cpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
-  ], [cpuSensors, locale, t]);
 
   const gpuSensorOptions = useMemo(() => [
     { value: 'auto', label: effectiveGpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
@@ -1225,14 +1262,19 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                       </div>
                     </SelectionField>
 
-                    <SelectionField label={t('controlPanel.fan.temperatureSensor')}>
-                      <Select
-                        value={selectedCpuSensor}
-                        onChange={(value: string | number) => handleTempSensorChange('cpu', String(value))}
-                        options={cpuSensorOptions}
+                    <SelectionField
+                      label={t('controlPanel.fan.temperatureSensorMulti')}
+                      hint={t('controlPanel.fan.temperatureSensorMultiHint')}
+                    >
+                      <MultiSelect
+                        values={selectedCpuSensors}
+                        onChange={(values) => void handleCpuSensorsChange(values)}
+                        options={cpuSensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` }))}
+                        autoOptionLabel={t('controlPanel.options.sensor.auto')}
+                        emptyLabel={cpuSensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto')}
+                        disabled={!cpuSensors.length || loadingStates.cpuSensors}
                         size="sm"
                         className="w-full min-w-0"
-                        disabled={!cpuSensors.length}
                       />
                     </SelectionField>
                   </div>
@@ -1651,6 +1693,35 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             <ToggleSwitch
               enabled={(config as any).ignoreDeviceOnReconnect ?? true}
               onChange={handleIgnoreDeviceOnReconnectChange}
+              size="sm"
+              color="green"
+            />
+          </SettingRow>
+
+          <SettingRow
+            icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'auto') !== 'off' ? 'text-primary' : '')} />}
+            title={t('controlPanel.system.blurTitle')}
+            description={t('controlPanel.system.blurDescription')}
+          >
+            <div className="w-36">
+              <Select
+                value={((config as any).windowBlur || 'auto') as string}
+                onChange={(v: string | number) => handleWindowBlurChange(String(v))}
+                options={windowBlurOptions}
+                size="sm"
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            icon={<Power className={clsx('h-4 w-4', ((config as any).suspendFanOff ?? false) ? 'text-emerald-500' : '')} />}
+            title={t('controlPanel.system.suspendFanOffTitle')}
+            description={t('controlPanel.system.suspendFanOffDescription')}
+          >
+            <ToggleSwitch
+              enabled={(config as any).suspendFanOff ?? false}
+              onChange={handleSuspendFanOffChange}
+              loading={loadingStates.suspendFanOff}
               size="sm"
               color="green"
             />

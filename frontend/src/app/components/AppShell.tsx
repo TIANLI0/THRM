@@ -20,6 +20,7 @@ import {
   Info,
 } from 'lucide-react';
 import { BrowserOpenURL, Environment, Quit, WindowIsMaximised, WindowMinimise, WindowToggleMaximise } from '../../../wailsjs/runtime/runtime';
+import { WindowBlurEnabled } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -433,6 +434,8 @@ export default function AppShell({
 }: AppShellProps) {
   const { t } = useTranslation();
   const [isWindowsChrome, setIsWindowsChrome] = useState(false);
+  // 是否启用系统模糊材质(云母)：关闭时窗口为不透明，前端需回退为不透明背景。
+  const [nativeBackdrop, setNativeBackdrop] = useState(false);
   const [isMaximised, setIsMaximised] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousActiveTabRef = useRef<ActiveTab>(activeTab);
@@ -456,8 +459,14 @@ export default function AppShell({
         const isWindows = env.platform === 'windows';
         setIsWindowsChrome(isWindows);
         if (!isWindows) {
+          setNativeBackdrop(false);
           setIsMaximised(false);
           return;
+        }
+        try {
+          setNativeBackdrop(await WindowBlurEnabled());
+        } catch {
+          setNativeBackdrop(true);
         }
         const handleResize = () => void syncWindowState();
         window.addEventListener('resize', handleResize);
@@ -533,7 +542,7 @@ export default function AppShell({
       className={clsx(
         'glacier-shell relative flex h-dvh w-full overflow-hidden bg-background text-foreground',
         activeTab === 'status' && 'app-shell--hide-scrollbar',
-        isWindowsChrome && 'glacier-native-backdrop',
+        isWindowsChrome && nativeBackdrop && 'glacier-native-backdrop',
       )}
     >
       {isWindowsChrome && (

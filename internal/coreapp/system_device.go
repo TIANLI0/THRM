@@ -123,7 +123,13 @@ func defaultReconnectDelays() []time.Duration {
 		2 * time.Second,
 		5 * time.Second,
 		10 * time.Second,
+		15 * time.Second,
+		20 * time.Second,
 		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
 	}
 }
 
@@ -232,9 +238,16 @@ func (a *CoreApp) onSystemSuspend() {
 	a.autoReconnectSuppressed.Store(true)
 	a.stopTemperatureMonitoring()
 
+	suspendFanOff := a.configManager.Get().SuspendFanOff
+
 	done := make(chan struct{})
 	a.safeGo("suspend-cleanup", func() {
 		defer close(done)
+
+		// 断开设备前(句柄仍有效)先归零转速并关闭挡位灯/RGB，避免休眠期间风扇/灯光保持运行。
+		if suspendFanOff {
+			a.safeRun("suspend-power-off", a.powerOffDeviceForSuspend)
+		}
 
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
@@ -257,6 +270,30 @@ func (a *CoreApp) onSystemSuspend() {
 	case <-done:
 	case <-time.After(suspendCleanupGrace):
 		a.logError("挂起前清理超过 %s 仍未完成，转入后台继续执行，避免阻塞系统电源回调", suspendCleanupGrace)
+	}
+}
+
+// powerOffDeviceForSuspend 在系统挂起前将风扇降到 0 转速，并(非 BS1)关闭挡位灯与 RGB。
+// 唤醒重连后由 ConnectDevice/reapplyConfigAfterReconnect 重新应用转速、挡位灯与灯带配置。
+func (a *CoreApp) powerOffDeviceForSuspend() {
+	if !a.deviceManager.IsConnected() {
+		return
+	}
+
+	a.logInfo("系统挂起前：风扇转速归零并关闭挡位灯/RGB")
+	if !a.deviceManager.SetFanSpeed(0) {
+		a.logError("挂起前归零转速失败")
+	}
+
+	// BS1 不支持挡位灯与 RGB 关闭。
+	if a.deviceManager.IsBS1() {
+		return
+	}
+	if !a.deviceManager.SetGearLight(false) {
+		a.logError("挂起前关闭挡位灯失败")
+	}
+	if !a.deviceManager.SetRGBOff() {
+		a.logError("挂起前关闭 RGB 失败")
 	}
 }
 
@@ -342,7 +379,11 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		systemResumeReconnectDelay,
 		8 * time.Second,
 		15 * time.Second,
+		20 * time.Second,
 		30 * time.Second,
+		30 * time.Second,
+		60 * time.Second,
+		60 * time.Second,
 	})
 }
 

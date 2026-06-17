@@ -214,6 +214,7 @@ func applyMissingTemperatureDefaults(cfg *types.AppConfig, rawConfig map[string]
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
+	cfg.CpuSensors = types.NormalizeSensorSelections(cfg.CpuSensors)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
 }
 

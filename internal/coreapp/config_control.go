@@ -72,7 +72,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)
+	cfg.CpuSensors = types.NormalizeSensorSelections(cfg.CpuSensors)
 	cfg.GpuSensor = types.NormalizeSensorSelection(cfg.GpuSensor)
+	cfg.WindowBlur = types.NormalizeWindowBlur(cfg.WindowBlur)
 	curveprofiles.NormalizeConfig(&cfg)
 	if idx := curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID); idx >= 0 {
 		cfg.FanCurveProfiles[idx].Curve = curveprofiles.CloneCurve(cfg.FanCurve)

@@ -575,6 +575,8 @@
       "processorDeviceHintWaiting": "CPU model not detected yet. It will appear automatically once TempBridge is available.",
       "waitingRecognition": "Waiting for detection...",
       "temperatureSensor": "Temperature sensor",
+      "temperatureSensorMulti": "CPU sensors (averaged)",
+      "temperatureSensorMultiHint": "Select one or more cores; their average is used as the CPU control baseline. Select none for automatic.",
       "currentBaselineTemperature": "Current baseline temperature {{temperature}}°C",
       "noCpuTemperatureData": "No CPU temperature data is currently available",
       "gpuBaseline": "GPU baseline",
@@ -665,7 +667,11 @@
       "autoStartTip": "Running as administrator avoids a UAC prompt each time",
       "reconnectTitle": "Keep config after reconnect",
       "reconnectDescription": "Continue using the app configuration after reconnecting",
-      "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects"
+      "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects",
+      "blurTitle": "Window blur effect",
+      "blurDescription": "Acrylic/Mica translucency. Default: on for Windows 11, off for Windows 10. Takes effect after restart.",
+      "suspendFanOffTitle": "Power off on sleep",
+      "suspendFanOffDescription": "When the system sleeps or hibernates, set the fan to 0 RPM and turn off the gear light and RGB."
     },
     "offline": {
       "message": "Device is not connected. Some features are unavailable."
@@ -786,6 +792,11 @@
       "sensor": {
         "autoRecommended": "Auto (recommended)",
         "auto": "Auto"
+      },
+      "windowBlur": {
+        "auto": "Auto (by system)",
+        "on": "On",
+        "off": "Off"
       }
     }
   }

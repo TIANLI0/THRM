@@ -574,6 +574,8 @@
       "processorDeviceHintWaiting": "CPU モデルはまだ認識されていません。TempBridge が利用可能になると自動表示されます。",
       "waitingRecognition": "認識待ち...",
       "temperatureSensor": "温度センサー",
+      "temperatureSensorMulti": "CPU センサー（平均）",
+      "temperatureSensorMultiHint": "1 つ以上のコアを選択すると、その平均温度を CPU 制御の基準にします。未選択の場合は自動です。",
       "currentBaselineTemperature": "現在の基準温度 {{temperature}}°C",
       "noCpuTemperatureData": "現在利用可能な CPU 温度データはありません",
       "gpuBaseline": "GPU 基準",
@@ -664,7 +666,11 @@
       "autoStartTip": "管理者権限で実行すると毎回の UAC 確認を省略できます",
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
-      "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します"
+      "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
+      "blurTitle": "ウィンドウのぼかし効果",
+      "blurDescription": "アクリル/マイカの半透明効果。既定は Windows 11 でオン、Windows 10 でオフ。変更後は再起動で反映されます。",
+      "suspendFanOffTitle": "スリープ時に停止",
+      "suspendFanOffDescription": "システムがスリープ/休止状態になると、ファンを 0 RPM にし、ギアライトと RGB をオフにします。"
     },
     "offline": {
       "message": "デバイスが接続されていないため、一部機能は利用できません"
@@ -785,6 +791,11 @@
       "sensor": {
         "autoRecommended": "自動選択 (推奨)",
         "auto": "自動選択"
+      },
+      "windowBlur": {
+        "auto": "自動（システムに従う）",
+        "on": "オン",
+        "off": "オフ"
       }
     }
   }

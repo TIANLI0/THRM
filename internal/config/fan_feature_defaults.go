@@ -50,4 +50,11 @@ func applyMissingFanFeatureDefaults(cfg *types.AppConfig, rawConfig map[string]j
 		}
 	}
 	cfg.TimeCurveSchedule = types.NormalizeTimeCurveScheduleConfig(cfg.TimeCurveSchedule, cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID)
+
+	// 旧配置缺失窗口模糊设置时默认 auto(随系统版本)；休眠归零默认开启。
+	if _, ok := rawConfig["windowBlur"]; !ok {
+		cfg.WindowBlur = types.WindowBlurAuto
+	}
+	cfg.WindowBlur = types.NormalizeWindowBlur(cfg.WindowBlur)
+	// suspendFanOff 默认关闭(零值即 false)，缺失时无需额外处理。
 }

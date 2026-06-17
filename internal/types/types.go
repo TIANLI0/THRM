@@ -3,6 +3,7 @@ package types
 
 import (
 	"maps"
+	"strings"
 
 	"github.com/TIANLI0/THRM/internal/deviceproto"
 )
@@ -27,7 +28,25 @@ const (
 	LearningBiasBalanced   = "balanced"
 	LearningBiasCooling    = "cooling"
 	LearningBiasQuiet      = "quiet"
+	// WindowBlurAuto 根据系统版本自动决定窗口模糊效果(Win11 开启, Win10 关闭)。
+	WindowBlurAuto = "auto"
+	// WindowBlurOn 强制开启窗口模糊效果。
+	WindowBlurOn = "on"
+	// WindowBlurOff 强制关闭窗口模糊效果。
+	WindowBlurOff = "off"
 )
+
+// NormalizeWindowBlur 归一化窗口模糊效果设置，非法值回退为 auto。
+func NormalizeWindowBlur(mode string) string {
+	switch mode {
+	case WindowBlurOn:
+		return WindowBlurOn
+	case WindowBlurOff:
+		return WindowBlurOff
+	default:
+		return WindowBlurAuto
+	}
+}
 
 // NormalizeThemeMode 归一化主题模式。
 //
@@ -89,6 +108,35 @@ func NormalizeSensorSelection(selection string) string {
 	return selection
 }
 
+// NormalizeSensorSelections 归一化多选传感器列表：去除空白与重复(忽略大小写)。
+// 列表为空、或包含 "auto" 时返回 nil，表示自动选择(不做多传感器平均)。
+func NormalizeSensorSelections(selections []string) []string {
+	if len(selections) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(selections))
+	out := make([]string, 0, len(selections))
+	for _, s := range selections {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if strings.EqualFold(s, TempSensorAuto) {
+			return nil
+		}
+		key := strings.ToLower(s)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // NormalizeDeviceSelection 归一化设备选择，空值回退为 auto。
 func NormalizeDeviceSelection(selection string) string {
 	if selection == "" {
@@ -114,7 +162,10 @@ type TemperatureSelection struct {
 	TempSource string `json:"tempSource"`
 	GpuDevice  string `json:"gpuDevice"`
 	CpuSensor  string `json:"cpuSensor"`
-	GpuSensor  string `json:"gpuSensor"`
+	// CpuSensors 多选 CPU 传感器(用于多核平均)。非空时优先于 CpuSensor，
+	// 取所选传感器温度的算术平均作为 CPU 控温基准。
+	CpuSensors []string `json:"cpuSensors"`
+	GpuSensor  string   `json:"gpuSensor"`
 }
 
 // NormalizeTemperatureSelection 归一化温度选择配置。
@@ -122,6 +173,7 @@ func NormalizeTemperatureSelection(selection TemperatureSelection) TemperatureSe
 	selection.TempSource = NormalizeTempSource(selection.TempSource)
 	selection.GpuDevice = NormalizeDeviceSelection(selection.GpuDevice)
 	selection.CpuSensor = NormalizeSensorSelection(selection.CpuSensor)
+	selection.CpuSensors = NormalizeSensorSelections(selection.CpuSensors)
 	selection.GpuSensor = NormalizeSensorSelection(selection.GpuSensor)
 	return selection
 }
@@ -413,7 +465,10 @@ type AppConfig struct {
 	TempSource               string                    `json:"tempSource"`               // 控温温度来源: max/cpu/gpu
 	GpuDevice                string                    `json:"gpuDevice"`                // GPU 设备选择: auto 或设备 key
 	CpuSensor                string                    `json:"cpuSensor"`                // CPU 传感器选择: auto 或传感器 key
+	CpuSensors               []string                  `json:"cpuSensors"`               // CPU 多传感器选择(多核平均): 为空则按 cpuSensor 单选/自动
 	GpuSensor                string                    `json:"gpuSensor"`                // GPU 传感器选择: auto 或传感器 key
+	WindowBlur               string                    `json:"windowBlur"`               // 窗口模糊效果: auto/on/off (Win11 默认开, Win10 默认关)
+	SuspendFanOff            bool                      `json:"suspendFanOff"`            // 系统休眠/睡眠时自动归零转速并关闭挡位灯与 RGB
 	ConfigPath               string                    `json:"configPath"`               // 配置文件路径
 	ManualGear               string                    `json:"manualGear"`               // 手动挡位设置
 	ManualLevel              string                    `json:"manualLevel"`              // 手动挡位级别(低中高)
@@ -787,7 +842,10 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		TempSource:              defaultTempSelection.TempSource,
 		GpuDevice:               defaultTempSelection.GpuDevice,
 		CpuSensor:               defaultTempSelection.CpuSensor,
+		CpuSensors:              nil,
 		GpuSensor:               defaultTempSelection.GpuSensor,
+		WindowBlur:              WindowBlurAuto,
+		SuspendFanOff:           false,
 		ConfigPath:              "",
 		ManualGear:              "标准",
 		ManualLevel:             "中",

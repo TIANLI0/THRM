@@ -1,8 +1,8 @@
 'use client';
 
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown, Check } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button as ShadcnButton } from '@/components/ui/button';
@@ -125,6 +125,109 @@ export function Select<T extends string | number>({
           ))}
         </SelectContent>
       </ShadcnSelect>
+    </div>
+  );
+}
+
+interface MultiSelectProps {
+  values: string[];
+  onChange: (values: string[]) => void;
+  options: SelectOption<string>[];
+  /** 顶部“自动/全部”项的文案：点击后清空所有选择。 */
+  autoOptionLabel?: string;
+  /** 未选择任何项时触发器显示的文案（通常与 autoOptionLabel 相同）。 */
+  emptyLabel?: string;
+  disabled?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
+}
+
+/**
+ * MultiSelect 是与 Select 视觉一致的多选下拉框：触发器显示已选项摘要，
+ * 展开后以勾选列表方式多选。未选择任何项即视为“自动”。
+ */
+export function MultiSelect({
+  values,
+  onChange,
+  options,
+  autoOptionLabel,
+  emptyLabel,
+  disabled = false,
+  size = 'md',
+  className,
+}: MultiSelectProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointer = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  const selectedLabels = options.filter((option) => values.includes(option.value)).map((option) => option.label);
+  const triggerText = selectedLabels.length > 0 ? selectedLabels.join('、') : (emptyLabel ?? autoOptionLabel ?? '');
+
+  const toggle = (value: string) => {
+    onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  };
+
+  const itemClass = 'flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground outline-none hover:bg-accent hover:text-accent-foreground';
+
+  return (
+    <div ref={containerRef} className={clsx('relative min-w-[120px]', className)}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={clsx(
+          'flex w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          selectTriggerSize[size],
+        )}
+      >
+        <span className="truncate text-left">{triggerText}</span>
+        <ChevronDown className={clsx('h-4 w-4 shrink-0 opacity-70 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md">
+          {autoOptionLabel && (
+            <button type="button" className={itemClass} onClick={() => onChange([])}>
+              <Check className={clsx('h-4 w-4 shrink-0', values.length === 0 ? 'opacity-100' : 'opacity-0')} />
+              <span className="truncate">{autoOptionLabel}</span>
+            </button>
+          )}
+          {options.map((option) => {
+            const checked = values.includes(option.value);
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={option.disabled}
+                className={clsx(itemClass, option.disabled && 'pointer-events-none opacity-50')}
+                onClick={() => toggle(option.value)}
+              >
+                <Check className={clsx('h-4 w-4 shrink-0', checked ? 'opacity-100' : 'opacity-0')} />
+                <span className="truncate">{option.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
