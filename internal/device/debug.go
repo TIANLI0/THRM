@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	hidControlReportLen = 23
+	hidControlReportLen = 25
 	hidLightReportLen   = 65
 	maxDebugFrames      = 100
 )
