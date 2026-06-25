@@ -1,0 +1,18 @@
+# FanControlLinux - Flydigi BS Series Fan Cooler udev Rules
+# Install: sudo cp scripts/99-flydigi-fan.rules /etc/udev/rules.d/
+# Then: sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Flydigi BS2 / BS2PRO / BS3 / BS3PRO
+# VID: 0x37D7
+
+# USB device permissions
+SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1001", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1002", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1003", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1004", MODE="0666"
+
+# hidraw device permissions (USB and Bluetooth HID)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="37d7", MODE="0666"
+
+# Bluetooth HID devices may need additional matching
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{hid_id}=="*:000037D7:*", MODE="0666"
