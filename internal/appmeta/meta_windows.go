@@ -3,7 +3,6 @@
 package appmeta
 
 import (
-	"os"
 	"path/filepath"
 )
 

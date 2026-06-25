@@ -132,7 +132,7 @@ func TestBuildFrameLengthField(t *testing.T) {
 // TestParseFrameWithReportIDFullChain verifies full parse chain from HID report
 func TestParseFrameWithReportIDFullChain(t *testing.T) {
 	frame := BuildFrame(0xEF, 0x0B)
-	report := BuildReport(frame, 23)
+	report := BuildReport(frame, 25)
 
 	parsed, ok := ParseFrame(report)
 	if !ok {
@@ -152,13 +152,13 @@ func TestParseFrameWithReportIDFullChain(t *testing.T) {
 // TestReportZeroPadding verifies report is zero-padded to full length
 func TestReportZeroPadding(t *testing.T) {
 	frame := BuildFrame(0xEF)
-	report := BuildReport(frame, 23)
+	report := BuildReport(frame, 25)
 
 	if report[0] != ReportID {
 		t.Errorf("Report[0] = 0x%02X, want 0x%02X", report[0], ReportID)
 	}
-	if len(report) != 23 {
-		t.Errorf("Report len = %d, want 23", len(report))
+	if len(report) != 25 {
+		t.Errorf("Report len = %d, want 25", len(report))
 	}
 	// Remaining bytes after ReportID + frame should be zero
 	for i := len(frame) + 1; i < len(report); i++ {

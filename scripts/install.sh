@@ -34,7 +34,7 @@ cat > "$DESKTOP_DIR/thrm.desktop" << EOF
 Type=Application
 Name=THRM Fan Control
 Comment=Flydigi BS Series Fan Controller
-Exec=$INSTALL_DIR/thrm
+Exec="$INSTALL_DIR/thrm"
 Icon=thrm
 Terminal=false
 Categories=Utility;

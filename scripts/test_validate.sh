@@ -60,7 +60,7 @@ check "PID 1003 (BS3)" grep -q "1003" scripts/99-flydigi-fan.rules
 check "PID 1004 (BS3PRO)" grep -q "1004" scripts/99-flydigi-fan.rules
 
 echo "--- TS6.3: udev rules permissions ---"
-check "MODE=0666 present" grep -q 'MODE="0666"' scripts/99-flydigi-fan.rules
+check "TAG+=uaccess present" grep -q 'TAG+="uaccess"' scripts/99-flydigi-fan.rules
 
 echo "--- TS6.4: udevadm verify ---"
 if command -v udevadm &>/dev/null; then
@@ -100,7 +100,7 @@ check "go mod verify" go mod verify
 echo "--- TS7.4: go mod tidy clean ---"
 cp go.mod go.mod.bak
 cp go.sum go.sum.bak 2>/dev/null || true
-go mod tidy >/dev/null 2>&1
+check "go mod tidy succeeds" go mod tidy
 check "go mod tidy produces no changes" diff go.mod go.mod.bak
 mv go.mod.bak go.mod
 mv go.sum.bak go.sum 2>/dev/null || true

@@ -149,7 +149,11 @@ func (m *Manager) Stop() {
 	}
 	m.closed = true
 
+	actions := make([]Action, 0, len(m.bindings))
 	for action := range m.bindings {
+		actions = append(actions, action)
+	}
+	for _, action := range actions {
 		m.unregisterBinding(action)
 	}
 }

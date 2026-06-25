@@ -20,7 +20,10 @@ func NewManager(logger types.Logger) *Manager {
 }
 
 func autostartDesktopPath() string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
 	return filepath.Join(home, ".config", "autostart", "thrm.desktop")
 }
 
@@ -53,7 +56,7 @@ func (m *Manager) SetAutoStartWithMethod(enable bool, method string) error {
 Type=Application
 Name=%s
 Comment=Flydigi BS Series Fan Controller
-Exec=%s --autostart
+Exec="%s" --autostart
 Terminal=false
 Hidden=false
 X-GNOME-Autostart-enabled=true

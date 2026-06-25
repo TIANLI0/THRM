@@ -48,7 +48,7 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	// Test 1: Build and send Query Work Mode command (0x25)
 	t.Log("=== Test 1: Query Work Mode (0x25) ===")
 	queryFrame := deviceproto.BuildFrame(0x25)
-	report := deviceproto.BuildReport(queryFrame, 23)
+	report := deviceproto.BuildReport(queryFrame, 25)
 
 	if _, err := dev.Write(report); err != nil {
 		t.Fatalf("Write 0x25 failed: %v", err)
@@ -87,7 +87,7 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	t.Log("=== Test 2: Query Gear RPM Table (0x27) ===")
 	queryGearFrame := deviceproto.BuildFrame(0x27)
-	report2 := deviceproto.BuildReport(queryGearFrame, 23)
+	report2 := deviceproto.BuildReport(queryGearFrame, 25)
 
 	if _, err := dev.Write(report2); err != nil {
 		t.Fatalf("Write 0x27 failed: %v", err)
@@ -133,7 +133,7 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	// Test 4: RGB query (0x45) - safe read-only command
 	t.Log("=== Test 4: Query RGB Status (0x45) ===")
 	rgbFrame := deviceproto.BuildFrame(0x45, 0x00)
-	report4 := deviceproto.BuildReport(rgbFrame, 23)
+	report4 := deviceproto.BuildReport(rgbFrame, 25)
 
 	if _, err := dev.Write(report4); err != nil {
 		t.Fatalf("Write 0x45 failed: %v", err)

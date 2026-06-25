@@ -51,8 +51,11 @@ func (pn *notifier) listen() {
 
 	for {
 		select {
-		case sig := <-ch:
-			if len(sig.Body) >= 1 {
+		case sig, ok := <-ch:
+			if !ok {
+				return
+			}
+			if sig != nil && len(sig.Body) >= 1 {
 				if starting, ok := sig.Body[0].(bool); ok {
 					if starting {
 						if pn.onSuspend != nil {
