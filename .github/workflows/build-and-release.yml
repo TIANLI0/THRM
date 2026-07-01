@@ -185,7 +185,7 @@ jobs:
     if: needs.prepare-release.outputs.should_build == 'true'
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout
@@ -282,14 +282,222 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Prepare release notes context
+      - name: Upload Windows release assets
         if: needs.prepare-release.outputs.should_publish_release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: |
+            build/bin/THRM-amd64-installer.exe
+            build/bin/THRM-windows-portable.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  build-linux:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libhidapi-dev
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('frontend/package.json', 'frontend/bun.lock', 'frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Build THRM (Linux)
+        env:
+          THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Package Linux artifacts (tar.gz + .deb)
+        shell: bash
+        env:
+          THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
+        run: |
+          set -euo pipefail
+
+          VER="${THRM_BUILD_VERSION:-}"
+          if [ -z "$VER" ]; then
+            VER=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | sed -E 's/.*"([^"]+)"$/\1/')
+          fi
+          [ -n "$VER" ] || VER="dev"
+          echo "Packaging version: $VER"
+
+          ICON_SRC="frontend/public/brand/appicon.png"
+          RULES_SRC="scripts/99-flydigi-fan.rules"
+          DIST="build/dist"
+          rm -rf "$DIST" build/stage build/deb
+          mkdir -p "$DIST"
+
+          # ---------- Portable tarball ----------
+          STAGE="build/stage/THRM-linux-amd64"
+          mkdir -p "$STAGE"
+          install -Dm755 build/thrm "$STAGE/thrm"
+          install -Dm755 build/thrm-core "$STAGE/thrm-core"
+          install -Dm755 scripts/install-portable.sh "$STAGE/install.sh"
+          [ -f "$RULES_SRC" ] && install -Dm644 "$RULES_SRC" "$STAGE/99-flydigi-fan.rules"
+          [ -f "$ICON_SRC" ] && install -Dm644 "$ICON_SRC" "$STAGE/appicon.png"
+          tar -czf "$DIST/THRM-linux-amd64-portable.tar.gz" -C build/stage THRM-linux-amd64
+          echo "Created $DIST/THRM-linux-amd64-portable.tar.gz"
+
+          # ---------- Debian package ----------
+          case "$VER" in
+            nightly-*) DEB_VER="0.0.0~${VER#nightly-}" ;;
+            v*|V*)     DEB_VER="${VER#[vV]}" ;;
+            *)         DEB_VER="$VER" ;;
+          esac
+          echo "Debian version: $DEB_VER"
+
+          PKGROOT="build/deb/thrm"
+          install -Dm755 build/thrm "$PKGROOT/usr/bin/thrm"
+          install -Dm755 build/thrm-core "$PKGROOT/usr/bin/thrm-core"
+          [ -f "$ICON_SRC" ] && install -Dm644 "$ICON_SRC" "$PKGROOT/usr/share/icons/hicolor/256x256/apps/thrm.png"
+          [ -f "$RULES_SRC" ] && install -Dm644 "$RULES_SRC" "$PKGROOT/lib/udev/rules.d/99-flydigi-fan.rules"
+
+          install -d "$PKGROOT/usr/share/applications"
+          cat > "$PKGROOT/usr/share/applications/thrm.desktop" << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=THRM Fan Control
+          Comment=Flydigi BS Series Fan Controller
+          Exec=/usr/bin/thrm
+          Icon=thrm
+          Terminal=false
+          Categories=Utility;
+          EOF
+
+          install -d "$PKGROOT/DEBIAN"
+          cat > "$PKGROOT/DEBIAN/control" << EOF
+          Package: thrm
+          Version: $DEB_VER
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-3-0, libwebkit2gtk-4.1-0, libhidapi-hidraw0
+          Recommends: bluez
+          Maintainer: TIANLI0 <wutianli@tianli0.top>
+          Description: THRM Fan Control
+           Flydigi BS series cooler and multi-brand fan controller.
+          EOF
+
+          cat > "$PKGROOT/DEBIAN/postinst" << 'EOF'
+          #!/bin/sh
+          set -e
+          if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+            udevadm trigger || true
+          fi
+          exit 0
+          EOF
+          chmod 0755 "$PKGROOT/DEBIAN/postinst"
+
+          dpkg-deb --build --root-owner-group "$PKGROOT" "$DIST/thrm_${DEB_VER}_amd64.deb"
+          echo "Created $DIST/thrm_${DEB_VER}_amd64.deb"
+
+          ls -lh "$DIST"
+
+      - name: Upload PR artifacts
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: THRM-linux-${{ github.event.pull_request.number }}
+          path: |
+            build/dist/*.tar.gz
+            build/dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload branch artifacts
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: THRM-linux-${{ github.sha }}
+          path: |
+            build/dist/*.tar.gz
+            build/dist/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Linux release assets
+        if: needs.prepare-release.outputs.should_publish_release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            build/dist/*.tar.gz
+            build/dist/*.deb
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    needs: [prepare-release, build-windows, build-linux]
+    if: needs.prepare-release.outputs.should_publish_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: dist/windows
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: dist/linux
+
+      - name: Prepare release notes context
         id: release_context
         shell: pwsh
         env:
           RELEASE_TYPE: ${{ needs.prepare-release.outputs.release_type }}
+          REPO_NAME: ${{ github.repository }}
+          RELEASE_NAME: ${{ needs.prepare-release.outputs.release_name }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+          RELEASE_LABEL: ${{ needs.prepare-release.outputs.release_label }}
           RELEASE_DATE: ${{ needs.prepare-release.outputs.release_date }}
+          RELEASE_GUIDANCE: ${{ needs.prepare-release.outputs.release_guidance }}
           WINDOW_START: ${{ needs.prepare-release.outputs.window_start }}
           WINDOW_END: ${{ needs.prepare-release.outputs.window_end }}
           TARGET_BRANCH: ${{ needs.prepare-release.outputs.target_branch }}
@@ -514,24 +722,46 @@ jobs:
           [System.IO.File]::WriteAllLines((Join-Path $PWD 'build/release-context/ai-files.txt'), $aiScopedFileLines, $utf8NoBom)
           [System.IO.File]::WriteAllLines((Join-Path $PWD 'build/release-context/code-context.txt'), $codeContextLines, $utf8NoBom)
 
-          "compare_summary=$compareSummary" >> $env:GITHUB_OUTPUT
+          # Scalar prompt variables are written to files so actions/ai-inference file_input
+          # can bind them without any YAML-escaping concerns.
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/repo-name.txt'), "$($env:REPO_NAME)", $utf8NoBom)
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/release-name.txt'), "$($env:RELEASE_NAME)", $utf8NoBom)
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/release-tag.txt'), "$($env:RELEASE_TAG)", $utf8NoBom)
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/release-label.txt'), "$($env:RELEASE_LABEL)", $utf8NoBom)
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/release-date.txt'), "$($env:RELEASE_DATE)", $utf8NoBom)
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/release-guidance.txt'), "$($env:RELEASE_GUIDANCE)", $utf8NoBom)
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'build/release-context/compare-summary.txt'), "$compareSummary", $utf8NoBom)
 
       - name: Generate AI release notes
-        if: needs.prepare-release.outputs.should_publish_release == 'true'
         id: ai_release_notes
+        continue-on-error: true
+        uses: actions/ai-inference@v2
+        with:
+          prompt-file: .github/prompts/release-notes.prompt.yml
+          model: ${{ vars.DEEPSEEK_RELEASE_NOTES_MODEL || 'deepseek-v4-flash' }}
+          endpoint: ${{ vars.DEEPSEEK_API_BASE_URL || 'https://api.deepseek.com' }}
+          token: ${{ secrets.DEEPSEEK_API_KEY }}
+          max-completion-tokens: 1800
+          file_input: |
+            repo_name: build/release-context/repo-name.txt
+            release_name: build/release-context/release-name.txt
+            release_tag: build/release-context/release-tag.txt
+            release_label: build/release-context/release-label.txt
+            release_date: build/release-context/release-date.txt
+            compare_summary: build/release-context/compare-summary.txt
+            release_guidance: build/release-context/release-guidance.txt
+            commit_summary: build/release-context/ai-commits.txt
+            changed_files: build/release-context/ai-files.txt
+            code_context: build/release-context/code-context.txt
+
+      - name: Finalize release notes
+        id: finalize_notes
         shell: pwsh
         env:
-          DEEPSEEK_API_KEY: ${{ secrets[format('{0}', 'DEEPSEEK_API_KEY')] }}
-          DEEPSEEK_API_BASE_URL: ${{ vars.DEEPSEEK_API_BASE_URL || 'https://api.deepseek.com' }}
-          DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_RELEASE_NOTES_MODEL || 'deepseek-v4-pro' }}
-          REPO_NAME: ${{ github.repository }}
+          AI_RESPONSE_FILE: ${{ steps.ai_release_notes.outputs.response-file }}
           RELEASE_NAME: ${{ needs.prepare-release.outputs.release_name }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
-          RELEASE_LABEL: ${{ needs.prepare-release.outputs.release_label }}
           RELEASE_DATE: ${{ needs.prepare-release.outputs.release_date }}
-          COMPARE_SUMMARY: ${{ steps.release_context.outputs.compare_summary }}
-          RELEASE_GUIDANCE: ${{ needs.prepare-release.outputs.release_guidance }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -577,101 +807,35 @@ jobs:
             return (($lines -join [Environment]::NewLine).Trim() + [Environment]::NewLine)
           }
 
+          $requiredHeadings = @(
+            '## 亮点 / Highlights',
+            '## 修复与改进 / Fixes and Improvements',
+            '## 涉及范围 / Scope',
+            '## 使用提示 / Notes'
+          )
+
           $notes = ''
+          $aiFile = $env:AI_RESPONSE_FILE
 
-          if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
-            Write-Warning 'Missing GitHub secret DEEPSEEK_API_KEY. Falling back to conservative local release notes.'
+          if (-not [string]::IsNullOrWhiteSpace($aiFile) -and (Test-Path $aiFile)) {
+            $candidate = (Get-Content $aiFile -Raw).Trim()
+            $isValid = -not [string]::IsNullOrWhiteSpace($candidate)
+            foreach ($heading in $requiredHeadings) {
+              if ($candidate -notmatch [System.Text.RegularExpressions.Regex]::Escape($heading)) {
+                $isValid = $false
+              }
+            }
+
+            if ($isValid) {
+              $notes = $candidate
+            } else {
+              Write-Warning 'AI release notes were empty or missing required headings. Falling back to conservative local notes.'
+            }
           } else {
-            $templateRaw = Get-Content '.github/prompts/release-notes.prompt.yml' -Raw
-            $templateMatch = [System.Text.RegularExpressions.Regex]::Match($templateRaw, '(?s)^template:\s*\|\r?\n(?<body>.*)$')
-            if (-not $templateMatch.Success) {
-              throw 'Release prompt template must use a template: | block scalar.'
-            }
-
-            $prompt = $templateMatch.Groups['body'].Value -replace '(?m)^  ', ''
-            $commitSummary = Get-Content 'build/release-context/ai-commits.txt' -Raw
-            $changedFiles = Get-Content 'build/release-context/ai-files.txt' -Raw
-            $codeContext = Get-Content 'build/release-context/code-context.txt' -Raw
-
-            $replacements = @{
-              '{{repo_name}}' = $env:REPO_NAME
-              '{{release_name}}' = $env:RELEASE_NAME
-              '{{release_tag}}' = $env:RELEASE_TAG
-              '{{release_label}}' = $env:RELEASE_LABEL
-              '{{release_date}}' = $env:RELEASE_DATE
-              '{{compare_summary}}' = $env:COMPARE_SUMMARY
-              '{{release_guidance}}' = $env:RELEASE_GUIDANCE
-              '{{commit_summary}}' = $commitSummary.Trim()
-              '{{changed_files}}' = $changedFiles.Trim()
-              '{{code_context}}' = $codeContext.Trim()
-            }
-
-            foreach ($entry in $replacements.GetEnumerator()) {
-              $prompt = $prompt.Replace($entry.Key, $entry.Value)
-            }
-
-            $payload = @{
-              model = $env:DEEPSEEK_MODEL
-              messages = @(
-                @{
-                  role = 'system'
-                  content = 'You are a meticulous user-facing release editor. Write concise GitHub release notes in bilingual Markdown using Simplified Chinese first and English second. Only use facts supported by the supplied release scope, user-visible commit list, and user-visible file list. Never output internal-only changes that users cannot perceive (for example CI/workflows, refactors without behavioral impact, logs, test-only changes, dependency bumps, protocol/internal plumbing). If user-visible impact is unclear, omit it. Do not invent features, fixes, compatibility claims, dates, migration steps, or internal details. Do not mention AI, models, prompts, or internal generation process. Do not use code fences.'
-                },
-                @{
-                  role = 'user'
-                  content = $prompt
-                }
-              )
-              max_tokens = 1800
-              response_format = @{ type = 'text' }
-              stream = $false
-              temperature = 0.4
-              user_id = "github-actions-$($env:GITHUB_RUN_ID)"
-            } | ConvertTo-Json -Depth 20
-
-            $uri = "$($env:DEEPSEEK_API_BASE_URL.TrimEnd('/'))/chat/completions"
-            $headers = @{
-              Authorization = "Bearer $($env:DEEPSEEK_API_KEY)"
-              Accept = 'application/json'
-            }
-
-            $maxAttempts = 3
-            $requiredHeadings = @(
-              '## 亮点 / Highlights',
-              '## 修复与改进 / Fixes and Improvements',
-              '## 涉及范围 / Scope',
-              '## 使用提示 / Notes'
-            )
-
-            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-              try {
-                $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/json' -Body $payload
-                $candidate = "$($response.choices[0].message.content)".Trim()
-
-                if ([string]::IsNullOrWhiteSpace($candidate)) {
-                  throw 'DeepSeek API returned empty release notes.'
-                }
-
-                foreach ($heading in $requiredHeadings) {
-                  if ($candidate -notmatch [System.Text.RegularExpressions.Regex]::Escape($heading)) {
-                    throw "DeepSeek output missing required heading: $heading"
-                  }
-                }
-
-                $notes = $candidate
-                break
-              }
-              catch {
-                Write-Warning "DeepSeek release notes attempt $attempt/$maxAttempts failed: $($_.Exception.Message)"
-                if ($attempt -lt $maxAttempts) {
-                  Start-Sleep -Seconds (4 * $attempt)
-                }
-              }
-            }
+            Write-Warning 'No AI release notes response file was produced. Falling back to conservative local notes.'
           }
 
           if ([string]::IsNullOrWhiteSpace($notes)) {
-            Write-Warning 'DeepSeek failed after retries. Falling back to conservative local release notes.'
             $fallbackCommitLines = @(Get-Content 'build/release-context/ai-commits.txt')
             $fallbackFileLines = @(Get-Content 'build/release-context/ai-files.txt')
             $notes = New-FallbackNotes -ReleaseName $env:RELEASE_NAME -ReleaseTag $env:RELEASE_TAG -ReleaseDate $env:RELEASE_DATE -CommitLines $fallbackCommitLines -FileLines $fallbackFileLines
@@ -685,14 +849,13 @@ jobs:
           "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub Release
-        if: needs.prepare-release.outputs.should_publish_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ needs.prepare-release.outputs.release_name }}
           tag_name: ${{ needs.prepare-release.outputs.release_tag }}
           target_commitish: ${{ needs.prepare-release.outputs.target_commitish }}
           prerelease: ${{ needs.prepare-release.outputs.is_prerelease }}
-          body_path: ${{ steps.ai_release_notes.outputs.notes_path }}
+          body_path: ${{ steps.finalize_notes.outputs.notes_path }}
           files: |
-            build/bin/THRM-amd64-installer.exe
-            build/bin/THRM-windows-portable.zip
+            dist/windows/*
+            dist/linux/*

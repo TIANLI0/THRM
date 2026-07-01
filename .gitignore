@@ -1,4 +1,10 @@
 build/bin
+build/dist
+build/deb
+build/stage
+build/release-context
+build/thrm
+build/thrm-core
 node_modules
 frontend/dist
 __pycache__/
