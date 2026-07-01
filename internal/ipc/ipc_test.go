@@ -1,9 +1,16 @@
 package ipc
 
 import (
+	"fmt"
+	"os"
 	"testing"
 	"time"
 )
+
+func TestMain(m *testing.M) {
+	os.Setenv(EnvPipeName, fmt.Sprintf("THRM-IPC-test-%d", os.Getpid()))
+	os.Exit(m.Run())
+}
 
 func TestServerStartStop(t *testing.T) {
 	logger := testLogger{}
@@ -232,14 +239,14 @@ func TestClientNotConnected(t *testing.T) {
 
 type testLogger struct{}
 
-func (l testLogger) Info(format string, v ...any)    {}
-func (l testLogger) Error(format string, v ...any)   {}
-func (l testLogger) Warn(format string, v ...any)    {}
-func (l testLogger) Debug(format string, v ...any)   {}
-func (l testLogger) Close()                          {}
-func (l testLogger) CleanOldLogs()                   {}
-func (l testLogger) SetDebugMode(enabled bool)       {}
-func (l testLogger) GetLogDir() string               { return "" }
+func (l testLogger) Info(format string, v ...any)  {}
+func (l testLogger) Error(format string, v ...any) {}
+func (l testLogger) Warn(format string, v ...any)  {}
+func (l testLogger) Debug(format string, v ...any) {}
+func (l testLogger) Close()                        {}
+func (l testLogger) CleanOldLogs()                 {}
+func (l testLogger) SetDebugMode(enabled bool)     {}
+func (l testLogger) GetLogDir() string             { return "" }
 
 func TestServerRunning_StateConsistency(t *testing.T) {
 	logger := testLogger{}

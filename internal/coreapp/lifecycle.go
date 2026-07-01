@@ -179,7 +179,21 @@ func (a *CoreApp) Start() error {
 
 // Stop 停止核心服务
 func (a *CoreApp) Stop() {
+	if a == nil {
+		return
+	}
+	if !a.stopping.CompareAndSwap(false, true) {
+		a.logDebug("核心服务停止流程已在执行，忽略重复请求")
+		return
+	}
+
 	a.logInfo("核心服务正在停止...")
+	defer func() {
+		if a.logger != nil {
+			a.logger.Close()
+		}
+	}()
+
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
@@ -191,9 +205,6 @@ func (a *CoreApp) Stop() {
 	if a.pluginManager != nil {
 		a.pluginManager.StopAll()
 	}
-
-	// 清理资源
-	a.cleanup()
 
 	// 停止所有监控
 	a.DisconnectDevice()
@@ -208,6 +219,9 @@ func (a *CoreApp) Stop() {
 
 	// 停止托盘
 	a.trayManager.Quit()
+
+	// 清理资源
+	a.cleanup()
 
 	a.logInfo("核心服务已停止")
 }
@@ -287,6 +301,7 @@ func (a *CoreApp) initSystemTray() {
 func (a *CoreApp) cleanup() {
 	if a.healthCheckTicker != nil {
 		a.healthCheckTicker.Stop()
+		a.healthCheckTicker = nil
 	}
 
 	select {
@@ -296,7 +311,6 @@ func (a *CoreApp) cleanup() {
 
 	if a.logger != nil {
 		a.logger.Info("核心服务正在退出，清理资源")
-		a.logger.Close()
 	}
 }
 

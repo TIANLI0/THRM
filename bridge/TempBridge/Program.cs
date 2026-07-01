@@ -159,6 +159,16 @@ namespace THRM.TempBridge
 
         static void Main(string[] args)
         {
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                LogUnhandledException("AppDomain", e.ExceptionObject as Exception);
+            };
+            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
+            {
+                LogUnhandledException("TaskScheduler", e.Exception);
+                e.SetObserved();
+            };
+
             bool diagnosticMode = ShouldRunDiagnosticMode(args);
             bool pipeMode = ShouldRunPipeMode(args);
 
@@ -211,11 +221,55 @@ namespace THRM.TempBridge
             }
             finally
             {
-                computer?.Close();
+                CloseComputerSafely("process-finally");
                 if (singleInstanceMutex != null)
                 {
                     singleInstanceMutex.Dispose();
                     singleInstanceMutex = null;
+                }
+            }
+        }
+
+        static void LogUnhandledException(string source, Exception ex)
+        {
+            if (ex == null)
+            {
+                return;
+            }
+
+            try
+            {
+                Console.Error.WriteLine("[fatal] " + source + ": " + ex);
+                Console.Error.Flush();
+            }
+            catch
+            {
+            }
+        }
+
+        static void CloseComputerSafely(string reason)
+        {
+            var current = computer;
+            computer = null;
+            if (current == null)
+            {
+                return;
+            }
+
+            try
+            {
+                current.Close();
+            }
+            catch (Exception ex)
+            {
+                lastHardwareMonitorError = "LibreHardwareMonitor close failed (" + reason + "): " + ex.Message;
+                try
+                {
+                    Console.Error.WriteLine("[cleanup] " + lastHardwareMonitorError);
+                    Console.Error.Flush();
+                }
+                catch
+                {
                 }
             }
         }
@@ -424,8 +478,7 @@ namespace THRM.TempBridge
                 {
                     if (computer != null)
                     {
-                        try { computer.Close(); } catch { }
-                        computer = null;
+                        CloseComputerSafely("init-retry-reset");
                     }
 
                     LogInitProgress(string.Format("LibreHardwareMonitor 初始化尝试 {0}/{1}", attempt, MaxInitRetries));
@@ -462,8 +515,7 @@ namespace THRM.TempBridge
                     // No sensors found - PawnIO may not be fully ready
                     if (attempt < MaxInitRetries)
                     {
-                        computer.Close();
-                        computer = null;
+                        CloseComputerSafely("init-no-sensors");
                         Thread.Sleep(InitRetryDelayMs);
                     }
                 }
@@ -474,8 +526,7 @@ namespace THRM.TempBridge
                         attempt, attemptStopwatch.ElapsedMilliseconds, ex.Message));
                     if (attempt < MaxInitRetries)
                     {
-                        try { computer?.Close(); } catch { }
-                        computer = null;
+                        CloseComputerSafely("init-exception");
                         Thread.Sleep(InitRetryDelayMs);
                     }
                 }
@@ -571,12 +622,7 @@ namespace THRM.TempBridge
         {
             lock (lockObject)
             {
-                try
-                {
-                    computer?.Close();
-                }
-                catch { }
-                computer = null;
+                CloseComputerSafely("reinitialize");
 
                 // Wait briefly after releasing handles. Avoid stopping PawnIO because other tools may share it.
                 Thread.Sleep(250);
@@ -746,12 +792,7 @@ namespace THRM.TempBridge
             lock (lockObject)
             {
                 // 1. Close existing Computer to release PawnIO handle
-                try
-                {
-                    computer?.Close();
-                }
-                catch { }
-                computer = null;
+                CloseComputerSafely("restart-pawnio");
 
                 // 2. Ensure PawnIO is running if it is stopped, then wait after handle release.
                 string pawnIoMessage = RestartPawnIoDriver();

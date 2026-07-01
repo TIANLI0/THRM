@@ -28,6 +28,9 @@ func (a *CoreApp) onShowWindowRequest() {
 // onQuitRequest 退出请求回调
 func (a *CoreApp) onQuitRequest() {
 	a.logInfo("收到退出请求")
+	if a.stopping.Load() {
+		return
+	}
 
 	// 通知所有 GUI 客户端退出
 	if a.ipcServer != nil {

@@ -15,11 +15,12 @@ func listenIPC() (net.Listener, string, error) {
 		SecurityDescriptor: "D:P(A;;GA;;;WD)",
 	}
 
-	listener, err := winio.ListenPipe(PipePath, cfg)
+	addr := ipcEndpointFromName(activePipeName())
+	listener, err := winio.ListenPipe(addr, cfg)
 	if err != nil {
 		return nil, "", fmt.Errorf("创建命名管道失败: %v", err)
 	}
-	return listener, PipePath, nil
+	return listener, addr, nil
 }
 
 func dialIPC(endpoint string, timeout time.Duration) (net.Conn, error) {
@@ -30,4 +31,3 @@ func dialIPC(endpoint string, timeout time.Duration) (net.Conn, error) {
 func ipcEndpointFromName(name string) string {
 	return `\\.\pipe\` + name
 }
-

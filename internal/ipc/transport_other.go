@@ -11,7 +11,7 @@ import (
 )
 
 func listenIPC() (net.Listener, string, error) {
-	addr := ipcEndpointFromName(PipeName)
+	addr := ipcEndpointFromName(activePipeName())
 	_ = os.Remove(addr)
 
 	listener, err := net.Listen("unix", addr)
@@ -31,4 +31,3 @@ func dialIPC(endpoint string, timeout time.Duration) (net.Conn, error) {
 func ipcEndpointFromName(name string) string {
 	return filepath.Join(os.TempDir(), name+".sock")
 }
-

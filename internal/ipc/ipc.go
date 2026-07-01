@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +27,23 @@ const (
 	PipePath = `\\.\pipe\` + PipeName
 	// LegacyPipePath 旧版本命名管道完整路径
 	LegacyPipePath = `\\.\pipe\` + LegacyPipeName
+	// EnvPipeName allows tests and diagnostics to isolate IPC from a running Core.
+	EnvPipeName = "THRM_IPC_PIPE_NAME"
 )
+
+func activePipeName() string {
+	if name := strings.TrimSpace(os.Getenv(EnvPipeName)); name != "" {
+		return name
+	}
+	return PipeName
+}
+
+func ipcPipeCandidates() []string {
+	if name := strings.TrimSpace(os.Getenv(EnvPipeName)); name != "" {
+		return []string{name}
+	}
+	return appmeta.IPCPipeCandidates()
+}
 
 // RequestType 请求类型
 type RequestType string
@@ -473,7 +490,7 @@ func (c *Client) Connect() error {
 	timeout := 5 * time.Second
 	var conn net.Conn
 	var err error
-	for _, pipeName := range appmeta.IPCPipeCandidates() {
+	for _, pipeName := range ipcPipeCandidates() {
 		endpoint := ipcEndpointFromName(pipeName)
 		conn, err = dialIPC(endpoint, timeout)
 		if err == nil {
@@ -652,7 +669,7 @@ func (c *Client) logDebug(format string, v ...any) {
 // CheckCoreServiceRunning 检查核心服务是否正在运行
 func CheckCoreServiceRunning() bool {
 	timeout := 1 * time.Second
-	for _, pipeName := range appmeta.IPCPipeCandidates() {
+	for _, pipeName := range ipcPipeCandidates() {
 		endpoint := ipcEndpointFromName(pipeName)
 		conn, err := dialIPC(endpoint, timeout)
 		if err == nil {

@@ -55,7 +55,10 @@ func main() {
 
 	// 启动应用
 	if err := app.Start(); err != nil {
-		panic(fmt.Sprintf("启动核心服务失败: %v", err))
+		app.LogInfo("启动核心服务失败: %v", err)
+		fmt.Fprintf(os.Stderr, "启动核心服务失败: %v\n", err)
+		app.Stop()
+		os.Exit(1)
 	}
 
 	// 等待退出信号
