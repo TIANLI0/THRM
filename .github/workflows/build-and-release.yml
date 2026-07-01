@@ -323,7 +323,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config \
             libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libhidapi-dev
+            libhidapi-dev libudev-dev
 
       - name: Cache frontend dependencies
         uses: actions/cache@v4
@@ -774,44 +774,23 @@ jobs:
               [string[]]$FileLines
             )
 
-            $safeCommits = @($CommitLines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 8)
-            $safeFiles = @($FileLines | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 10)
-
-            if (-not $safeCommits -or $safeCommits.Count -eq 0) {
-              $safeCommits = @('- 基于当前可见提交，未提取到可直接确认的用户侧改动 / No clearly user-facing change could be confirmed from visible commits.')
-            }
-            if (-not $safeFiles -or $safeFiles.Count -eq 0) {
-              $safeFiles = @('- 未提取到符合范围的源码文件改动 / No in-scope source file changes were extracted.')
-            }
-
             $lines = @(
-              "本次发布（$ReleaseName / $ReleaseTag）为基于可见提交信息的保守摘要，优先呈现用户可感知变化，细节可能继续调整。",
-              "This release ($ReleaseName / $ReleaseTag) is summarized conservatively from visible commits, focusing on user-perceivable changes; details may continue to evolve.",
+              "本次更新主要为日常维护与稳定性改进。",
+              "This update mainly contains routine maintenance and stability improvements.",
               '',
-              '## 亮点 / Highlights',
-              '- 以用户可见变更为主，未确认的内部细节不写入说明 / Focused on user-visible changes; unverified internal details are excluded.',
+              '## 更新亮点 / Highlights',
+              '- 本次无明显的新功能变化 / No notable new features in this build.',
               '',
-              '## 修复与改进 / Fixes and Improvements'
-            )
-
-            $lines += $safeCommits
-            $lines += @('', '## 涉及范围 / Scope')
-            $lines += $safeFiles
-            $lines += @(
-              '',
-              '## 使用提示 / Notes',
-              "- 日期范围按 Asia/Shanghai（UTC+8）口径统计（$ReleaseDate） / Date scope follows Asia/Shanghai (UTC+8) ($ReleaseDate).",
-              '- 若某项变更在可见提交中证据不足，则不会写入本次说明 / If evidence is insufficient in visible commits, that change is omitted from these notes.'
+              '## 修复与改进 / Fixes and Improvements',
+              '- 常规维护与稳定性优化 / General maintenance and stability improvements.'
             )
 
             return (($lines -join [Environment]::NewLine).Trim() + [Environment]::NewLine)
           }
 
           $requiredHeadings = @(
-            '## 亮点 / Highlights',
-            '## 修复与改进 / Fixes and Improvements',
-            '## 涉及范围 / Scope',
-            '## 使用提示 / Notes'
+            '## 更新亮点 / Highlights',
+            '## 修复与改进 / Fixes and Improvements'
           )
 
           $notes = ''
