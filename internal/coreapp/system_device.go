@@ -151,23 +151,96 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 		return
 	}
 
+	a.reconnectMutex.Lock()
 	if !a.reconnectInProgress.CompareAndSwap(false, true) {
+		a.reconnectMutex.Unlock()
 		a.logDebug("重连流程已在进行中，忽略新的请求: %s", reason)
 		return
 	}
+	cancel := make(chan struct{})
+	done := make(chan struct{})
+	a.reconnectCancel = cancel
+	a.reconnectDone = done
+	a.reconnectMutex.Unlock()
 
 	delays := cloneReconnectDelays(retryDelays)
 	a.safeGo("reconnect@"+reason, func() {
-		defer a.reconnectInProgress.Store(false)
-		a.runReconnectLoop(reason, delays)
+		defer a.finishReconnect(cancel, done)
+		a.runReconnectLoop(reason, delays, cancel)
 	})
 }
 
+// cancelReconnect 会立即唤醒正在退避等待的重连流程。
+// 正在执行底层连接调用时无法强行打断；其返回后会检查取消信号并退出。
+func (a *CoreApp) cancelReconnect() {
+	a.reconnectMutex.Lock()
+	if a.reconnectCancel != nil {
+		close(a.reconnectCancel)
+		a.reconnectCancel = nil
+	}
+	a.reconnectMutex.Unlock()
+}
+
+func (a *CoreApp) finishReconnect(cancel, done chan struct{}) {
+	a.reconnectMutex.Lock()
+	if a.reconnectCancel == cancel {
+		a.reconnectCancel = nil
+	}
+	if a.reconnectDone == done {
+		a.reconnectDone = nil
+	}
+	a.reconnectInProgress.Store(false)
+	// 唤醒恢复可能正等待此通道；先在互斥保护下清除进行中标记，再通知等待者，
+	// 以免新请求被旧流程的 reconnectInProgress=true 错误拒绝。
+	close(done)
+	a.reconnectMutex.Unlock()
+}
+
+// requestReconnectAfterCurrent 确保唤醒恢复不会被休眠前遗留的重连流程吞掉。
+// 旧流程已通过 cancelReconnect 收到取消信号；这里等待它释放设备操作后再启动恢复重连，
+// 避免两个 goroutine 同时连接同一 HID/BLE 设备。
+func (a *CoreApp) requestReconnectAfterCurrent(reason string, retryDelays []time.Duration) {
+	a.reconnectMutex.Lock()
+	done := a.reconnectDone
+	a.reconnectMutex.Unlock()
+
+	if done == nil {
+		a.requestReconnect(reason, retryDelays)
+		return
+	}
+
+	a.safeGo("reconnect-after-current@"+reason, func() {
+		<-done
+		a.requestReconnect(reason, retryDelays)
+	})
+}
+
+func reconnectDelayElapsed(delay time.Duration, cancel <-chan struct{}) bool {
+	if delay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-cancel:
+		return false
+	}
+}
+
 // runReconnectLoop 安排设备重连
-func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
+func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration, cancel <-chan struct{}) {
 	a.logInfo("启动设备重连流程: %s", reason)
 
 	for i, delay := range retryDelays {
+		select {
+		case <-cancel:
+			a.logInfo("重连流程已取消: %s", reason)
+			return
+		default:
+		}
+
 		if a.autoReconnectSuppressed.Load() {
 			a.logInfo("自动重连已被手动断开抑制，停止重连流程: %s", reason)
 			return
@@ -185,7 +258,17 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 
 		if delay > 0 {
 			a.logInfo("等待 %v 后尝试第 %d 次重连...", delay, i+1)
-			time.Sleep(delay)
+			if !reconnectDelayElapsed(delay, cancel) {
+				a.logInfo("重连流程已取消: %s", reason)
+				return
+			}
+		}
+
+		select {
+		case <-cancel:
+			a.logInfo("重连流程已取消: %s", reason)
+			return
+		default:
 		}
 
 		if a.autoReconnectSuppressed.Load() {
@@ -204,7 +287,7 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 		}
 
 		a.logInfo("尝试第 %d 次重连设备...", i+1)
-		if a.ConnectDevice() {
+		if a.connectDevice(false) {
 			a.logInfo("设备重连成功")
 
 			// 如果开启了断连保持配置模式，重新应用APP配置
@@ -222,6 +305,13 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration) {
 	a.logError("所有重连尝试均失败，等待下次健康检查")
 }
 
+func shouldReconnectAfterResume(proactivelySuspended, resumeReconnectWanted, autoReconnectSuppressed, forceReconnect bool) bool {
+	if proactivelySuspended {
+		return resumeReconnectWanted
+	}
+	return forceReconnect && !autoReconnectSuppressed
+}
+
 func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInterval time.Duration) bool {
 	if !shouldRecoverFromSystemResumeGap(gap, expectedInterval) {
 		return false
@@ -235,33 +325,62 @@ func (a *CoreApp) onSystemSuspend() {
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
 	}
+	generation := a.suspendGeneration.Add(1)
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
+	// 在用 suspend 标志覆盖自动重连抑制状态前，记住用户是否确实有一台已连接设备。
+	// 这样唤醒不会意外连接用户此前手动断开的设备。
+	a.mutex.RLock()
+	wasConnected := a.isConnected
+	a.mutex.RUnlock()
+	if !wasConnected {
+		wasConnected = a.deviceManager.IsConnected()
+	}
+	a.resumeReconnectWanted.Store(wasConnected && !a.autoReconnectSuppressed.Load())
+	a.cancelReconnect()
+	a.connectGeneration.Add(1)
 	a.autoReconnectSuppressed.Store(true)
-	a.stopTemperatureMonitoring()
-
 	suspendFanOff := a.configManager.Get().SuspendFanOff
+	// Windows may enter sleep as soon as this callback returns. Execute the
+	// user-requested fan/light shutdown synchronously while the HID handle is
+	// still valid; the remaining disconnect and bridge cleanup can continue in
+	// the bounded background phase below.
+	if suspendFanOff {
+		a.safeRun("suspend-power-off", a.powerOffDeviceForSuspend)
+	}
+	a.stopTemperatureMonitoring()
 
 	done := make(chan struct{})
 	a.safeGo("suspend-cleanup", func() {
 		defer close(done)
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
-		// 断开设备前(句柄仍有效)先归零转速并关闭挡位灯/RGB，避免休眠期间风扇/灯光保持运行。
-		if suspendFanOff {
-			a.safeRun("suspend-power-off", a.powerOffDeviceForSuspend)
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
 		}
 
 		a.safeRun("suspend-device-disconnect", func() {
 			a.deviceManager.DisconnectSilently()
 		})
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 		a.mutex.Lock()
 		a.isConnected = false
 		a.mutex.Unlock()
 
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 		a.safeRun("suspend-bridge-stop", func() {
 			a.bridgeManager.Stop()
 		})
+		if !a.isCurrentSuspendGeneration(generation) {
+			return
+		}
 
 		if a.ipcServer != nil {
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
@@ -274,6 +393,10 @@ func (a *CoreApp) onSystemSuspend() {
 	case <-time.After(suspendCleanupGrace):
 		a.logError("挂起前清理超过 %s 仍未完成，转入后台继续执行，避免阻塞系统电源回调", suspendCleanupGrace)
 	}
+}
+
+func (a *CoreApp) isCurrentSuspendGeneration(generation uint64) bool {
+	return a.systemSuspended.Load() && a.suspendGeneration.Load() == generation && !a.stopping.Load()
 }
 
 // powerOffDeviceForSuspend 在系统挂起前将风扇降到 0 转速，并(非 BS1)关闭挡位灯与 RGB。
@@ -332,9 +455,20 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		a.logInfo("系统唤醒恢复流程结束（来源=%s，耗时=%s）", source, time.Since(start).Round(time.Millisecond))
 	}()
 
-	// 若之前收到过挂起通知（主动断开），唤醒后必须强制重连，且需要重启已停止的温度监控。
+	// 若之前收到过挂起通知，休眠清理可能仍在后台阻塞。先使该清理失效，避免它在
+	// 新连接建立后再停止桥接或覆盖连接状态。
 	proactivelySuspended := a.systemSuspended.Swap(false)
-	forceReconnect = forceReconnect || proactivelySuspended
+	resumeReconnectWanted := a.resumeReconnectWanted.Swap(false)
+	if proactivelySuspended {
+		a.suspendGeneration.Add(1)
+	}
+	a.cancelReconnect()
+	forceReconnect = shouldReconnectAfterResume(
+		proactivelySuspended,
+		resumeReconnectWanted,
+		a.autoReconnectSuppressed.Load(),
+		forceReconnect,
+	)
 
 	a.logInfo("检测到系统从睡眠/休眠恢复，来源=%s，挂起时长约=%s，主动挂起=%v，开始执行连接自愈",
 		source, gap.Round(time.Second), proactivelySuspended)
@@ -348,6 +482,12 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		wasConnected = a.isConnected
 	}
 	a.mutex.RUnlock()
+	// 休眠前用户已手动断开时，即使旧 HID 监控协程尚未退出而仍报“已连接”，
+	// 也不能据此重新连接。
+	if (proactivelySuspended && !resumeReconnectWanted) ||
+		(!proactivelySuspended && a.autoReconnectSuppressed.Load()) {
+		wasConnected = false
+	}
 
 	// 桥接停止与设备断开都涉及外部进程/cgo 调用，唤醒后句柄可能失效，统一兜底防止崩溃。
 	a.safeRun("resume-bridge-stop", func() {
@@ -356,10 +496,10 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 
 	// 主动挂起时温度监控已停止，唤醒后需重新启动（与设备连接解耦）。
 	if proactivelySuspended {
-		a.autoReconnectSuppressed.Store(false)
-		a.safeGo("resume-temp-monitor", func() {
-			a.startTemperatureMonitoring()
-		})
+		if resumeReconnectWanted {
+			a.autoReconnectSuppressed.Store(false)
+		}
+		a.ensureTemperatureMonitoring("system-resume")
 	}
 
 	if !wasConnected && !forceReconnect {
@@ -368,7 +508,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	}
 
 	a.safeRun("resume-device-disconnect", func() {
-		a.deviceManager.DisconnectSilently()
+		a.deviceManager.DisconnectForRecovery()
 	})
 	a.mutex.Lock()
 	a.isConnected = false
@@ -378,7 +518,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)
 	}
 
-	a.requestReconnect("system-resume", []time.Duration{
+	a.requestReconnectAfterCurrent("system-resume", []time.Duration{
 		systemResumeReconnectDelay,
 		8 * time.Second,
 		15 * time.Second,
@@ -415,11 +555,54 @@ func (a *CoreApp) safeRun(name string, fn func()) {
 	fn()
 }
 
-// ConnectDevice 连接设备
+// ConnectDevice handles a user-initiated connection request.
 func (a *CoreApp) ConnectDevice() bool {
-	a.autoReconnectSuppressed.Store(false)
+	return a.connectDevice(true)
+}
 
+// connectDevice collapses concurrent IPC, startup, health-check, and reconnect
+// requests into one physical connection attempt. A disconnect, suspend, or stop
+// increments connectGeneration; an older attempt then discards its result rather
+// than resurrecting a connection the caller explicitly cancelled.
+func (a *CoreApp) connectDevice(manual bool) bool {
+	if manual {
+		a.autoReconnectSuppressed.Store(false)
+	}
+
+	a.connectMutex.Lock()
+	if done := a.connectDone; done != nil {
+		a.connectMutex.Unlock()
+		<-done
+		a.connectMutex.Lock()
+		result := a.connectResult
+		a.connectMutex.Unlock()
+		return result
+	}
+
+	generation := a.connectGeneration.Load()
+	done := make(chan struct{})
+	a.connectDone = done
+	a.connectMutex.Unlock()
+
+	success := a.connectDeviceOnce(generation)
+
+	a.connectMutex.Lock()
+	a.connectResult = success
+	if a.connectDone == done {
+		a.connectDone = nil
+	}
+	close(done)
+	a.connectMutex.Unlock()
+	return success
+}
+
+func (a *CoreApp) connectDeviceOnce(generation uint64) bool {
 	success, deviceInfo := a.deviceManager.Connect()
+	if success && (a.stopping.Load() || generation != a.connectGeneration.Load() || a.autoReconnectSuppressed.Load()) {
+		a.logInfo("连接结果已过期，关闭新建立的设备连接")
+		a.deviceManager.DisconnectSilently()
+		return false
+	}
 	if success {
 		a.mutex.Lock()
 		a.isConnected = true
@@ -446,9 +629,7 @@ func (a *CoreApp) ConnectDevice() bool {
 				a.logError("应用灯带配置失败: %v", err)
 			}
 		}
-		a.safeGo("startTemperatureMonitoring@ConnectDevice", func() {
-			a.startTemperatureMonitoring()
-		})
+		a.ensureTemperatureMonitoring("device-connect")
 	} else if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
 	}
@@ -458,6 +639,8 @@ func (a *CoreApp) ConnectDevice() bool {
 // DisconnectDevice 断开设备连接
 func (a *CoreApp) DisconnectDevice() {
 	a.autoReconnectSuppressed.Store(true)
+	a.connectGeneration.Add(1)
+	a.cancelReconnect()
 
 	a.mutex.Lock()
 	a.isConnected = false

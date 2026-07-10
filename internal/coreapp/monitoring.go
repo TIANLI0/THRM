@@ -16,7 +16,7 @@ const staleBridgeUpdateThreshold = 3
 
 // idleTemperatureMonitorInterval 是后台空闲（无 GUI 连接且未开启智能控温）时的温度采样间隔下限。
 // 此时温度读取仅用于托盘提示与历史记录，放慢采样可显著降低桥接进程的传感器扫描开销与后台 CPU 占用。
-const idleTemperatureMonitorInterval = 5 * time.Second
+const idleTemperatureMonitorInterval = 10 * time.Second
 
 // idleMemoryReleaseCooldown 限制 GUI 断开后归还内存的最小间隔，避免频繁开关 GUI 时反复触发 GC。
 const idleMemoryReleaseCooldown = 30 * time.Second
@@ -97,36 +97,90 @@ func compactTemperatureEventPayload(current, previous types.TemperatureData) typ
 	return compact
 }
 
-func (a *CoreApp) stopTemperatureMonitoring() {
-	if !a.monitoringTemp.Load() {
+func (a *CoreApp) stopTemperatureMonitoring() <-chan struct{} {
+	a.monitorMutex.Lock()
+	defer a.monitorMutex.Unlock()
+
+	if !a.monitoringTemp.Load() || a.monitorDone == nil {
+		return nil
+	}
+	if !a.monitorStopping {
+		close(a.monitorStop)
+		a.monitorStopping = true
+	}
+	return a.monitorDone
+}
+
+// ensureTemperatureMonitoring starts a new monitoring session only after a
+// previous stopping session has fully exited. This prevents suspend/resume and
+// reconnect races from leaving monitoring permanently off until the next health
+// check.
+func (a *CoreApp) ensureTemperatureMonitoring(reason string) {
+	if a.stopping.Load() {
+		return
+	}
+	a.monitorMutex.Lock()
+	running := a.monitoringTemp.Load()
+	stopping := a.monitorStopping
+	done := a.monitorDone
+	a.monitorMutex.Unlock()
+
+	if !running {
+		a.safeGo("startTemperatureMonitoring@"+reason, func() {
+			a.startTemperatureMonitoring()
+		})
+		return
+	}
+	if !stopping || done == nil {
 		return
 	}
 
-	select {
-	case a.stopMonitoring <- true:
-	default:
-	}
+	a.safeGo("restartTemperatureMonitoring@"+reason, func() {
+		select {
+		case <-done:
+			a.startTemperatureMonitoring()
+		case <-time.After(12 * time.Second):
+			a.logError("等待旧温度监控退出超时，暂不启动新的监控会话（来源=%s）", reason)
+		}
+	})
 }
 
 // startTemperatureMonitoring 开始温度监控
 func (a *CoreApp) startTemperatureMonitoring() {
-	// CAS：原子地从 false 翻到 true，确保 Start/ConnectDevice 并发调用时只有一条循环启动。
-	if !a.monitoringTemp.CompareAndSwap(false, true) {
+	if a.stopping.Load() {
 		return
 	}
-
-	// 清理可能残留的停止信号，避免新监控循环被立即中断。
-	select {
-	case <-a.stopMonitoring:
-	default:
+	a.monitorMutex.Lock()
+	if a.monitoringTemp.Load() {
+		a.monitorMutex.Unlock()
+		return
 	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	a.monitorStop = stop
+	a.monitorDone = done
+	a.monitorStopping = false
+	a.monitoringTemp.Store(true)
+	a.monitorMutex.Unlock()
+	defer func() {
+		a.monitorMutex.Lock()
+		if a.monitorDone == done {
+			a.monitorStop = nil
+			a.monitorDone = nil
+			a.monitorStopping = false
+			a.monitoringTemp.Store(false)
+		}
+		a.monitorMutex.Unlock()
+		close(done)
+	}()
 
 	// 注意：不在此处立即调用 EnterAutoMode，因为在启动时温度数据（桥接程序）可能尚未就绪。
 	// 如果在温度读取成功之前切换到软件控制模式，设备将不会收到转速指令，导致风扇停转。
 	// EnterAutoMode 和转速设置会在首次成功读取温度后，由 SetFanSpeed 内部统一完成。
 
 	cfg, cfgRevision := a.configManager.GetWithRevision()
-	updateInterval := temperatureMonitorInterval(cfg.TempUpdateRate)
+	hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
+	updateInterval := effectiveTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl)
 
 	// 温度采样使用 EMA 平滑。
 	sampleCount := max(cfg.TempSampleCount, 1)
@@ -149,6 +203,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	}
 	lastTargetRPM := -1
 	lastControlTemp := -1
+	lastDeviceGeneration := a.deviceManager.ConnectionGeneration()
+	settingsRefreshGeneration := uint64(0)
 	learningDirty := false
 	lastLearningSave := time.Now()
 	lastMonitorTick := time.Now()
@@ -164,14 +220,14 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 
-	prevHasClients := a.ipcServer != nil && a.ipcServer.HasClients()
+	prevHasClients := hasClients
 	var lastMemRelease time.Time
 
-	for a.monitoringTemp.Load() {
+monitorLoop:
+	for {
 		select {
-		case <-a.stopMonitoring:
-			a.monitoringTemp.Store(false)
-			return
+		case <-stop:
+			break monitorLoop
 		case <-timer.C:
 			now := time.Now()
 			gap := now.Sub(lastMonitorTick)
@@ -180,17 +236,24 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				timer.Reset(updateInterval)
 				continue
 			}
+			deviceGeneration := a.deviceManager.ConnectionGeneration()
+			if deviceGeneration != lastDeviceGeneration {
+				// A reconnect starts the device in its own default gear mode. Forget
+				// the target sent through the old HID handle so the next valid
+				// temperature sample re-enters realtime mode and writes a target.
+				lastDeviceGeneration = deviceGeneration
+				lastTargetRPM = -1
+				lastControlTemp = -1
+				steadyObserver.Reset()
+				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
+			}
 
 			cfg, cfgRevision = a.configManager.GetWithRevision()
 			a.applyTimeCurveSchedule(now)
-			updateInterval = temperatureMonitorInterval(cfg.TempUpdateRate)
-
 			// 后台空闲（无 GUI 连接且未开启智能控温）时放慢采样：此时温度读取不驱动风扇，
 			// 仅服务托盘提示与历史记录，降低采样频率可显著减少桥接传感器扫描带来的后台 CPU 占用。
-			hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
-			if !hasClients && !cfg.AutoControl && idleTemperatureMonitorInterval > updateInterval {
-				updateInterval = idleTemperatureMonitorInterval
-			}
+			hasClients = a.ipcServer != nil && a.ipcServer.HasClients()
+			updateInterval = effectiveTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl)
 			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
 			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
 				lastMemRelease = now
@@ -343,6 +406,18 @@ func (a *CoreApp) startTemperatureMonitoring() {
 				if shouldSendTargetRPM(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData) {
 					if a.deviceManager.SetFanSpeed(targetRPM) {
 						lastTargetRPM = targetRPM
+						if deviceGeneration != settingsRefreshGeneration {
+							settingsRefreshGeneration = deviceGeneration
+							a.safeGo("refreshDeviceSettings@realtime-mode", func() {
+								// The device applies a mode change asynchronously. Query after a
+								// short settle period so the cached status shown to the GUI is
+								// the new realtime mode rather than the pre-reconnect gear mode.
+								time.Sleep(200 * time.Millisecond)
+								if _, err := a.RefreshDeviceSettings(); err != nil {
+									a.logError("实时模式切换后刷新设备状态失败: %v", err)
+								}
+							})
+						}
 					} else {
 						lastTargetRPM = -1
 						a.logError("智能控温转速下发失败，将在下个周期重试: %d RPM", targetRPM)
@@ -415,6 +490,17 @@ func temperatureMonitorInterval(updateRateSeconds int) time.Duration {
 	return time.Duration(updateRateSeconds) * time.Second
 }
 
+// effectiveTemperatureMonitorInterval keeps configured responsiveness whenever
+// the GUI is present or automatic control is active. Only a fully idle core
+// session is slowed down, because those samples do not influence fan output.
+func effectiveTemperatureMonitorInterval(updateRateSeconds int, hasClients, autoControl bool) time.Duration {
+	interval := temperatureMonitorInterval(updateRateSeconds)
+	if !hasClients && !autoControl && interval < idleTemperatureMonitorInterval {
+		return idleTemperatureMonitorInterval
+	}
+	return interval
+}
+
 func shouldApplyRampLimit(targetRPM, prevTargetRPM int) bool {
 	return prevTargetRPM > 0 || targetRPM == 0
 }
@@ -449,17 +535,40 @@ func absRPMDelta(a, b int) int {
 
 // startHealthMonitoring 启动健康监控
 func (a *CoreApp) startHealthMonitoring() {
+	if a.stopping.Load() {
+		return
+	}
+	a.healthMutex.Lock()
+	if a.healthDone != nil {
+		a.healthMutex.Unlock()
+		return
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	a.healthStop = stop
+	a.healthDone = done
+	a.healthStopping = false
+	a.healthMutex.Unlock()
+
 	a.logInfo("启动健康监控系统")
-
-	a.healthCheckTicker = time.NewTicker(30 * time.Second)
-
 	a.safeGo("healthMonitoringLoop", func() {
-		defer a.healthCheckTicker.Stop()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		defer func() {
+			a.healthMutex.Lock()
+			if a.healthDone == done {
+				a.healthStop = nil
+				a.healthDone = nil
+				a.healthStopping = false
+			}
+			a.healthMutex.Unlock()
+			close(done)
+		}()
 		lastHealthCheck := time.Now()
 
 		for {
 			select {
-			case <-a.healthCheckTicker.C:
+			case <-ticker.C:
 				now := time.Now()
 				gap := now.Sub(lastHealthCheck)
 				lastHealthCheck = now
@@ -468,7 +577,7 @@ func (a *CoreApp) startHealthMonitoring() {
 				}
 
 				a.performHealthCheck()
-			case <-a.cleanupChan:
+			case <-stop:
 				a.logInfo("健康监控系统已停止")
 				return
 			}
@@ -479,6 +588,25 @@ func (a *CoreApp) startHealthMonitoring() {
 		a.safeGo("cleanOldLogs", func() {
 			a.logger.CleanOldLogs()
 		})
+	}
+}
+
+func (a *CoreApp) stopHealthMonitoring(timeout time.Duration) {
+	a.healthMutex.Lock()
+	done := a.healthDone
+	if done != nil && !a.healthStopping {
+		close(a.healthStop)
+		a.healthStopping = true
+	}
+	a.healthMutex.Unlock()
+
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		a.logError("等待健康监控停止超时")
 	}
 }
 
@@ -499,14 +627,11 @@ func (a *CoreApp) performHealthCheck() {
 }
 
 func (a *CoreApp) ensureTemperatureMonitoringHealthy() {
-	if a.systemSuspended.Load() || a.monitoringTemp.Load() {
+	if a.systemSuspended.Load() {
 		return
 	}
 
-	a.logError("健康检查: 温度监控未运行，尝试重新启动")
-	a.safeGo("restartTemperatureMonitoring@health-check", func() {
-		a.startTemperatureMonitoring()
-	})
+	a.ensureTemperatureMonitoring("health-check")
 }
 
 // checkDeviceHealth 检查设备健康状态

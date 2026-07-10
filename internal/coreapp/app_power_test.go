@@ -49,6 +49,125 @@ func TestShouldRecoverFromSystemResumeGap(t *testing.T) {
 	}
 }
 
+func TestShouldReconnectAfterResume(t *testing.T) {
+	tests := []struct {
+		name                    string
+		proactivelySuspended    bool
+		resumeReconnectWanted   bool
+		autoReconnectSuppressed bool
+		forceReconnect          bool
+		want                    bool
+	}{
+		{
+			name:                  "reconnects a device that was connected before suspend",
+			proactivelySuspended:  true,
+			resumeReconnectWanted: true,
+			want:                  true,
+		},
+		{
+			name:                    "does not reconnect a manually disconnected device",
+			proactivelySuspended:    true,
+			autoReconnectSuppressed: true,
+			forceReconnect:          true,
+			want:                    false,
+		},
+		{
+			name:           "recovers an unexpected resume without a suspend event",
+			forceReconnect: true,
+			want:           true,
+		},
+		{
+			name:                    "preserves a manual disconnect without a suspend event",
+			autoReconnectSuppressed: true,
+			forceReconnect:          true,
+			want:                    false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldReconnectAfterResume(
+				test.proactivelySuspended,
+				test.resumeReconnectWanted,
+				test.autoReconnectSuppressed,
+				test.forceReconnect,
+			); got != test.want {
+				t.Fatalf("shouldReconnectAfterResume() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestReconnectDelayElapsed(t *testing.T) {
+	t.Run("cancellation interrupts backoff", func(t *testing.T) {
+		cancel := make(chan struct{})
+		result := make(chan bool, 1)
+		go func() {
+			result <- reconnectDelayElapsed(time.Second, cancel)
+		}()
+
+		close(cancel)
+		select {
+		case elapsed := <-result:
+			if elapsed {
+				t.Fatal("cancelled reconnect delay reported as elapsed")
+			}
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("cancelled reconnect delay did not return promptly")
+		}
+	})
+
+	t.Run("zero delay runs immediately", func(t *testing.T) {
+		if !reconnectDelayElapsed(0, make(chan struct{})) {
+			t.Fatal("zero reconnect delay did not elapse immediately")
+		}
+	})
+}
+
+func TestStopTemperatureMonitoringSignalsOnlyOnce(t *testing.T) {
+	app := &CoreApp{
+		monitorStop: make(chan struct{}),
+		monitorDone: make(chan struct{}),
+	}
+	app.monitoringTemp.Store(true)
+
+	firstDone := app.stopTemperatureMonitoring()
+	secondDone := app.stopTemperatureMonitoring()
+	if firstDone == nil || secondDone == nil || firstDone != secondDone {
+		t.Fatal("stopTemperatureMonitoring did not return the active monitor session")
+	}
+
+	select {
+	case <-app.monitorStop:
+	default:
+		t.Fatal("stopTemperatureMonitoring did not signal the monitor")
+	}
+}
+
+func TestEffectiveTemperatureMonitorInterval(t *testing.T) {
+	tests := []struct {
+		name        string
+		updateRate  int
+		hasClients  bool
+		autoControl bool
+		want        time.Duration
+	}{
+		{name: "idle core backs off short interval", updateRate: 2, want: idleTemperatureMonitorInterval},
+		{name: "idle core keeps slower configured interval", updateRate: 15, want: 15 * time.Second},
+		{name: "gui keeps configured interval", updateRate: 2, hasClients: true, want: 2 * time.Second},
+		{name: "automatic control keeps configured interval", updateRate: 2, autoControl: true, want: 2 * time.Second},
+		{name: "invalid interval is normalized before idle backoff", updateRate: 0, want: idleTemperatureMonitorInterval},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := effectiveTemperatureMonitorInterval(test.updateRate, test.hasClients, test.autoControl); got != test.want {
+				t.Fatalf("effectiveTemperatureMonitorInterval(%d, %v, %v) = %v, want %v", test.updateRate, test.hasClients, test.autoControl, got, test.want)
+			}
+		})
+	}
+}
+
 func TestShouldSendTargetRPM(t *testing.T) {
 	tests := []struct {
 		name          string

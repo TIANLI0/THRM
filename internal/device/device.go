@@ -29,6 +29,13 @@ const (
 
 var supportedHIDProductIDs = []uint16{ProductIDBS2PRO, ProductIDBS3, ProductIDBS3PRO, ProductIDBS2}
 
+const (
+	maxConsecutiveReadErrors          = 20
+	maxConsecutiveRealtimeWriteErrors = 3
+	hidReadTimeout                    = time.Second
+	hidReadErrorRetryDelay            = 500 * time.Millisecond
+)
+
 func modelNameForProductID(productID uint16) string {
 	switch productID {
 	case ProductIDBS2:
@@ -53,8 +60,14 @@ type Manager struct {
 	mutex            sync.RWMutex
 	logger           types.Logger
 	currentFanData   atomic.Pointer[types.FanData]
+	connectionGen    atomic.Uint64
+	debugCapture     atomic.Bool
 	lastCommandedRPM int
 	hasCommandedRPM  bool
+	realtimeMode     bool
+
+	consecutiveRealtimeWriteErrors int
+	realtimeWriteRecoveryScheduled bool
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}
@@ -77,6 +90,7 @@ type Manager struct {
 	debugMutex  sync.Mutex
 	debugSeq    uint64
 	debugFrames []types.DeviceDebugFrame
+	queryMutex  sync.Mutex
 }
 
 // NewManager 创建新的设备管理器
@@ -92,6 +106,14 @@ func (m *Manager) SetCallbacks(onFanDataUpdate func(data *types.FanData), onDisc
 	m.onFanDataUpdate = onFanDataUpdate
 	m.onDisconnect = onDisconnect
 	m.bleManager.SetCallbacks(onFanDataUpdate, onDisconnect)
+}
+
+// SetDebugCapture controls expensive raw HID frame capture. Normal background
+// control does not need it; device-setting queries and explicit debug commands
+// temporarily enable capture for their own duration.
+func (m *Manager) SetDebugCapture(enabled bool) {
+	m.debugCapture.Store(enabled)
+	m.bleManager.SetDebugCapture(enabled)
 }
 
 // Init 初始化 HID 库
@@ -137,6 +159,9 @@ func (m *Manager) Connect() (bool, map[string]string) {
 		m.isConnected = true
 		m.productID = connectedProductID
 		m.deviceType = types.DeviceTypeHID
+		m.currentFanData.Store(nil)
+		m.resetRealtimeControlStateLocked()
+		m.connectionGen.Add(1)
 
 		// 为本次连接创建独立的监控生命周期信号。
 		m.monitorStop = make(chan struct{})
@@ -181,10 +206,18 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	success, bleInfo := m.bleManager.Connect()
 	m.mutex.Lock() // 重新获取锁
 
+	// A second caller may have completed a connection while this caller was
+	// scanning. Do not emit another logical connection or advance the generation.
+	if m.isConnected {
+		return true, nil
+	}
 	if success {
 		m.isConnected = true
 		m.deviceType = types.DeviceTypeBLE
 		m.productID = 0
+		m.currentFanData.Store(nil)
+		m.resetRealtimeControlStateLocked()
+		m.connectionGen.Add(1)
 		m.logInfo("BS1 BLE 设备连接成功")
 		return true, bleInfo
 	}
@@ -195,15 +228,25 @@ func (m *Manager) Connect() (bool, map[string]string) {
 
 // Disconnect 断开设备连接，并触发断连回调。
 func (m *Manager) Disconnect() {
-	m.disconnect(true)
+	m.disconnect(true, false)
 }
 
 // DisconnectSilently 断开设备连接，但不触发断连回调。
 func (m *Manager) DisconnectSilently() {
-	m.disconnect(false)
+	m.disconnect(false, false)
 }
 
-func (m *Manager) disconnect(notify bool) {
+// DisconnectForRecovery 断开设备以便执行恢复重连。
+//
+// 休眠/唤醒后，hidapi 的 ReadWithTimeout 在极少数机器上可能永远不返回。此时不能
+// 直接 Close 仍在读取的句柄（会导致 cgo use-after-free），但也不能继续把它标记为
+// 已连接，否则后续 Connect 会错误地直接返回成功而不重新打开设备。超时后本方法会
+// 安全地脱离旧句柄，允许恢复流程建立新连接；旧监控协程返回时仍会自行关闭旧句柄。
+func (m *Manager) DisconnectForRecovery() {
+	m.disconnect(false, true)
+}
+
+func (m *Manager) disconnect(notify, detachOnTimeout bool) {
 	m.mutex.Lock()
 	if !m.isConnected {
 		m.mutex.Unlock()
@@ -214,6 +257,8 @@ func (m *Manager) disconnect(notify bool) {
 		m.bleManager.Disconnect()
 		m.isConnected = false
 		m.deviceType = ""
+		m.currentFanData.Store(nil)
+		m.resetRealtimeControlStateLocked()
 		onDisconnect := notify && m.onDisconnect != nil
 		m.mutex.Unlock()
 
@@ -242,12 +287,15 @@ func (m *Manager) disconnect(notify bool) {
 			close(stop)
 		}
 
-		// ReadWithTimeout 有 500ms 超时，正常会很快退出；超时则不强行关闭仍可能在读的
+		// ReadWithTimeout 最多等待 1 秒，正常会很快退出；超时则不强行关闭仍可能在读的
 		// 句柄，避免触发崩溃，交由监控协程稍后自行收尾。
 		select {
 		case <-done:
 		case <-time.After(3 * time.Second):
 			m.logError("等待设备监控协程退出超时，延后由监控协程自行收尾")
+			if detachOnTimeout {
+				m.detachStalledHID(dev)
+			}
 		}
 		return
 	}
@@ -260,6 +308,8 @@ func (m *Manager) disconnect(notify bool) {
 		m.isConnected = false
 		m.deviceType = ""
 		m.productID = 0
+		m.currentFanData.Store(nil)
+		m.resetRealtimeControlStateLocked()
 	}
 	onDisconnect := notify && m.onDisconnect != nil
 	m.mutex.Unlock()
@@ -268,6 +318,37 @@ func (m *Manager) disconnect(notify bool) {
 	if onDisconnect {
 		m.onDisconnect()
 	}
+}
+
+// detachStalledHID 从管理器状态中脱离仍卡在读取中的旧 HID 句柄。
+// 不在这里 Close：只有旧监控协程已经退出时，finalizeMonitor 才能安全关闭它。
+func (m *Manager) detachStalledHID(dev *hid.Device) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if dev == nil || m.device != dev {
+		return
+	}
+
+	m.device = nil
+	m.isConnected = false
+	m.deviceType = ""
+	m.productID = 0
+	m.monitorStop = nil
+	m.monitorDone = nil
+	m.explicitDisconnect = false
+	m.disconnectNotify = false
+	m.currentFanData.Store(nil)
+	m.resetRealtimeControlStateLocked()
+	m.logError("HID 监控协程在断开超时后仍未退出，已脱离失效句柄并允许恢复重连")
+}
+
+func (m *Manager) resetRealtimeControlStateLocked() {
+	m.lastCommandedRPM = 0
+	m.hasCommandedRPM = false
+	m.realtimeMode = false
+	m.consecutiveRealtimeWriteErrors = 0
+	m.realtimeWriteRecoveryScheduled = false
 }
 
 // closeDeviceLocked 在持有锁的情况下安全关闭 HID 句柄。
@@ -288,6 +369,13 @@ func (m *Manager) IsConnected() bool {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	return m.isConnected
+}
+
+// ConnectionGeneration returns a monotonically increasing identifier for each
+// successful physical connection. Consumers use it to discard control state
+// derived from a previous HID handle after reconnecting.
+func (m *Manager) ConnectionGeneration() uint64 {
+	return m.connectionGen.Load()
 }
 
 // GetProductID 获取当前连接设备的产品ID
@@ -355,7 +443,6 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 
 	buffer := make([]byte, 64)
 	consecutiveErrors := 0
-	const maxConsecutiveErrors = 5
 
 	for {
 		// 优先响应停止信号，确保断开时尽快退出读循环，再由 finalizeMonitor 安全关闭句柄。
@@ -366,8 +453,9 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 		default:
 		}
 
-		// 使用较短超时，使停止信号能在 ~500ms 内被响应。
-		n, err := device.ReadWithTimeout(buffer, 500*time.Millisecond)
+		// 空闲时设备不会持续上报。使用 1 秒超时可将 HID 空读唤醒频率减半，
+		// 同时仍能在约 1 秒内响应停止/重连请求。
+		n, err := device.ReadWithTimeout(buffer, hidReadTimeout)
 		if err != nil {
 			if err == hid.ErrTimeout {
 				consecutiveErrors = 0
@@ -375,9 +463,11 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 			}
 
 			consecutiveErrors++
-			m.logError("读取设备数据失败 (%d/%d): %v", consecutiveErrors, maxConsecutiveErrors, err)
+			if consecutiveErrors == 1 || consecutiveErrors%5 == 0 {
+				m.logError("读取设备数据失败 (%d/%d): %v", consecutiveErrors, maxConsecutiveReadErrors, err)
+			}
 
-			if consecutiveErrors >= maxConsecutiveErrors {
+			if consecutiveErrors >= maxConsecutiveReadErrors {
 				m.logError("连续读取失败次数过多，设备可能已断开")
 				return
 			}
@@ -385,7 +475,7 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 			select {
 			case <-stop:
 				return
-			case <-time.After(500 * time.Millisecond):
+			case <-time.After(hidReadErrorRetryDelay):
 			}
 			continue
 		}
@@ -396,6 +486,28 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 			m.recordDebugFrame("rx", types.DeviceTypeHID, buffer[:n])
 			fanData := m.parseFanData(buffer, n)
 			if fanData != nil {
+				// A monitor from a detached pre-suspend handle can unblock after a
+				// replacement connection has been established. Do not let that old
+				// handle overwrite the fresh connection's status cache.
+				m.mutex.RLock()
+				active := m.isConnected && m.device == device
+				m.mutex.RUnlock()
+				if !active {
+					return
+				}
+
+				if fanData.CurrentMode&0x01 == 0 {
+					// A physical gear change or a reconnect places the device back in
+					// gear mode. The next software target must send a fresh realtime
+					// mode-entry command rather than assuming the old session remains.
+					m.mutex.Lock()
+					if m.device == device {
+						m.realtimeMode = false
+						m.hasCommandedRPM = false
+					}
+					m.mutex.Unlock()
+				}
+
 				// 无锁原子写
 				m.currentFanData.Store(fanData)
 
@@ -416,10 +528,12 @@ func (m *Manager) finalizeMonitor(device *hid.Device, done chan struct{}) {
 	}
 
 	m.mutex.Lock()
-	// 若当前活动句柄已不是本协程的句柄，说明已被新连接替换，忽略以免误清理。
+	// 若当前活动句柄已不是本协程的句柄，说明它已在恢复流程中被脱离或被新连接替换。
+	// 当前协程已经退出读循环，因此现在关闭它自己的旧句柄是安全的，且不会影响新连接。
 	if m.device != device {
+		m.closeDeviceLocked(device)
 		m.mutex.Unlock()
-		m.logDebug("忽略过期 HID 监控协程的收尾事件")
+		m.logDebug("已关闭过期 HID 监控协程持有的旧句柄")
 		return
 	}
 
@@ -432,10 +546,12 @@ func (m *Manager) finalizeMonitor(device *hid.Device, done chan struct{}) {
 	m.isConnected = false
 	m.deviceType = ""
 	m.productID = 0
+	m.currentFanData.Store(nil)
 	m.monitorStop = nil
 	m.monitorDone = nil
 	m.explicitDisconnect = false
 	m.disconnectNotify = false
+	m.resetRealtimeControlStateLocked()
 	m.mutex.Unlock()
 
 	// 触发回调：显式断开按调用方意图，意外断开（读错误）则始终通知。
@@ -559,56 +675,7 @@ func (m *Manager) SetFanSpeed(rpm int) bool {
 		return false
 	}
 
-	if rpm == 0 {
-		if m.hasCommandedRPM && m.lastCommandedRPM == 0 {
-			return true
-		}
-
-		if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
-			m.logError("进入实时转速模式失败: %v", err)
-			return false
-		}
-
-		time.Sleep(50 * time.Millisecond)
-
-		speedBytes := []byte{0x00, 0x00}
-		if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
-			m.logError("设置风扇转速失败: %v", err)
-			return false
-		}
-
-		time.Sleep(50 * time.Millisecond)
-
-		if err := m.writeHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
-			m.logError("退出实时转速模式失败: %v", err)
-			return false
-		}
-
-		m.lastCommandedRPM = 0
-		m.hasCommandedRPM = true
-		m.logDebug("已关闭风扇（RPM=0 + 退出实时模式）")
-		return true
-	}
-
-	if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
-		m.logError("进入实时转速模式失败: %v", err)
-		return false
-	}
-
-	time.Sleep(50 * time.Millisecond)
-
-	speedBytes := make([]byte, 2)
-	binary.LittleEndian.PutUint16(speedBytes, uint16(rpm))
-
-	if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
-		m.logError("设置风扇转速失败: %v", err)
-		return false
-	}
-
-	m.lastCommandedRPM = rpm
-	m.hasCommandedRPM = true
-	m.logDebug("已设置风扇转速: %d RPM", rpm)
-	return true
+	return m.setRealtimeFanSpeedLocked(rpm, "风扇转速")
 }
 
 // SetCustomFanSpeed 设置自定义风扇转速（无限制）
@@ -630,56 +697,84 @@ func (m *Manager) SetCustomFanSpeed(rpm int) bool {
 
 	m.logWarn("警告：设置自定义转速 %d RPM（无上下限限制）", rpm)
 
-	if rpm == 0 {
-		if m.hasCommandedRPM && m.lastCommandedRPM == 0 {
-			return true
-		}
+	return m.setRealtimeFanSpeedLocked(rpm, "自定义风扇转速")
+}
 
-		if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
-			m.logError("进入实时转速模式失败: %v", err)
-			return false
-		}
-
-		time.Sleep(50 * time.Millisecond)
-
-		speedBytes := []byte{0x00, 0x00}
-		if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
-			m.logError("设置自定义风扇转速失败: %v", err)
-			return false
-		}
-
-		time.Sleep(50 * time.Millisecond)
-
-		if err := m.writeHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
-			m.logError("退出实时转速模式失败: %v", err)
-			return false
-		}
-
-		m.lastCommandedRPM = 0
-		m.hasCommandedRPM = true
-		m.logInfo("已关闭风扇（自定义RPM=0 + 退出实时模式）")
+// setRealtimeFanSpeedLocked applies a target RPM without repeatedly re-entering
+// realtime mode. BS2PRO treats mode entry as a state transition; issuing it on
+// every temperature tick can interrupt the active control session and has been
+// observed to make some HID stacks unstable while the app is in the background.
+func (m *Manager) setRealtimeFanSpeedLocked(rpm int, name string) bool {
+	if rpm == 0 && m.hasCommandedRPM && m.lastCommandedRPM == 0 && !m.realtimeMode {
 		return true
 	}
 
-	if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
-		m.logError("进入实时转速模式失败: %v", err)
-		return false
+	if !m.realtimeMode {
+		if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.noteRealtimeWriteResultLocked(false)
+			m.logError("进入实时转速模式失败: %v", err)
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+		m.realtimeMode = true
 	}
-
-	time.Sleep(50 * time.Millisecond)
 
 	speedBytes := make([]byte, 2)
 	binary.LittleEndian.PutUint16(speedBytes, uint16(rpm))
-
 	if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
-		m.logError("设置自定义风扇转速失败: %v", err)
+		// The target write leaves the hardware state unknown. Force a full mode
+		// handshake for the next retry instead of assuming the first command stuck.
+		m.realtimeMode = false
+		m.noteRealtimeWriteResultLocked(false)
+		m.logError("设置%s失败: %v", name, err)
 		return false
+	}
+
+	if rpm == 0 {
+		time.Sleep(50 * time.Millisecond)
+		if err := m.writeHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
+			m.realtimeMode = false
+			m.noteRealtimeWriteResultLocked(false)
+			m.logError("退出实时转速模式失败: %v", err)
+			return false
+		}
+		m.realtimeMode = false
 	}
 
 	m.lastCommandedRPM = rpm
 	m.hasCommandedRPM = true
-	m.logInfo("已设置自定义风扇转速: %d RPM", rpm)
+	m.noteRealtimeWriteResultLocked(true)
+	if rpm == 0 {
+		m.logDebug("已关闭风扇（RPM=0 + 退出实时模式）")
+	} else {
+		m.logDebug("已设置%s: %d RPM", name, rpm)
+	}
 	return true
+}
+
+func (m *Manager) noteRealtimeWriteResultLocked(success bool) {
+	if success {
+		m.consecutiveRealtimeWriteErrors = 0
+		m.realtimeWriteRecoveryScheduled = false
+		return
+	}
+
+	m.consecutiveRealtimeWriteErrors++
+	if m.consecutiveRealtimeWriteErrors < maxConsecutiveRealtimeWriteErrors || m.realtimeWriteRecoveryScheduled {
+		return
+	}
+	m.realtimeWriteRecoveryScheduled = true
+	m.logError("实时转速连续写入失败 %d 次，主动断开并重连设备", m.consecutiveRealtimeWriteErrors)
+
+	go func() {
+		m.mutex.Lock()
+		shouldRecover := m.realtimeWriteRecoveryScheduled &&
+			m.consecutiveRealtimeWriteErrors >= maxConsecutiveRealtimeWriteErrors
+		m.mutex.Unlock()
+		if shouldRecover {
+			m.Disconnect()
+		}
+	}()
 }
 
 // EnterAutoMode 进入自动模式
@@ -699,6 +794,7 @@ func (m *Manager) EnterAutoMode() error {
 	if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
 		return fmt.Errorf("进入自动模式失败: %v", err)
 	}
+	m.realtimeMode = true
 
 	m.logInfo("已切换到自动模式，开始智能变频")
 	return nil
@@ -766,6 +862,7 @@ func (m *Manager) SetManualGear(gear, level string) bool {
 	}
 
 	m.logInfo("设置挡位成功: %s %s (目标转速: %d RPM)", gear, level, selectedCommand.RPM)
+	m.resetRealtimeControlStateLocked()
 	return true
 }
 
@@ -802,6 +899,7 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	}
 
 	m.logInfo("设置挡位成功: %s %s (自定义转速: %d RPM)", gear, level, rpm)
+	m.resetRealtimeControlStateLocked()
 	return true
 }
 

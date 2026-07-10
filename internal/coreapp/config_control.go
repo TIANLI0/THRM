@@ -435,6 +435,7 @@ func (a *CoreApp) SetDebugMode(enabled bool) error {
 	cfg.SmartControl, _ = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, enabled)
 	storeSmartControlOffsetsForActiveProfile(&cfg)
 	a.debugMode = enabled
+	a.deviceManager.SetDebugCapture(enabled)
 
 	if a.logger != nil {
 		a.logger.SetDebugMode(enabled)

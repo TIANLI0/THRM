@@ -97,6 +97,7 @@ func (a *CoreApp) Start() error {
 		}
 		a.logInfo("从配置文件同步调试模式: 启用")
 	}
+	a.deviceManager.SetDebugCapture(cfg.DebugMode)
 
 	// 检查并同步Windows自启动状态
 	a.logInfo("检查Windows自启动状态")
@@ -198,7 +199,13 @@ func (a *CoreApp) Stop() {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
 	}
-	a.stopTemperatureMonitoring()
+	if done := a.stopTemperatureMonitoring(); done != nil {
+		select {
+		case <-done:
+		case <-time.After(12 * time.Second):
+			a.logError("等待温度监控停止超时，继续执行退出流程")
+		}
+	}
 	if a.hotkeyManager != nil {
 		a.hotkeyManager.Stop()
 	}
@@ -299,15 +306,7 @@ func (a *CoreApp) initSystemTray() {
 
 // cleanup 清理资源
 func (a *CoreApp) cleanup() {
-	if a.healthCheckTicker != nil {
-		a.healthCheckTicker.Stop()
-		a.healthCheckTicker = nil
-	}
-
-	select {
-	case a.cleanupChan <- true:
-	default:
-	}
+	a.stopHealthMonitoring(5 * time.Second)
 
 	if a.logger != nil {
 		a.logger.Info("核心服务正在退出，清理资源")

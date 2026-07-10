@@ -37,6 +37,9 @@ func (m *Manager) currentDebugSeq() uint64 {
 }
 
 func (m *Manager) recordDebugFrame(direction, transport string, raw []byte) uint64 {
+	if !m.debugCapture.Load() {
+		return 0
+	}
 	copiedRaw := make([]byte, len(raw))
 	copy(copiedRaw, raw)
 
@@ -106,6 +109,8 @@ func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugC
 	if m.GetDeviceType() == types.DeviceTypeBLE {
 		return m.bleManager.SendDebugCommand(input, waitMs)
 	}
+	wasCapturing := m.debugCapture.Swap(true)
+	defer m.debugCapture.Store(wasCapturing)
 
 	frame, err := deviceproto.NormalizeDebugInput(input)
 	if err != nil {
@@ -141,6 +146,9 @@ func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugC
 }
 
 func (b *BLEManager) recordDebugFrame(direction, transport string, raw []byte) uint64 {
+	if !b.debugCapture.Load() {
+		return 0
+	}
 	copiedRaw := make([]byte, len(raw))
 	copy(copiedRaw, raw)
 
@@ -214,6 +222,8 @@ func (b *BLEManager) SendDebugCommand(input string, waitMs int) (types.DeviceDeb
 	if err != nil {
 		return types.DeviceDebugCommandResult{}, err
 	}
+	wasCapturing := b.debugCapture.Swap(true)
+	defer b.debugCapture.Store(wasCapturing)
 
 	startSeq := b.currentDebugSeq()
 	if err := b.WriteCommand(frame); err != nil {

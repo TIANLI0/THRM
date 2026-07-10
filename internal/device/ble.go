@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/types"
@@ -29,8 +30,10 @@ type BLEManager struct {
 
 	stopChan chan struct{}
 
-	debugSeq    uint64
-	debugFrames []types.DeviceDebugFrame
+	debugSeq     uint64
+	debugFrames  []types.DeviceDebugFrame
+	debugCapture atomic.Bool
+	queryMutex   sync.Mutex
 }
 
 // NewBLEManager 创建 BLE 设备管理器
@@ -46,6 +49,10 @@ func NewBLEManager(logger types.Logger) *BLEManager {
 func (b *BLEManager) SetCallbacks(onFanDataUpdate func(data *types.FanData), onDisconnect func()) {
 	b.onFanDataUpdate = onFanDataUpdate
 	b.onDisconnect = onDisconnect
+}
+
+func (b *BLEManager) SetDebugCapture(enabled bool) {
+	b.debugCapture.Store(enabled)
 }
 
 // Connect 扫描并连接 BS1 BLE 设备

@@ -54,6 +54,9 @@ type CoreApp struct {
 	autoReconnectSuppressed atomic.Bool
 	resumeRecoveryRunning   atomic.Bool
 	systemSuspended         atomic.Bool
+	resumeReconnectWanted   atomic.Bool
+	suspendGeneration       atomic.Uint64
+	connectGeneration       atomic.Uint64
 	stopping                atomic.Bool
 	lastResumeRecoveryUnix  int64
 
@@ -61,12 +64,23 @@ type CoreApp struct {
 
 	guiLastResponse   int64
 	guiMonitorEnabled bool
-	healthCheckTicker *time.Ticker
-	cleanupChan       chan bool
 	quitChan          chan bool
 
 	mutex                 sync.RWMutex
-	stopMonitoring        chan bool
+	monitorMutex          sync.Mutex
+	monitorStop           chan struct{}
+	monitorDone           chan struct{}
+	monitorStopping       bool
+	healthMutex           sync.Mutex
+	healthStop            chan struct{}
+	healthDone            chan struct{}
+	healthStopping        bool
+	connectMutex          sync.Mutex
+	connectDone           chan struct{}
+	connectResult         bool
+	reconnectMutex        sync.Mutex
+	reconnectCancel       chan struct{}
+	reconnectDone         chan struct{}
 	manualGearLevelMemory map[string]string
 }
 
@@ -127,13 +141,11 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		pluginManager:      pluginMgr,
 		logger:             customLogger,
 		isConnected:        false,
-		stopMonitoring:     make(chan bool, 1),
 		lastDeviceMode:     "",
 		userSetAutoControl: false,
 		isAutoStartLaunch:  isAutoStart,
 		debugMode:          debugMode,
 		guiLastResponse:    time.Now().Unix(),
-		cleanupChan:        make(chan bool, 1),
 		quitChan:           make(chan bool, 1),
 		guiMonitorEnabled:  true,
 		manualGearLevelMemory: map[string]string{

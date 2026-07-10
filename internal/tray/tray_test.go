@@ -70,3 +70,30 @@ func TestManager_IsInitialized_NotInitially(t *testing.T) {
 		t.Fatal("IsInitialized should return false before Init")
 	}
 }
+
+func TestStatusEqual(t *testing.T) {
+	base := Status{
+		Connected:            true,
+		CPUTemp:              65,
+		GPUTemp:              70,
+		CurrentRPM:           1800,
+		AutoControlState:     true,
+		ActiveCurveProfileID: "balanced",
+		CurveProfiles:        []CurveOption{{ID: "balanced", Name: "Balanced"}},
+	}
+	if !statusEqual(base, base) {
+		t.Fatal("equal tray status was treated as changed")
+	}
+
+	changed := base
+	changed.CurrentRPM++
+	if statusEqual(base, changed) {
+		t.Fatal("changed fan speed was treated as equal")
+	}
+
+	changed = base
+	changed.CurveProfiles = []CurveOption{{ID: "balanced", Name: "Quiet"}}
+	if statusEqual(base, changed) {
+		t.Fatal("changed curve menu entry was treated as equal")
+	}
+}

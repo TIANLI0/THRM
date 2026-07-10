@@ -24,6 +24,9 @@ const (
 	// trayRestartThrottle prevents repeated restart requests while the
 	// supervisor is already trying to recover the tray.
 	trayRestartThrottle = 45 * time.Second
+	// trayStatusRefreshInterval balances fresh visible status with the cost of
+	// cross-thread Windows tray updates. Fan control is independent of this UI refresh.
+	trayStatusRefreshInterval = 5 * time.Second
 )
 
 // Manager 系统托盘管理器
@@ -91,6 +94,24 @@ type Status struct {
 	AutoControlState     bool
 	ActiveCurveProfileID string
 	CurveProfiles        []CurveOption
+}
+
+func statusEqual(left, right Status) bool {
+	if left.Connected != right.Connected ||
+		left.CPUTemp != right.CPUTemp ||
+		left.GPUTemp != right.GPUTemp ||
+		left.CurrentRPM != right.CurrentRPM ||
+		left.AutoControlState != right.AutoControlState ||
+		left.ActiveCurveProfileID != right.ActiveCurveProfileID ||
+		len(left.CurveProfiles) != len(right.CurveProfiles) {
+		return false
+	}
+	for i := range left.CurveProfiles {
+		if left.CurveProfiles[i] != right.CurveProfiles[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // NewManager 创建新的托盘管理器
@@ -484,8 +505,10 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 		}
 	}()
 
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(trayStatusRefreshInterval)
 	defer ticker.Stop()
+	var previousStatus Status
+	hasPreviousStatus := false
 
 	for {
 		select {
@@ -500,7 +523,10 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 			}
 
 			status := m.getStatus()
-			m.enqueueUI("update-menu-status", func() {
+			if hasPreviousStatus && statusEqual(status, previousStatus) {
+				continue
+			}
+			if m.enqueueUI("update-menu-status", func() {
 				if m.menuItems == nil {
 					return
 				}
@@ -557,7 +583,10 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 				} else {
 					systray.SetTooltip(appmeta.AppName + " - 设备未连接")
 				}
-			})
+			}) {
+				previousStatus = status
+				hasPreviousStatus = true
+			}
 		case <-instanceDone:
 			return
 		case <-m.done:
