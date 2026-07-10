@@ -397,7 +397,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
   source,
   onOpen,
 }: {
-  points: Array<{ timestamp: number; cpuTemp: number; gpuTemp: number; fanRpm: number }>;
+  points: TemperatureHistoryPoint[];
   enabled: boolean;
   source: 'core' | 'session';
   onOpen?: () => void;

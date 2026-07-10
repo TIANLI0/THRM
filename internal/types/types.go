@@ -197,10 +197,19 @@ type TemperatureSensor struct {
 
 // TemperatureGPUDevice 可选 GPU 设备信息。
 type TemperatureGPUDevice struct {
-	Key     string              `json:"key"`
-	Name    string              `json:"name"`
-	Vendor  string              `json:"vendor"`
-	Sensors []TemperatureSensor `json:"sensors"`
+	Key          string              `json:"key"`
+	Name         string              `json:"name"`
+	Vendor       string              `json:"vendor"`
+	Sensors      []TemperatureSensor `json:"sensors"`
+	PowerSensors []PowerSensor       `json:"powerSensors"`
+}
+
+// PowerSensor is a hardware-monitoring power sensor in watts. A zero value
+// means the source has no current reading; it does not represent zero draw.
+type PowerSensor struct {
+	Key   string  `json:"key"`
+	Name  string  `json:"name"`
+	Value float64 `json:"value"`
 }
 
 // FanCurveProfile 温控曲线方案
@@ -310,6 +319,8 @@ type GearCommand struct {
 type TemperatureData struct {
 	CPUTemp           int                    `json:"cpuTemp"`           // CPU温度
 	GPUTemp           int                    `json:"gpuTemp"`           // GPU温度
+	CPUPower          float64                `json:"cpuPower"`          // CPU package power (W), 0 when unavailable
+	GPUPower          float64                `json:"gpuPower"`          // selected GPU power (W), 0 when unavailable
 	MaxTemp           int                    `json:"maxTemp"`           // 最高温度
 	ControlTemp       int                    `json:"controlTemp"`       // 当前控温基准温度
 	ControlSource     string                 `json:"controlSource"`     // 当前控温基准来源
@@ -318,6 +329,8 @@ type TemperatureData struct {
 	GpuModel          string                 `json:"gpuModel"`          // 当前识别的 GPU 型号
 	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`        // 当前识别到的 CPU 温度传感器
 	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`        // 当前识别到的 GPU 温度传感器
+	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`   // 当前识别到的 CPU 功耗传感器
+	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`   // 当前选中 GPU 的功耗传感器
 	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`        // 当前识别到的 GPU 设备列表
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
@@ -326,10 +339,12 @@ type TemperatureData struct {
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
 type TemperatureHistoryPoint struct {
-	Timestamp int64 `json:"timestamp"`
-	CPUTemp   int   `json:"cpuTemp"`
-	GPUTemp   int   `json:"gpuTemp"`
-	FanRPM    int   `json:"fanRpm"`
+	Timestamp int64   `json:"timestamp"`
+	CPUTemp   int     `json:"cpuTemp"`
+	GPUTemp   int     `json:"gpuTemp"`
+	CPUPower  float64 `json:"cpuPower"`
+	GPUPower  float64 `json:"gpuPower"`
+	FanRPM    int     `json:"fanRpm"`
 }
 
 // TemperatureHistoryPayload 温度历史返回载荷。
@@ -343,6 +358,8 @@ type TemperatureHistoryPayload struct {
 type BridgeTemperatureData struct {
 	CpuTemp           int                    `json:"cpuTemp"`
 	GpuTemp           int                    `json:"gpuTemp"`
+	CpuPower          float64                `json:"cpuPower"`
+	GpuPower          float64                `json:"gpuPower"`
 	MaxTemp           int                    `json:"maxTemp"`
 	ControlTemp       int                    `json:"controlTemp"`
 	ControlSource     string                 `json:"controlSource"`
@@ -351,6 +368,8 @@ type BridgeTemperatureData struct {
 	GpuModel          string                 `json:"gpuModel"`
 	CpuSensors        []TemperatureSensor    `json:"cpuSensors"`
 	GpuSensors        []TemperatureSensor    `json:"gpuSensors"`
+	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`
+	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`
 	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`
 	UpdateTime        int64                  `json:"updateTime"`
 	Success           bool                   `json:"success"`

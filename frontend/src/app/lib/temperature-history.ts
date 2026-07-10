@@ -2,10 +2,12 @@ export interface TemperatureHistoryPoint {
   timestamp: number;
   cpuTemp: number;
   gpuTemp: number;
+  cpuPower: number;
+  gpuPower: number;
   fanRpm: number;
 }
 
-export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan';
+export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuPower' | 'gpuPower';
 
 export const CORE_HISTORY_LIMIT = 720;
 export const SESSION_HISTORY_LIMIT = 60;
@@ -29,13 +31,22 @@ export const normalizeHistoryPoint = (point: Partial<TemperatureHistoryPoint> | 
   const timestamp = normalizeHistoryTimestamp(Number(point.timestamp || 0));
   const cpuTemp = Number(point.cpuTemp || 0);
   const gpuTemp = Number(point.gpuTemp || 0);
+  const cpuPower = Number(point.cpuPower || 0);
+  const gpuPower = Number(point.gpuPower || 0);
   const fanRpm = Number(point.fanRpm || 0);
 
   if (timestamp <= 0 || (cpuTemp <= 0 && gpuTemp <= 0 && fanRpm <= 0)) {
     return null;
   }
 
-  return { timestamp, cpuTemp, gpuTemp, fanRpm };
+  return {
+    timestamp,
+    cpuTemp,
+    gpuTemp,
+    cpuPower: Number.isFinite(cpuPower) && cpuPower > 0 ? cpuPower : 0,
+    gpuPower: Number.isFinite(gpuPower) && gpuPower > 0 ? gpuPower : 0,
+    fanRpm,
+  };
 };
 
 export const trimHistoryPoints = (
@@ -106,7 +117,7 @@ export const appendSampledHistoryPoint = (
 };
 
 export const createLiveHistoryPoint = (
-  payload: { updateTime?: number; cpuTemp?: number; gpuTemp?: number } | null | undefined,
+  payload: { updateTime?: number; cpuTemp?: number; gpuTemp?: number; cpuPower?: number; gpuPower?: number } | null | undefined,
   fanRpm = 0,
 ) => {
   if (!payload) return null;
@@ -115,6 +126,8 @@ export const createLiveHistoryPoint = (
     timestamp: normalizeHistoryTimestamp(payload.updateTime ?? 0) || Date.now(),
     cpuTemp: Number(payload.cpuTemp || 0),
     gpuTemp: Number(payload.gpuTemp || 0),
+    cpuPower: Number(payload.cpuPower || 0),
+    gpuPower: Number(payload.gpuPower || 0),
     fanRpm: Number(fanRpm || 0),
   });
 };

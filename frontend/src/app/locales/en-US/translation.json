@@ -454,17 +454,20 @@
     },
     "history": {
       "detailsTitle": "Temperature and fan history details",
-      "detailsDescription": "The curve page keeps a 1-hour history overview so you can compare the current curve against recent temperature trends.",
+      "detailsDescription": "The curve page keeps a 1-hour history overview for temperature, power, and fan trends.",
       "saving": "Saving",
       "backgroundRecording": "Background recording",
       "emptyEnabled": "Background recording is enabled. Waiting for more temperature and fan samples.",
       "emptyDisabled": "Background recording is currently disabled. You can enable it on this page.",
       "recentTrend": "Recent trend",
+      "powerTrend": "Power trend",
       "waitingMoreSamples": "1 sample recorded. Waiting for more data before drawing the trend chart.",
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",
-        "fan": "Fan RPM"
+        "fan": "Fan RPM",
+        "cpuPower": "CPU power",
+        "gpuPower": "GPU power"
       },
       "duration": {
         "ltOneMinute": "< 1 minute",
@@ -475,11 +478,16 @@
       "summary": {
         "cpuPeak": "CPU peak",
         "gpuPeak": "GPU peak",
+        "cpuPowerPeak": "CPU power peak",
+        "gpuPowerPeak": "GPU power peak",
         "fanPeak": "Fan peak",
         "averageTemperature": "Avg {{value}}°C",
+        "averagePower": "Avg {{value}} W",
         "averageFan": "Avg {{value}} RPM",
         "noCpuTemperature": "No CPU temperature yet",
         "noGpuTemperature": "No GPU temperature yet",
+        "noCpuPower": "No CPU power data yet",
+        "noGpuPower": "No GPU power data yet",
         "noFanData": "No fan data yet"
       }
     },

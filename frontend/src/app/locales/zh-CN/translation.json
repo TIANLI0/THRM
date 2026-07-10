@@ -454,17 +454,20 @@
     },
     "history": {
       "detailsTitle": "温度与风扇历史详情",
-      "detailsDescription": "曲线页保留最近 1 小时历史概览，便于对照当前曲线与温度走势。",
+      "detailsDescription": "曲线页保留最近 1 小时的温度、功耗与风扇历史，便于对照当前曲线与负载变化。",
       "saving": "保存中",
       "backgroundRecording": "后台记录",
       "emptyEnabled": "后台记录已开启，等待更多温度与风扇样本。",
       "emptyDisabled": "后台记录当前已关闭，可在本页开启。",
       "recentTrend": "最近趋势",
+      "powerTrend": "功耗趋势",
       "waitingMoreSamples": "已记录 1 条样本，等待更多数据后展示趋势图。",
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",
-        "fan": "风扇 RPM"
+        "fan": "风扇 RPM",
+        "cpuPower": "CPU 功耗",
+        "gpuPower": "GPU 功耗"
       },
       "duration": {
         "ltOneMinute": "< 1 分钟",
@@ -475,11 +478,16 @@
       "summary": {
         "cpuPeak": "CPU 峰值",
         "gpuPeak": "GPU 峰值",
+        "cpuPowerPeak": "CPU 功耗峰值",
+        "gpuPowerPeak": "GPU 功耗峰值",
         "fanPeak": "风扇峰值",
         "averageTemperature": "平均 {{value}}°C",
+        "averagePower": "平均 {{value}} W",
         "averageFan": "平均 {{value}} RPM",
         "noCpuTemperature": "暂无 CPU 温度",
         "noGpuTemperature": "暂无 GPU 温度",
+        "noCpuPower": "暂无 CPU 功耗数据",
+        "noGpuPower": "暂无 GPU 功耗数据",
         "noFanData": "暂无风扇数据"
       }
     },

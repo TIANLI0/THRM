@@ -17,6 +17,8 @@ namespace THRM.TempBridge
     {
         public int CpuTemp { get; set; }
         public int GpuTemp { get; set; }
+        public double CpuPower { get; set; }
+        public double GpuPower { get; set; }
         public int MaxTemp { get; set; }
         public int ControlTemp { get; set; }
         public string ControlSource { get; set; }
@@ -25,6 +27,8 @@ namespace THRM.TempBridge
         public string GpuModel { get; set; }
         public TemperatureSensor[] CpuSensors { get; set; }
         public TemperatureSensor[] GpuSensors { get; set; }
+        public PowerSensor[] CpuPowerSensors { get; set; }
+        public PowerSensor[] GpuPowerSensors { get; set; }
         public TemperatureGpuDevice[] GpuDevices { get; set; }
         public long UpdateTime { get; set; }
         public bool Success { get; set; }
@@ -38,6 +42,8 @@ namespace THRM.TempBridge
             GpuModel = string.Empty;
             CpuSensors = Array.Empty<TemperatureSensor>();
             GpuSensors = Array.Empty<TemperatureSensor>();
+            CpuPowerSensors = Array.Empty<PowerSensor>();
+            GpuPowerSensors = Array.Empty<PowerSensor>();
             GpuDevices = Array.Empty<TemperatureGpuDevice>();
             Error = string.Empty;
         }
@@ -56,12 +62,26 @@ namespace THRM.TempBridge
         }
     }
 
+    public class PowerSensor
+    {
+        public string Key { get; set; }
+        public string Name { get; set; }
+        public double Value { get; set; }
+
+        public PowerSensor()
+        {
+            Key = string.Empty;
+            Name = string.Empty;
+        }
+    }
+
     public class TemperatureGpuDevice
     {
         public string Key { get; set; }
         public string Name { get; set; }
         public string Vendor { get; set; }
         public TemperatureSensor[] Sensors { get; set; }
+        public PowerSensor[] PowerSensors { get; set; }
 
         public TemperatureGpuDevice()
         {
@@ -69,6 +89,7 @@ namespace THRM.TempBridge
             Name = string.Empty;
             Vendor = string.Empty;
             Sensors = Array.Empty<TemperatureSensor>();
+            PowerSensors = Array.Empty<PowerSensor>();
         }
     }
 
@@ -95,6 +116,7 @@ namespace THRM.TempBridge
         public string Vendor { get; set; }
         public HardwareType HardwareType { get; set; }
         public System.Collections.Generic.List<TemperatureSensor> Sensors { get; set; }
+        public System.Collections.Generic.List<PowerSensor> PowerSensors { get; set; }
 
         public GpuCandidate()
         {
@@ -102,6 +124,7 @@ namespace THRM.TempBridge
             Model = string.Empty;
             Vendor = string.Empty;
             Sensors = new System.Collections.Generic.List<TemperatureSensor>();
+            PowerSensors = new System.Collections.Generic.List<PowerSensor>();
         }
     }
 
@@ -431,13 +454,13 @@ namespace THRM.TempBridge
 
             foreach (ISensor sensor in hardware.Sensors)
             {
-                if (sensor.SensorType != SensorType.Temperature)
+                if (sensor.SensorType != SensorType.Temperature && sensor.SensorType != SensorType.Power)
                 {
                     continue;
                 }
 
                 string valueText = sensor.Value.HasValue
-                    ? sensor.Value.Value.ToString("F1") + "°C"
+                    ? sensor.Value.Value.ToString("F1") + (sensor.SensorType == SensorType.Power ? " W" : "°C")
                     : "N/A";
                 Console.WriteLine(
                     string.Format(
@@ -902,6 +925,7 @@ namespace THRM.TempBridge
             string cpuModel = string.Empty;
             string gpuModel = string.Empty;
             var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
+            var cpuPowerSensors = new System.Collections.Generic.List<PowerSensor>();
             var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
             int gpuIndex = 0;
 
@@ -919,6 +943,7 @@ namespace THRM.TempBridge
                             {
                                 cpuModel = hardware.Name ?? string.Empty;
                                 CollectTemperatureSensors(hardware, "cpu", hardware.Name ?? string.Empty, string.Empty, cpuSensors);
+                                CollectPowerSensors(hardware, "cpu", hardware.Name ?? string.Empty, string.Empty, cpuPowerSensors);
                             }
                         }
                         else if (hardware.HardwareType == HardwareType.GpuNvidia ||
@@ -926,7 +951,9 @@ namespace THRM.TempBridge
                                  hardware.HardwareType == HardwareType.GpuIntel)
                         {
                             var sensors = new System.Collections.Generic.List<TemperatureSensor>();
+                            var powerSensors = new System.Collections.Generic.List<PowerSensor>();
                             CollectTemperatureSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, sensors);
+                            CollectPowerSensors(hardware, "gpu", hardware.Name ?? string.Empty, string.Empty, powerSensors);
                             gpuCandidates.Add(new GpuCandidate
                             {
                                 Key = BuildGpuDeviceKey(hardware, gpuIndex),
@@ -934,6 +961,7 @@ namespace THRM.TempBridge
                                 Vendor = GetGpuVendor(hardware.HardwareType),
                                 HardwareType = hardware.HardwareType,
                                 Sensors = sensors,
+                                PowerSensors = powerSensors,
                             });
                             gpuIndex++;
                         }
@@ -965,13 +993,18 @@ namespace THRM.TempBridge
 
             var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor);
             var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
+            var gpuPowerSensors = selectedGpu != null ? selectedGpu.PowerSensors : new System.Collections.Generic.List<PowerSensor>();
             gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
 
             int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core", "Windows" });
             int gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, new[] { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" });
+            double cpuPower = SelectPower(cpuPowerSensors, new[] { "Package", "CPU Package", "PPT", "Power" });
+            double gpuPower = SelectPower(gpuPowerSensors, new[] { "GPU Power", "Board Power", "Total Graphics Power", "Power" });
 
             result.CpuTemp = cpuTemp;
             result.GpuTemp = gpuTemp;
+            result.CpuPower = cpuPower;
+            result.GpuPower = gpuPower;
             result.MaxTemp = Math.Max(cpuTemp, gpuTemp);
             result.ControlTemp = ResolveControlTemp(cpuTemp, gpuTemp, selection.TempSource);
             result.SelectedGpuDevice = selectedGpu != null ? selectedGpu.Key : selection.GpuDevice;
@@ -979,12 +1012,15 @@ namespace THRM.TempBridge
             result.GpuModel = gpuModel;
             result.CpuSensors = cpuSensors.ToArray();
             result.GpuSensors = gpuSensors.ToArray();
+            result.CpuPowerSensors = cpuPowerSensors.ToArray();
+            result.GpuPowerSensors = gpuPowerSensors.ToArray();
             result.GpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
             {
                 Key = candidate.Key,
                 Name = candidate.Model,
                 Vendor = candidate.Vendor,
-                Sensors = candidate.Sensors != null ? candidate.Sensors.ToArray() : Array.Empty<TemperatureSensor>()
+                Sensors = candidate.Sensors != null ? candidate.Sensors.ToArray() : Array.Empty<TemperatureSensor>(),
+                PowerSensors = candidate.PowerSensors != null ? candidate.PowerSensors.ToArray() : Array.Empty<PowerSensor>()
             }).ToArray();
 
             if (cpuTemp == 0 && gpuTemp == 0)
@@ -1205,7 +1241,7 @@ namespace THRM.TempBridge
             }
         }
 
-            static void CollectTemperatureSensors(IHardware hardware, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<TemperatureSensor> sensors)
+        static void CollectTemperatureSensors(IHardware hardware, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<TemperatureSensor> sensors)
         {
                 foreach (ISensor sensor in hardware.Sensors)
                 {
@@ -1241,6 +1277,42 @@ namespace THRM.TempBridge
                 }
         }
 
+        static void CollectPowerSensors(IHardware hardware, string devicePrefix, string keyPath, string displayPath, System.Collections.Generic.List<PowerSensor> sensors)
+        {
+            foreach (ISensor sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType != SensorType.Power || !sensor.Value.HasValue)
+                {
+                    continue;
+                }
+
+                double watts = Math.Round(sensor.Value.Value, 1);
+                if (watts <= 0 || watts > 2000)
+                {
+                    continue;
+                }
+
+                string sensorPath = string.IsNullOrEmpty(keyPath) ? sensor.Name : keyPath + "/" + sensor.Name;
+                sensors.Add(new PowerSensor
+                {
+                    Key = devicePrefix + "/power/" + sensorPath,
+                    Name = string.IsNullOrEmpty(displayPath) ? sensor.Name : displayPath + " / " + sensor.Name,
+                    Value = watts,
+                });
+            }
+
+            foreach (IHardware subHardware in hardware.SubHardware)
+            {
+                string subKeyPath = string.IsNullOrEmpty(keyPath)
+                    ? (subHardware.Name ?? string.Empty)
+                    : keyPath + "/" + (subHardware.Name ?? string.Empty);
+                string subDisplayPath = string.IsNullOrEmpty(displayPath)
+                    ? (subHardware.Name ?? string.Empty)
+                    : displayPath + " / " + (subHardware.Name ?? string.Empty);
+                CollectPowerSensors(subHardware, devicePrefix, subKeyPath, subDisplayPath, sensors);
+            }
+        }
+
         static int SelectTemperature(System.Collections.Generic.IReadOnlyList<TemperatureSensor> sensors, string selectedKey, string[] preferredSensorNames)
         {
                 if (sensors == null || sensors.Count == 0)
@@ -1269,6 +1341,24 @@ namespace THRM.TempBridge
 
                 return sensors[0].Value;
             }
+
+        static double SelectPower(System.Collections.Generic.IReadOnlyList<PowerSensor> sensors, string[] preferredSensorNames)
+        {
+            if (sensors == null || sensors.Count == 0)
+            {
+                return 0;
+            }
+
+            foreach (var sensor in sensors)
+            {
+                if (ContainsAnyKeyword(sensor.Name, preferredSensorNames))
+                {
+                    return sensor.Value;
+                }
+            }
+
+            return sensors[0].Value;
+        }
 
         static GpuCandidate SelectGpuCandidate(System.Collections.Generic.IReadOnlyList<GpuCandidate> candidates, string selectedDeviceKey, string selectedSensorKey)
         {

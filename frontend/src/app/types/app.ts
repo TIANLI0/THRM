@@ -32,6 +32,8 @@ export interface FanData {
 export interface TemperatureData {
   cpuTemp: number;     // CPU温度
   gpuTemp: number;     // GPU温度
+  cpuPower?: number;   // CPU package power (W)
+  gpuPower?: number;   // selected GPU power (W)
   maxTemp: number;     // 最高温度
   controlTemp?: number; // 当前控温基准温度
   controlSource?: 'max' | 'cpu' | 'gpu'; // 当前控温基准来源
@@ -39,12 +41,20 @@ export interface TemperatureData {
   gpuModel?: string;   // 当前识别的 GPU 型号
   cpuSensors?: TemperatureSensor[]; // 当前识别的 CPU 温度传感器
   gpuSensors?: TemperatureSensor[]; // 当前识别的 GPU 温度传感器
+  cpuPowerSensors?: PowerSensor[];
+  gpuPowerSensors?: PowerSensor[];
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
 }
 
 export interface TemperatureSensor {
+  key: string;
+  name: string;
+  value: number;
+}
+
+export interface PowerSensor {
   key: string;
   name: string;
   value: number;

@@ -439,6 +439,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     cpu: true,
     gpu: true,
     fan: true,
+    cpuPower: true,
+    gpuPower: true,
   });
   const chartRef = useRef<HTMLDivElement>(null);
   const curveEditorRef = useRef<HTMLDivElement>(null);
@@ -682,13 +684,22 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return Math.max(4000, ...detailHistoryPoints.map((point) => point.fanRpm).filter((value) => value > 0), 0);
   }, [detailHistoryPoints]);
 
+  const historyPowerMax = useMemo(() => {
+    const values = detailHistoryPoints.flatMap((point) => [point.cpuPower, point.gpuPower]).filter((value) => value > 0);
+    if (values.length === 0) return 0;
+    return Math.max(20, Math.ceil((Math.max(...values) + 10) / 10) * 10);
+  }, [detailHistoryPoints]);
+
   const historySummary = useMemo(() => {
     const latest = temperatureHistory[temperatureHistory.length - 1] ?? null;
     const first = temperatureHistory[0] ?? null;
     const cpuValues = temperatureHistory.map((point) => point.cpuTemp).filter((value) => value > 0);
     const gpuValues = temperatureHistory.map((point) => point.gpuTemp).filter((value) => value > 0);
+    const cpuPowerValues = temperatureHistory.map((point) => point.cpuPower).filter((value) => value > 0);
+    const gpuPowerValues = temperatureHistory.map((point) => point.gpuPower).filter((value) => value > 0);
     const fanValues = temperatureHistory.map((point) => point.fanRpm).filter((value) => value > 0);
     const average = (values: number[]) => values.length > 0 ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+    const averagePower = (values: number[]) => values.length > 0 ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length * 10) / 10 : 0;
 
     return {
       sampleCount: temperatureHistory.length,
@@ -699,6 +710,10 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       cpuAverage: average(cpuValues),
       gpuPeak: gpuValues.length > 0 ? Math.max(...gpuValues) : 0,
       gpuAverage: average(gpuValues),
+      cpuPowerPeak: cpuPowerValues.length > 0 ? Math.max(...cpuPowerValues) : 0,
+      cpuPowerAverage: averagePower(cpuPowerValues),
+      gpuPowerPeak: gpuPowerValues.length > 0 ? Math.max(...gpuPowerValues) : 0,
+      gpuPowerAverage: averagePower(gpuPowerValues),
       fanPeak: fanValues.length > 0 ? Math.max(...fanValues) : 0,
       fanAverage: average(fanValues),
     };
@@ -709,6 +724,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: '#2f6df6' },
     { key: 'gpu' as const, label: t('fanCurve.history.series.gpu'), color: '#f97316' },
     { key: 'fan' as const, label: t('fanCurve.history.series.fan'), color: '#10b981' },
+    { key: 'cpuPower' as const, label: t('fanCurve.history.series.cpuPower'), color: '#8b5cf6' },
+    { key: 'gpuPower' as const, label: t('fanCurve.history.series.gpuPower'), color: '#ec4899' },
   ]), [t, locale]);
 
   const toggleHistorySeries = useCallback((series: HistorySeriesKey) => {
@@ -2021,10 +2038,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {[
                   [t('fanCurve.history.summary.cpuPeak'), historySummary.cpuPeak ? `${historySummary.cpuPeak}°C` : '--', historySummary.cpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.cpuAverage }) : t('fanCurve.history.summary.noCpuTemperature')],
                   [t('fanCurve.history.summary.gpuPeak'), historySummary.gpuPeak ? `${historySummary.gpuPeak}°C` : '--', historySummary.gpuAverage ? t('fanCurve.history.summary.averageTemperature', { value: historySummary.gpuAverage }) : t('fanCurve.history.summary.noGpuTemperature')],
+                  [t('fanCurve.history.summary.cpuPowerPeak'), historySummary.cpuPowerPeak ? `${historySummary.cpuPowerPeak.toFixed(1)} W` : '--', historySummary.cpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: historySummary.cpuPowerAverage.toFixed(1) }) : t('fanCurve.history.summary.noCpuPower')],
+                  [t('fanCurve.history.summary.gpuPowerPeak'), historySummary.gpuPowerPeak ? `${historySummary.gpuPowerPeak.toFixed(1)} W` : '--', historySummary.gpuPowerAverage ? t('fanCurve.history.summary.averagePower', { value: historySummary.gpuPowerAverage.toFixed(1) }) : t('fanCurve.history.summary.noGpuPower')],
                   [t('fanCurve.history.summary.fanPeak'), historySummary.fanPeak ? `${historySummary.fanPeak} RPM` : '--', historySummary.fanAverage ? t('fanCurve.history.summary.averageFan', { value: historySummary.fanAverage }) : t('fanCurve.history.summary.noFanData')],
                 ].map(([label, value, hint]) => (
                   <div key={label} className="rounded-xl border border-border/70 bg-background/35 p-3">
@@ -2112,6 +2131,51 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke="#10b981" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                       </LineChart>
                     </ResponsiveContainer>
+                  </div>
+                )}
+
+                {historyPowerMax > 0 && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower) && (
+                  <div className="border-t border-border/60 pt-3">
+                    <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={historyChartData} margin={{ top: 8, right: 16, left: 4, bottom: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                          <XAxis
+                            dataKey="timestamp"
+                            type="number"
+                            domain={['dataMin', 'dataMax']}
+                            tickFormatter={(value) => formatHistoryTime(Number(value), locale)}
+                            tickLine={false}
+                            minTickGap={24}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="power"
+                            type="number"
+                            domain={[0, historyPowerMax]}
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--chart-axis)' }}
+                            tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
+                            width={46}
+                            unit=" W"
+                          />
+                          <RechartsTooltip
+                            labelFormatter={(value) => formatHistoryDateTime(Number(value), locale)}
+                            formatter={(value, name) => {
+                              const numericValue = Number(value ?? 0);
+                              return [`${numericValue.toFixed(1)} W`, name === 'cpuPower' ? t('fanCurve.history.series.cpuPower') : t('fanCurve.history.series.gpuPower')];
+                            }}
+                            contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
+                            labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
+                            itemStyle={{ color: 'var(--chart-tooltip-text)' }}
+                          />
+                          {historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPower" stroke="#8b5cf6" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                          {historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPower" stroke="#ec4899" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
                 )}
               </div>

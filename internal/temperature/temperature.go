@@ -62,6 +62,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 
 				temp.CPUTemp = r.readCPUTemperature()
 				temp.GPUTemp = r.readGPUTemperature()
+				temp.GPUPower = r.readGPUPower()
 				temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 				temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 				return temp
@@ -91,6 +92,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 
 	// 读取GPU温度
 	temp.GPUTemp = r.readGPUTemperature()
+	temp.GPUPower = r.readGPUPower()
 
 	// 计算最高温度
 	temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
@@ -106,6 +108,8 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 
 	temp.CPUTemp = bridgeTemp.CpuTemp
 	temp.GPUTemp = bridgeTemp.GpuTemp
+	temp.CPUPower = bridgeTemp.CpuPower
+	temp.GPUPower = bridgeTemp.GpuPower
 	temp.MaxTemp = bridgeTemp.MaxTemp
 	temp.ControlTemp = bridgeTemp.ControlTemp
 	temp.ControlSource = bridgeTemp.ControlSource
@@ -120,6 +124,8 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 	temp.GpuModel = bridgeTemp.GpuModel
 	temp.CpuSensors = bridgeTemp.CpuSensors
 	temp.GpuSensors = bridgeTemp.GpuSensors
+	temp.CpuPowerSensors = bridgeTemp.CpuPowerSensors
+	temp.GpuPowerSensors = bridgeTemp.GpuPowerSensors
 	temp.GpuDevices = bridgeTemp.GpuDevices
 	if bridgeTemp.UpdateTime > 0 {
 		temp.UpdateTime = bridgeTemp.UpdateTime
@@ -270,6 +276,38 @@ func (r *Reader) readGPUTempByVendor(vendor string) int {
 	default:
 		return 0
 	}
+}
+
+// readGPUPower is a best-effort fallback when the hardware bridge is not
+// available. CPU package power has no portable system API, so it is supplied
+// by LibreHardwareMonitor through TempBridge when that path is active.
+func (r *Reader) readGPUPower() float64 {
+	switch r.detectGPUVendor() {
+	case "nvidia":
+		return r.readNvidiaGPUPower()
+	default:
+		return 0
+	}
+}
+
+func (r *Reader) readNvidiaGPUPower() float64 {
+	output, err := execHelperCommand(helperCommandTimeout, "nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits")
+	if err != nil {
+		return 0
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 {
+		return 0
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) == 0 {
+		return 0
+	}
+	watts, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil || watts <= 0 || watts > 2000 {
+		return 0
+	}
+	return watts
 }
 
 // readNvidiaGPUTemp 安全读取NVIDIA GPU温度

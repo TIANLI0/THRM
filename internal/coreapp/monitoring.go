@@ -91,6 +91,12 @@ func compactTemperatureEventPayload(current, previous types.TemperatureData) typ
 	if reflect.DeepEqual(current.GpuSensors, previous.GpuSensors) {
 		compact.GpuSensors = nil
 	}
+	if reflect.DeepEqual(current.CpuPowerSensors, previous.CpuPowerSensors) {
+		compact.CpuPowerSensors = nil
+	}
+	if reflect.DeepEqual(current.GpuPowerSensors, previous.GpuPowerSensors) {
+		compact.GpuPowerSensors = nil
+	}
 	if reflect.DeepEqual(current.GpuDevices, previous.GpuDevices) {
 		compact.GpuDevices = nil
 	}
@@ -217,6 +223,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 	// 每个曲线点对应一个稳态采样桶。
 	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
+	thermalPredictor := smartcontrol.NewThermalPredictor()
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 
@@ -233,6 +240,7 @@ monitorLoop:
 			gap := now.Sub(lastMonitorTick)
 			lastMonitorTick = now
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
+				thermalPredictor.Reset()
 				timer.Reset(updateInterval)
 				continue
 			}
@@ -245,6 +253,7 @@ monitorLoop:
 				lastTargetRPM = -1
 				lastControlTemp = -1
 				steadyObserver.Reset()
+				thermalPredictor.Reset()
 				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
 			}
 
@@ -372,6 +381,27 @@ monitorLoop:
 					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
 				}
 
+				// 预测只作为升温方向的前馈补偿：短窗口温度斜率叠加 CPU/GPU
+				// 功耗突增，可在实测温度越过曲线点前提前升速。稳态学习仍使用
+				// learningControlTemp，避免将预测值写入长期学习偏移。
+				learningControlTemp := controlTemp
+				if smartCfg.Learning {
+					prediction := thermalPredictor.Observe(temp, now, cfg.TempSource, smartCfg.TrendGain)
+					if prediction.ControlTemp > controlTemp {
+						controlTemp = prediction.ControlTemp
+						a.logDebug("预测控温: 实测=%d°C 预测=%d°C CPU+%.1f°C GPU+%.1f°C CPU功耗=%.1fW GPU功耗=%.1fW",
+							learningControlTemp,
+							controlTemp,
+							prediction.CPURise,
+							prediction.GPURise,
+							temp.CPUPower,
+							temp.GPUPower,
+						)
+					}
+				} else {
+					thermalPredictor.Reset()
+				}
+
 				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(cfg.FanCurve)
 
 				baseRPM := temperature.CalculateTargetRPM(controlTemp, cfg.FanCurve)
@@ -425,7 +455,7 @@ monitorLoop:
 				}
 
 				if smartCfg.Learning && !spikeSuppressed {
-					steady := steadyObserver.Observe(controlTemp, observedRPM, cfg.FanCurve, smartCfg)
+					steady := steadyObserver.Observe(learningControlTemp, observedRPM, cfg.FanCurve, smartCfg)
 					if steady.Ready && steady.BucketIdx >= 0 {
 						newOffsets, changed := smartcontrol.LearnSteadyOffset(
 							steady.BucketIdx,
@@ -464,12 +494,13 @@ monitorLoop:
 				if baseRPM > 0 {
 					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%dRPM 目标=%dRPM", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, baseRPM, targetRPM)
 				}
-				lastControlTemp = controlTemp
+				lastControlTemp = learningControlTemp
 			}
 
 			if !cfg.AutoControl {
 				lastTargetRPM = -1
 				lastControlTemp = -1
+				thermalPredictor.Reset()
 			}
 
 			timer.Reset(updateInterval)

@@ -9,6 +9,8 @@ import (
 func TestCompactTemperatureEventPayload(t *testing.T) {
 	sharedCPUSensors := []types.TemperatureSensor{{Key: "cpu-package", Name: "CPU Package", Value: 71}}
 	sharedGPUSensors := []types.TemperatureSensor{{Key: "gpu-core", Name: "GPU Core", Value: 66}}
+	sharedCPUPowerSensors := []types.PowerSensor{{Key: "cpu/power/package", Name: "CPU Package Power", Value: 45.5}}
+	sharedGPUPowerSensors := []types.PowerSensor{{Key: "gpu/power/board", Name: "GPU Board Power", Value: 80.2}}
 	sharedGPUDevices := []types.TemperatureGPUDevice{{
 		Key:    "gpu0",
 		Name:   "GPU 0",
@@ -18,13 +20,16 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 			Name:  "GPU Core",
 			Value: 66,
 		}},
+		PowerSensors: sharedGPUPowerSensors,
 	}}
 
 	previous := types.TemperatureData{
-		CPUTemp:    70,
-		CpuSensors: sharedCPUSensors,
-		GpuSensors: sharedGPUSensors,
-		GpuDevices: sharedGPUDevices,
+		CPUTemp:         70,
+		CpuSensors:      sharedCPUSensors,
+		GpuSensors:      sharedGPUSensors,
+		CpuPowerSensors: sharedCPUPowerSensors,
+		GpuPowerSensors: sharedGPUPowerSensors,
+		GpuDevices:      sharedGPUDevices,
 	}
 	current := previous
 	current.CPUTemp = 72
@@ -35,6 +40,9 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	}
 	if compact.GpuSensors != nil {
 		t.Fatal("compactTemperatureEventPayload() should strip unchanged gpuSensors")
+	}
+	if compact.CpuPowerSensors != nil || compact.GpuPowerSensors != nil {
+		t.Fatal("compactTemperatureEventPayload() should strip unchanged power sensors")
 	}
 	if compact.GpuDevices != nil {
 		t.Fatal("compactTemperatureEventPayload() should strip unchanged gpuDevices")

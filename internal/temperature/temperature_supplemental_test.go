@@ -113,6 +113,25 @@ func TestNvidiaTempTimeout(t *testing.T) {
 	}
 }
 
+func TestReadNvidiaGPUPower(t *testing.T) {
+	oldExec := execHelperCommand
+	defer func() { execHelperCommand = oldExec }()
+
+	execHelperCommand = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		if timeout != helperCommandTimeout {
+			t.Fatalf("unexpected timeout: %v", timeout)
+		}
+		if name != "nvidia-smi" {
+			t.Fatalf("unexpected command: %s", name)
+		}
+		return []byte("123.45\n"), nil
+	}
+
+	if got := NewReader(nil, testLogger{}).readNvidiaGPUPower(); got != 123.45 {
+		t.Fatalf("readNvidiaGPUPower() = %.2f, want 123.45", got)
+	}
+}
+
 // TestTempSourceResolve verifies control temperature resolution
 func TestTempSourceResolve(t *testing.T) {
 	tests := []struct {
@@ -213,10 +232,10 @@ func TestMultiSensorAverage(t *testing.T) {
 // TestApplyMultiSensorCpuAverage verifies the full apply function
 func TestApplyMultiSensorCpuAverage(t *testing.T) {
 	temp := &types.TemperatureData{
-		CPUTemp:      70,
-		GPUTemp:      60,
-		MaxTemp:      70,
-		ControlTemp:  70,
+		CPUTemp:       70,
+		GPUTemp:       60,
+		MaxTemp:       70,
+		ControlTemp:   70,
 		ControlSource: types.TempSourceMax,
 		CpuSensors: []types.TemperatureSensor{
 			{Key: "core0", Value: 40},

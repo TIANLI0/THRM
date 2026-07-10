@@ -2,6 +2,7 @@ package temperature
 
 import (
 	"bytes"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,7 +71,7 @@ func TestHistoryRecorderPersistsBinarySnapshot(t *testing.T) {
 	recorder := NewHistoryRecorder(filePath, 8, 5*time.Second, nil)
 	enableRecorderForTest(t, recorder)
 	_, _ = recorder.Add(types.TemperatureData{CPUTemp: 60, GPUTemp: 54, UpdateTime: 1_717_000_000}, &types.FanData{CurrentRPM: 1500})
-	_, _ = recorder.Add(types.TemperatureData{CPUTemp: 62, GPUTemp: 55, UpdateTime: 1_717_000_005}, &types.FanData{CurrentRPM: 1550})
+	_, _ = recorder.Add(types.TemperatureData{CPUTemp: 62, GPUTemp: 55, CPUPower: 47.4, GPUPower: 102.6, UpdateTime: 1_717_000_005}, &types.FanData{CurrentRPM: 1550})
 	if err := recorder.Flush(); err != nil {
 		t.Fatalf("flush binary history: %v", err)
 	}
@@ -90,5 +91,36 @@ func TestHistoryRecorderPersistsBinarySnapshot(t *testing.T) {
 	}
 	if snapshot.Points[1].FanRPM != 1550 {
 		t.Fatalf("expected fan rpm 1550, got %d", snapshot.Points[1].FanRPM)
+	}
+	if snapshot.Points[1].CPUPower != 47.4 || snapshot.Points[1].GPUPower != 102.6 {
+		t.Fatalf("expected persisted powers 47.4/102.6 W, got %.1f/%.1f W", snapshot.Points[1].CPUPower, snapshot.Points[1].GPUPower)
+	}
+}
+
+func TestHistoryRecorderLoadsLegacyV1WithoutPower(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "history.bin")
+	recorder := NewHistoryRecorder(filePath, 8, 5*time.Second, nil)
+
+	data := make([]byte, 0, 48)
+	data = append(data, historyBinaryMagic...)
+	data = binary.LittleEndian.AppendUint16(data, historyBinaryVersionLegacy)
+	data = append(data, historyEnabledFlag, 0)
+	data = binary.LittleEndian.AppendUint32(data, 5)
+	data = binary.LittleEndian.AppendUint32(data, 1)
+	data = binary.LittleEndian.AppendUint64(data, uint64(1_717_000_000_000))
+	data = binary.LittleEndian.AppendUint64(data, uint64(1_717_000_000_000))
+	data = binary.LittleEndian.AppendUint32(data, uint32(61))
+	data = binary.LittleEndian.AppendUint32(data, uint32(58))
+	data = binary.LittleEndian.AppendUint32(data, uint32(1650))
+
+	if err := recorder.loadBinaryData(data); err != nil {
+		t.Fatalf("load legacy v1 history: %v", err)
+	}
+	points := recorder.Snapshot().Points
+	if len(points) != 1 {
+		t.Fatalf("expected one legacy point, got %d", len(points))
+	}
+	if points[0].CPUPower != 0 || points[0].GPUPower != 0 {
+		t.Fatalf("legacy v1 power should be unavailable, got %.1f/%.1f", points[0].CPUPower, points[0].GPUPower)
 	}
 }

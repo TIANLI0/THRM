@@ -474,6 +474,7 @@ export namespace types {
 	    name: string;
 	    vendor: string;
 	    sensors: TemperatureSensor[];
+	    powerSensors: PowerSensor[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TemperatureGPUDevice(source);
@@ -485,6 +486,7 @@ export namespace types {
 	        this.name = source["name"];
 	        this.vendor = source["vendor"];
 	        this.sensors = this.convertValues(source["sensors"], TemperatureSensor);
+	        this.powerSensors = this.convertValues(source["powerSensors"], PowerSensor);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -521,9 +523,27 @@ export namespace types {
 	        this.value = source["value"];
 	    }
 	}
+	export class PowerSensor {
+	    key: string;
+	    name: string;
+	    value: number;
+
+	    static createFrom(source: any = {}) {
+	        return new PowerSensor(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.name = source["name"];
+	        this.value = source["value"];
+	    }
+	}
 	export class BridgeTemperatureData {
 	    cpuTemp: number;
 	    gpuTemp: number;
+	    cpuPower: number;
+	    gpuPower: number;
 	    maxTemp: number;
 	    controlTemp: number;
 	    controlSource: string;
@@ -532,6 +552,8 @@ export namespace types {
 	    gpuModel: string;
 	    cpuSensors: TemperatureSensor[];
 	    gpuSensors: TemperatureSensor[];
+	    cpuPowerSensors: PowerSensor[];
+	    gpuPowerSensors: PowerSensor[];
 	    gpuDevices: TemperatureGPUDevice[];
 	    updateTime: number;
 	    success: boolean;
@@ -545,6 +567,8 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cpuTemp = source["cpuTemp"];
 	        this.gpuTemp = source["gpuTemp"];
+	        this.cpuPower = source["cpuPower"];
+	        this.gpuPower = source["gpuPower"];
 	        this.maxTemp = source["maxTemp"];
 	        this.controlTemp = source["controlTemp"];
 	        this.controlSource = source["controlSource"];
@@ -553,6 +577,8 @@ export namespace types {
 	        this.gpuModel = source["gpuModel"];
 	        this.cpuSensors = this.convertValues(source["cpuSensors"], TemperatureSensor);
 	        this.gpuSensors = this.convertValues(source["gpuSensors"], TemperatureSensor);
+	        this.cpuPowerSensors = this.convertValues(source["cpuPowerSensors"], PowerSensor);
+	        this.gpuPowerSensors = this.convertValues(source["gpuPowerSensors"], PowerSensor);
 	        this.gpuDevices = this.convertValues(source["gpuDevices"], TemperatureGPUDevice);
 	        this.updateTime = source["updateTime"];
 	        this.success = source["success"];
@@ -828,6 +854,8 @@ export namespace types {
 	export class TemperatureData {
 	    cpuTemp: number;
 	    gpuTemp: number;
+	    cpuPower: number;
+	    gpuPower: number;
 	    maxTemp: number;
 	    controlTemp: number;
 	    controlSource: string;
@@ -836,6 +864,8 @@ export namespace types {
 	    gpuModel: string;
 	    cpuSensors: TemperatureSensor[];
 	    gpuSensors: TemperatureSensor[];
+	    cpuPowerSensors: PowerSensor[];
+	    gpuPowerSensors: PowerSensor[];
 	    gpuDevices: TemperatureGPUDevice[];
 	    updateTime: number;
 	    bridgeOk: boolean;
@@ -849,6 +879,8 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.cpuTemp = source["cpuTemp"];
 	        this.gpuTemp = source["gpuTemp"];
+	        this.cpuPower = source["cpuPower"];
+	        this.gpuPower = source["gpuPower"];
 	        this.maxTemp = source["maxTemp"];
 	        this.controlTemp = source["controlTemp"];
 	        this.controlSource = source["controlSource"];
@@ -857,6 +889,8 @@ export namespace types {
 	        this.gpuModel = source["gpuModel"];
 	        this.cpuSensors = this.convertValues(source["cpuSensors"], TemperatureSensor);
 	        this.gpuSensors = this.convertValues(source["gpuSensors"], TemperatureSensor);
+	        this.cpuPowerSensors = this.convertValues(source["cpuPowerSensors"], PowerSensor);
+	        this.gpuPowerSensors = this.convertValues(source["gpuPowerSensors"], PowerSensor);
 	        this.gpuDevices = this.convertValues(source["gpuDevices"], TemperatureGPUDevice);
 	        this.updateTime = source["updateTime"];
 	        this.bridgeOk = source["bridgeOk"];
@@ -886,6 +920,8 @@ export namespace types {
 	    timestamp: number;
 	    cpuTemp: number;
 	    gpuTemp: number;
+	    cpuPower: number;
+	    gpuPower: number;
 	    fanRpm: number;
 	
 	    static createFrom(source: any = {}) {
@@ -897,6 +933,8 @@ export namespace types {
 	        this.timestamp = source["timestamp"];
 	        this.cpuTemp = source["cpuTemp"];
 	        this.gpuTemp = source["gpuTemp"];
+	        this.cpuPower = source["cpuPower"];
+	        this.gpuPower = source["gpuPower"];
 	        this.fanRpm = source["fanRpm"];
 	    }
 	}
@@ -939,4 +977,3 @@ export namespace types {
 	
 
 }
-

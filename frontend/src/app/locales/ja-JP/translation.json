@@ -453,17 +453,20 @@
     },
     "history": {
       "detailsTitle": "温度とファン履歴の詳細",
-      "detailsDescription": "カーブタブでは直近 1 時間の履歴概要を保持し、現在のカーブと温度推移を比較できます。",
+      "detailsDescription": "カーブタブでは直近 1 時間の温度、消費電力、ファン履歴を保持し、現在のカーブと負荷変化を比較できます。",
       "saving": "保存中",
       "backgroundRecording": "バックグラウンド記録",
       "emptyEnabled": "バックグラウンド記録は有効です。さらなる温度とファンのサンプルを待っています。",
       "emptyDisabled": "バックグラウンド記録は無効です。このタブで有効にできます。",
       "recentTrend": "最近の推移",
+      "powerTrend": "消費電力の推移",
       "waitingMoreSamples": "サンプルを 1 件記録しました。推移グラフを表示するにはさらなるデータが必要です。",
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",
-        "fan": "RPM"
+        "fan": "RPM",
+        "cpuPower": "CPU 消費電力",
+        "gpuPower": "GPU 消費電力"
       },
       "duration": {
         "ltOneMinute": "< 1 分",
@@ -474,11 +477,16 @@
       "summary": {
         "cpuPeak": "CPU 最大値",
         "gpuPeak": "GPU 最大値",
+        "cpuPowerPeak": "CPU 消費電力最大値",
+        "gpuPowerPeak": "GPU 消費電力最大値",
         "fanPeak": "RPM 最大値",
         "averageTemperature": "平均 {{value}}°C",
+        "averagePower": "平均 {{value}} W",
         "averageFan": "平均 {{value}} RPM",
         "noCpuTemperature": "CPU 温度データなし",
         "noGpuTemperature": "GPU 温度データなし",
+        "noCpuPower": "CPU 消費電力データなし",
+        "noGpuPower": "GPU 消費電力データなし",
         "noFanData": "ファン RPMデータなし"
       }
     },

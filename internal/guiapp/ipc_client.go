@@ -18,6 +18,12 @@ func mergeTemperatureMetadata(previous, incoming types.TemperatureData) types.Te
 	if merged.GpuSensors == nil {
 		merged.GpuSensors = previous.GpuSensors
 	}
+	if merged.CpuPowerSensors == nil {
+		merged.CpuPowerSensors = previous.CpuPowerSensors
+	}
+	if merged.GpuPowerSensors == nil {
+		merged.GpuPowerSensors = previous.GpuPowerSensors
+	}
 	if merged.GpuDevices == nil {
 		merged.GpuDevices = previous.GpuDevices
 	}

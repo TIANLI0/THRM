@@ -243,7 +243,7 @@ class ApiService {
     return EventsOn('temperature-update', callback);
   }
 
-  onTemperatureHistoryUpdate(callback: (data: { timestamp: number; cpuTemp: number; gpuTemp: number; fanRpm?: number }) => void): () => void {
+  onTemperatureHistoryUpdate(callback: (data: { timestamp: number; cpuTemp: number; gpuTemp: number; cpuPower?: number; gpuPower?: number; fanRpm?: number }) => void): () => void {
     return EventsOn('temperature-history-update', callback);
   }
 

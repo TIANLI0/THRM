@@ -115,6 +115,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       updateTime: data.updateTime,
       cpuTemp: data.cpuTemp,
       gpuTemp: data.gpuTemp,
+      cpuPower: data.cpuPower,
+      gpuPower: data.gpuPower,
     }, Number(get().fanData?.currentRpm || 0));
 
     if (!point) return;
