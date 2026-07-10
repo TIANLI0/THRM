@@ -9,6 +9,13 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+const (
+	deviceReadyTimeout       = 6 * time.Second
+	deviceReadyStatusGrace   = 350 * time.Millisecond
+	deviceReadyQueryInterval = 750 * time.Millisecond
+	deviceReadyPollInterval  = 100 * time.Millisecond
+)
+
 // onShowWindowRequest 显示窗口请求回调
 func (a *CoreApp) onShowWindowRequest() {
 	a.logInfo("收到显示窗口请求")
@@ -56,6 +63,10 @@ func didDeviceSwitchToManualMode(previousMode, currentMode string) bool {
 
 // onFanDataUpdate 风扇数据更新回调
 func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
+	// A newly opened HID handle can deliver the device's default gear-mode
+	// report before the connection has passed its readiness gate. Do not treat
+	// that bootstrap report as a user-requested mode transition.
+	controlReady := a.isDeviceControlReady()
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, fanData.WorkMode)
@@ -63,6 +74,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	// 检查工作模式变化
 	// 如果开启了"断连保持配置模式"，则忽略设备状态变化，避免误判
 	if deviceSwitchedToManual &&
+		controlReady &&
 		cfg.AutoControl &&
 		!a.userSetAutoControl &&
 		!cfg.IgnoreDeviceOnReconnect {
@@ -78,6 +90,7 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 			a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 		}
 	} else if deviceSwitchedToManual &&
+		controlReady &&
 		cfg.AutoControl &&
 		!a.userSetAutoControl &&
 		cfg.IgnoreDeviceOnReconnect {
@@ -103,6 +116,7 @@ func (a *CoreApp) onDeviceDisconnect() {
 	a.mutex.Lock()
 	wasConnected := a.isConnected
 	a.isConnected = false
+	a.deviceSettings = nil
 	a.mutex.Unlock()
 
 	if wasConnected {
@@ -341,6 +355,18 @@ func (a *CoreApp) onSystemSuspend() {
 	a.cancelReconnect()
 	a.connectGeneration.Add(1)
 	a.autoReconnectSuppressed.Store(true)
+	// Make the core connection state unavailable before any asynchronous
+	// cleanup starts. A monitor tick that races with the suspend callback will
+	// now fail its readiness check instead of sending a realtime RPM command.
+	a.mutex.Lock()
+	a.isConnected = false
+	a.deviceSettings = nil
+	a.mutex.Unlock()
+	// Wait for an in-flight automatic/configuration write to finish. New writes
+	// are blocked by systemSuspended above, so the suspend power-off/disconnect
+	// sequence cannot be followed by a stale realtime RPM write.
+	a.deviceControlMutex.Lock()
+	a.deviceControlMutex.Unlock()
 	suspendFanOff := a.configManager.Get().SuspendFanOff
 	// Windows may enter sleep as soon as this callback returns. Execute the
 	// user-requested fan/light shutdown synchronously while the HID handle is
@@ -368,10 +394,6 @@ func (a *CoreApp) onSystemSuspend() {
 		if !a.isCurrentSuspendGeneration(generation) {
 			return
 		}
-		a.mutex.Lock()
-		a.isConnected = false
-		a.mutex.Unlock()
-
 		if !a.isCurrentSuspendGeneration(generation) {
 			return
 		}
@@ -512,6 +534,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	})
 	a.mutex.Lock()
 	a.isConnected = false
+	a.deviceSettings = nil
 	a.mutex.Unlock()
 
 	if a.ipcServer != nil {
@@ -598,19 +621,47 @@ func (a *CoreApp) connectDevice(manual bool) bool {
 
 func (a *CoreApp) connectDeviceOnce(generation uint64) bool {
 	success, deviceInfo := a.deviceManager.Connect()
-	if success && (a.stopping.Load() || generation != a.connectGeneration.Load() || a.autoReconnectSuppressed.Load()) {
+	if success && !a.isConnectionAttemptCurrent(generation) {
 		a.logInfo("连接结果已过期，关闭新建立的设备连接")
 		a.deviceManager.DisconnectSilently()
 		return false
 	}
 	if success {
+		settings, readyErr := a.waitForDeviceReady(generation)
+		if readyErr != nil {
+			a.logError("设备 HID 句柄已打开，但在就绪等待期内未收到有效响应：%v", readyErr)
+			// Do not retain a half-initialized HID handle. Recovery disconnects
+			// safely even if its reader is stuck, allowing the next retry to open
+			// a fresh handle.
+			a.deviceManager.DisconnectForRecovery()
+			a.mutex.Lock()
+			a.deviceSettings = nil
+			a.mutex.Unlock()
+			return false
+		}
+		// Serialize the final readiness check and Core state publication with the
+		// suspend barrier. This closes the small window where suspend could begin
+		// after the check but before isConnected is published.
+		a.deviceControlMutex.Lock()
+		if !a.isConnectionAttemptCurrent(generation) {
+			a.deviceControlMutex.Unlock()
+			a.logInfo("设备就绪结果已过期，关闭新建立的设备连接")
+			a.deviceManager.DisconnectSilently()
+			return false
+		}
 		a.mutex.Lock()
 		a.isConnected = true
+		if settings != nil {
+			a.deviceSettings = settings
+		}
 		a.mutex.Unlock()
+		a.deviceControlMutex.Unlock()
+		if !a.isConnectionAttemptCurrent(generation) {
+			return false
+		}
 
-		settings, settingsErr := a.RefreshDeviceSettings()
-		if settingsErr != nil {
-			a.logError("读取设备设置失败: %v", settingsErr)
+		if settings != nil && a.ipcServer != nil {
+			a.ipcServer.BroadcastEvent(ipc.EventDeviceSettingsUpdate, *settings)
 		}
 		if deviceInfo != nil && a.ipcServer != nil {
 			eventPayload := map[string]any{}
@@ -623,13 +674,17 @@ func (a *CoreApp) connectDeviceOnce(generation uint64) bool {
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
 		}
 
-		// BS1 不支持灯带
-		if !a.deviceManager.IsBS1() {
+		// BS1 不支持灯带。配置写入只能在连接已就绪时发生，
+		// 以避免对休眠后仍在初始化的 HID 句柄发包。
+		if !a.deviceManager.IsBS1() && a.lockDeviceControlIfReady() {
 			if err := a.applyConfiguredLightStrip(); err != nil {
 				a.logError("应用灯带配置失败: %v", err)
 			}
+			a.deviceControlMutex.Unlock()
 		}
-		a.ensureTemperatureMonitoring("device-connect")
+		if a.isConnectionAttemptCurrent(generation) {
+			a.ensureTemperatureMonitoring("device-connect")
+		}
 	} else if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "连接失败")
 	}
@@ -656,6 +711,12 @@ func (a *CoreApp) DisconnectDevice() {
 
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
 func (a *CoreApp) reapplyConfigAfterReconnect() {
+	if !a.lockDeviceControlIfReady() {
+		a.logInfo("设备尚未就绪或正在挂起，跳过本次重连配置重放")
+		return
+	}
+	defer a.deviceControlMutex.Unlock()
+
 	cfg := a.configManager.Get()
 
 	// 重新应用智能变频配置
@@ -719,6 +780,11 @@ func (a *CoreApp) GetDeviceStatus() map[string]any {
 }
 
 func (a *CoreApp) RefreshDeviceSettings() (*types.DeviceSettings, error) {
+	if !a.lockDeviceControlIfReady() {
+		return nil, fmt.Errorf("设备尚未就绪或正在挂起")
+	}
+	defer a.deviceControlMutex.Unlock()
+
 	settings, err := a.deviceManager.QueryDeviceSettings()
 	if err != nil && !settings.Available {
 		return nil, err
@@ -732,4 +798,111 @@ func (a *CoreApp) RefreshDeviceSettings() (*types.DeviceSettings, error) {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceSettingsUpdate, settings)
 	}
 	return &settings, err
+}
+
+// isConnectionAttemptCurrent keeps an old connect/recovery attempt from
+// publishing state after suspend, shutdown, or an explicit disconnect.
+func isConnectionAttemptCurrent(stopping, suspended, autoReconnectSuppressed bool, generation, currentGeneration uint64) bool {
+	return !stopping && !suspended && !autoReconnectSuppressed && generation == currentGeneration
+}
+
+func (a *CoreApp) isConnectionAttemptCurrent(generation uint64) bool {
+	return isConnectionAttemptCurrent(
+		a.stopping.Load(),
+		a.systemSuspended.Load(),
+		a.autoReconnectSuppressed.Load(),
+		generation,
+		a.connectGeneration.Load(),
+	)
+}
+
+// automaticControlAllowed is deliberately pure so the suspend/control gate can
+// be tested without a physical HID device.
+func automaticControlAllowed(stopping, suspended, coreConnected, deviceConnected bool) bool {
+	return !stopping && !suspended && coreConnected && deviceConnected
+}
+
+// isDeviceControlReady distinguishes an opened HID handle from a connection
+// that has completed the protocol readiness handshake.
+func (a *CoreApp) isDeviceControlReady() bool {
+	a.mutex.RLock()
+	coreConnected := a.isConnected
+	a.mutex.RUnlock()
+	return automaticControlAllowed(
+		a.stopping.Load(),
+		a.systemSuspended.Load(),
+		coreConnected,
+		a.deviceManager.IsConnected(),
+	)
+}
+
+// lockDeviceControlIfReady serializes all automatic/recovery writes with the
+// suspend barrier. The caller must unlock deviceControlMutex on success.
+func (a *CoreApp) lockDeviceControlIfReady() bool {
+	a.deviceControlMutex.Lock()
+	if a.isDeviceControlReady() {
+		return true
+	}
+	a.deviceControlMutex.Unlock()
+	return false
+}
+
+// setAutomaticFanSpeed makes the readiness check and the HID write one
+// suspend-serialized operation. The first return value tells callers whether
+// a write was attempted; the second is the device write result.
+func (a *CoreApp) setAutomaticFanSpeed(rpm int) (ready, written bool) {
+	if !a.lockDeviceControlIfReady() {
+		return false, false
+	}
+	defer a.deviceControlMutex.Unlock()
+	return true, a.deviceManager.SetFanSpeed(rpm)
+}
+
+// waitForDeviceReady requires protocol-level evidence before exposing a newly
+// opened HID handle to the rest of Core. A valid status report is sufficient;
+// otherwise a successful settings query with usable data proves readiness.
+func (a *CoreApp) waitForDeviceReady(generation uint64) (*types.DeviceSettings, error) {
+	timeout := time.NewTimer(deviceReadyTimeout)
+	defer timeout.Stop()
+	ticker := time.NewTicker(deviceReadyPollInterval)
+	defer ticker.Stop()
+
+	nextQueryAt := time.Now().Add(deviceReadyStatusGrace)
+	var lastErr error
+	for {
+		if !a.isConnectionAttemptCurrent(generation) || !a.deviceManager.IsConnected() {
+			return nil, fmt.Errorf("连接尝试已被取消")
+		}
+		if a.deviceManager.GetCurrentFanData() != nil {
+			return nil, nil
+		}
+
+		if !time.Now().Before(nextQueryAt) {
+			a.deviceControlMutex.Lock()
+			if !a.isConnectionAttemptCurrent(generation) || !a.deviceManager.IsConnected() {
+				a.deviceControlMutex.Unlock()
+				return nil, fmt.Errorf("连接尝试已被取消")
+			}
+			settings, err := a.deviceManager.QueryDeviceSettings()
+			a.deviceControlMutex.Unlock()
+			if err == nil && settings.Available {
+				return &settings, nil
+			}
+			if err != nil {
+				lastErr = err
+			} else {
+				lastErr = fmt.Errorf("设备设置查询未返回有效数据")
+			}
+			nextQueryAt = time.Now().Add(deviceReadyQueryInterval)
+		}
+
+		select {
+		case <-timeout.C:
+			if lastErr != nil {
+				return nil, fmt.Errorf("就绪超时: %w", lastErr)
+			}
+			return nil, fmt.Errorf("就绪超时，未收到有效状态帧")
+		case <-ticker.C:
+		}
+	}
 }

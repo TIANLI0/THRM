@@ -98,6 +98,63 @@ func TestShouldReconnectAfterResume(t *testing.T) {
 	}
 }
 
+func TestConnectionAttemptCurrent(t *testing.T) {
+	tests := []struct {
+		name                    string
+		stopping                bool
+		suspended               bool
+		autoReconnectSuppressed bool
+		generation              uint64
+		currentGeneration       uint64
+		want                    bool
+	}{
+		{name: "accepts current active connection", generation: 4, currentGeneration: 4, want: true},
+		{name: "rejects stale generation", generation: 4, currentGeneration: 5, want: false},
+		{name: "rejects suspended system", suspended: true, generation: 4, currentGeneration: 4, want: false},
+		{name: "rejects explicit disconnect", autoReconnectSuppressed: true, generation: 4, currentGeneration: 4, want: false},
+		{name: "rejects shutdown", stopping: true, generation: 4, currentGeneration: 4, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isConnectionAttemptCurrent(
+				test.stopping,
+				test.suspended,
+				test.autoReconnectSuppressed,
+				test.generation,
+				test.currentGeneration,
+			); got != test.want {
+				t.Fatalf("isConnectionAttemptCurrent() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestAutomaticControlAllowed(t *testing.T) {
+	tests := []struct {
+		name            string
+		stopping        bool
+		suspended       bool
+		coreConnected   bool
+		deviceConnected bool
+		want            bool
+	}{
+		{name: "allows a ready active connection", coreConnected: true, deviceConnected: true, want: true},
+		{name: "blocks an opened but unready handle", deviceConnected: true, want: false},
+		{name: "blocks suspend even when connected", suspended: true, coreConnected: true, deviceConnected: true, want: false},
+		{name: "blocks shutdown even when connected", stopping: true, coreConnected: true, deviceConnected: true, want: false},
+		{name: "blocks disconnected device", coreConnected: true, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := automaticControlAllowed(test.stopping, test.suspended, test.coreConnected, test.deviceConnected); got != test.want {
+				t.Fatalf("automaticControlAllowed() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestReconnectDelayElapsed(t *testing.T) {
 	t.Run("cancellation interrupts backoff", func(t *testing.T) {
 		cancel := make(chan struct{})

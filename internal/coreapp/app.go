@@ -78,6 +78,7 @@ type CoreApp struct {
 	connectMutex          sync.Mutex
 	connectDone           chan struct{}
 	connectResult         bool
+	deviceControlMutex    sync.Mutex
 	reconnectMutex        sync.Mutex
 	reconnectCancel       chan struct{}
 	reconnectDone         chan struct{}

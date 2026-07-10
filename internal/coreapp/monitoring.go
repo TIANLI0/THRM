@@ -122,7 +122,7 @@ func (a *CoreApp) stopTemperatureMonitoring() <-chan struct{} {
 // reconnect races from leaving monitoring permanently off until the next health
 // check.
 func (a *CoreApp) ensureTemperatureMonitoring(reason string) {
-	if a.stopping.Load() {
+	if a.stopping.Load() || a.systemSuspended.Load() {
 		return
 	}
 	a.monitorMutex.Lock()
@@ -153,11 +153,11 @@ func (a *CoreApp) ensureTemperatureMonitoring(reason string) {
 
 // startTemperatureMonitoring 开始温度监控
 func (a *CoreApp) startTemperatureMonitoring() {
-	if a.stopping.Load() {
+	if a.stopping.Load() || a.systemSuspended.Load() {
 		return
 	}
 	a.monitorMutex.Lock()
-	if a.monitoringTemp.Load() {
+	if a.stopping.Load() || a.systemSuspended.Load() || a.monitoringTemp.Load() {
 		a.monitorMutex.Unlock()
 		return
 	}
@@ -241,6 +241,10 @@ monitorLoop:
 			lastMonitorTick = now
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
 				thermalPredictor.Reset()
+				timer.Reset(updateInterval)
+				continue
+			}
+			if a.systemSuspended.Load() {
 				timer.Reset(updateInterval)
 				continue
 			}
@@ -334,7 +338,8 @@ monitorLoop:
 				}
 			}
 
-			if cfg.AutoControl && temp.ControlTemp > 0 {
+			controlReady := a.isDeviceControlReady()
+			if cfg.AutoControl && temp.ControlTemp > 0 && controlReady {
 				// 采样窗口变化时重置 EMA，避免阶跃。
 				newSampleCount := max(cfg.TempSampleCount, 1)
 				if newSampleCount != sampleCount {
@@ -434,7 +439,8 @@ monitorLoop:
 					observedRPM = int(fanData.CurrentRPM)
 				}
 				if shouldSendTargetRPM(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData) {
-					if a.deviceManager.SetFanSpeed(targetRPM) {
+					ready, written := a.setAutomaticFanSpeed(targetRPM)
+					if written {
 						lastTargetRPM = targetRPM
 						if deviceGeneration != settingsRefreshGeneration {
 							settingsRefreshGeneration = deviceGeneration
@@ -448,7 +454,7 @@ monitorLoop:
 								}
 							})
 						}
-					} else {
+					} else if ready {
 						lastTargetRPM = -1
 						a.logError("智能控温转速下发失败，将在下个周期重试: %d RPM", targetRPM)
 					}
@@ -497,7 +503,7 @@ monitorLoop:
 				lastControlTemp = learningControlTemp
 			}
 
-			if !cfg.AutoControl {
+			if !cfg.AutoControl || !controlReady {
 				lastTargetRPM = -1
 				lastControlTemp = -1
 				thermalPredictor.Reset()
