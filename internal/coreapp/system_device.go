@@ -365,8 +365,7 @@ func (a *CoreApp) onSystemSuspend() {
 	// Wait for an in-flight automatic/configuration write to finish. New writes
 	// are blocked by systemSuspended above, so the suspend power-off/disconnect
 	// sequence cannot be followed by a stale realtime RPM write.
-	a.deviceControlMutex.Lock()
-	a.deviceControlMutex.Unlock()
+	a.waitForDeviceControlIdle()
 	suspendFanOff := a.configManager.Get().SuspendFanOff
 	// Windows may enter sleep as soon as this callback returns. Execute the
 	// user-requested fan/light shutdown synchronously while the HID handle is
@@ -845,6 +844,16 @@ func (a *CoreApp) lockDeviceControlIfReady() bool {
 	}
 	a.deviceControlMutex.Unlock()
 	return false
+}
+
+// waitForDeviceControlIdle forms the suspend barrier. Acquiring this mutex
+// waits for an in-flight HID write/query to finish; the debug record makes the
+// synchronization point explicit instead of leaving an empty critical
+// section that static analysis cannot distinguish from a locking bug.
+func (a *CoreApp) waitForDeviceControlIdle() {
+	a.deviceControlMutex.Lock()
+	defer a.deviceControlMutex.Unlock()
+	a.logDebug("挂起前设备控制写入屏障已清空")
 }
 
 // setAutomaticFanSpeed makes the readiness check and the HID write one
