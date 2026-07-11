@@ -65,5 +65,6 @@ func (a *App) GetAppVersion() string {
 
 // OnWindowClosing 窗口关闭事件处理
 func (a *App) OnWindowClosing(ctx context.Context) bool {
+	a.captureWindowState()
 	return false
 }

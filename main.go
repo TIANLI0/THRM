@@ -22,9 +22,16 @@ func main() {
 
 	app := NewApp()
 
+	// 读取上次记忆的窗口尺寸/状态（GUI 本地持久化，独立于 IPC 核心服务）。
+	windowState := guiapp.LoadWindowState()
+
 	windowStartState := options.Normal
+	if windowState.Maximised {
+		windowStartState = options.Maximised
+	}
 	for _, arg := range os.Args {
 		if arg == "--autostart" || arg == "/autostart" || arg == "-autostart" {
+			// 自启动优先以最小化到托盘启动，覆盖记忆的窗口状态。
 			windowStartState = options.Minimised
 			break
 		}
@@ -33,8 +40,10 @@ func main() {
 	// 创建应用
 	err := wails.Run(&options.App{
 		Title:            appmeta.AppName,
-		Width:            1024,
-		Height:           768,
+		Width:            windowState.Width,
+		Height:           windowState.Height,
+		MinWidth:         800,
+		MinHeight:        600,
 		Frameless:        guiapp.DefaultFrameless(),
 		WindowStartState: windowStartState,
 		AssetServer: &assetserver.Options{
@@ -44,6 +53,8 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			guiapp.SetWailsContext(ctx)
 			app.Startup(ctx)
+			// 窗口就绪后恢复上次记忆的位置（尺寸/最大化已在选项中应用）。
+			app.RestoreWindowPosition(windowState)
 		},
 		OnBeforeClose: app.OnWindowClosing,
 		SingleInstanceLock: &options.SingleInstanceLock{

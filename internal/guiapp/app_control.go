@@ -19,6 +19,7 @@ func (a *App) ShowWindow() {
 // HideWindow 隐藏主窗口到托盘
 func (a *App) HideWindow() {
 	if a.ctx != nil {
+		a.captureWindowState()
 		runtime.WindowHide(a.ctx)
 	}
 }
@@ -26,6 +27,8 @@ func (a *App) HideWindow() {
 // QuitApp 完全退出应用
 func (a *App) QuitApp() {
 	guiLogger.Info("GUI 请求退出")
+
+	a.captureWindowState()
 
 	if a.ipcClient != nil {
 		a.ipcClient.Close()
@@ -39,6 +42,8 @@ func (a *App) QuitApp() {
 // QuitAll 完全退出应用（包括核心服务）
 func (a *App) QuitAll() {
 	guiLogger.Info("GUI 请求完全退出（包括核心服务）")
+
+	a.captureWindowState()
 
 	a.sendRequest(ipc.ReqQuitApp, nil)
 
