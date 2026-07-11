@@ -1,3 +1,28 @@
+export namespace guiapp {
+	
+	export class WindowState {
+	    width: number;
+	    height: number;
+	    x: number;
+	    y: number;
+	    maximised: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new WindowState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.width = source["width"];
+	        this.height = source["height"];
+	        this.x = source["x"];
+	        this.y = source["y"];
+	        this.maximised = source["maximised"];
+	    }
+	}
+
+}
+
 export namespace theme {
 	
 	export class Meta {
@@ -98,6 +123,7 @@ export namespace types {
 	export class SmartControlConfig {
 	    enabled: boolean;
 	    learning: boolean;
+	    predictiveBoost: boolean;
 	    learningBias: string;
 	    filterTransientSpike: boolean;
 	    targetTemp: number;
@@ -133,6 +159,7 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
 	        this.learning = source["learning"];
+	        this.predictiveBoost = source["predictiveBoost"];
 	        this.learningBias = source["learningBias"];
 	        this.filterTransientSpike = source["filterTransientSpike"];
 	        this.targetTemp = source["targetTemp"];

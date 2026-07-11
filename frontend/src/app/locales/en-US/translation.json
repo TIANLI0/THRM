@@ -239,7 +239,24 @@
       "updatable": "Update available",
       "checkFailed": "Failed to check updates. Please try again later.",
       "newVersionFound": "New version found: {{version}}",
-      "emptyReleaseNotes": "No release notes available, or this fetch failed."
+      "emptyReleaseNotes": "No release notes available, or this fetch failed.",
+      "downloadAndInstall": "Download & install",
+      "downloading": "Downloading {{percent}}%",
+      "installing": "Installing…",
+      "installStarted": "Restarting soon",
+      "autoInstallHint": "Downloads and installs silently and fully automatically, then restarts (only one UAC prompt; no manual install steps).",
+      "installingHint": "Installing… the new version restarts automatically when finished.",
+      "installFailed": "Failed to download or install the update: {{error}}",
+      "noInstallerHint": "This release has no auto-installable package. Please download it from the release page.",
+      "floatDownloadingTitle": "Downloading update",
+      "floatInstallingTitle": "Installing update",
+      "floatDoneTitle": "Installation starting",
+      "floatErrorTitle": "Update failed",
+      "floatRetry": "Retry",
+      "floatDoneHint": "This app will close and install automatically. A status window shows progress, then the new version restarts.",
+      "updaterWindowTitle": "THRM is updating",
+      "updaterWindowBody": "Installing the new version automatically. Please do not close this window",
+      "updaterWindowRestarting": "Update complete, restarting the app"
     },
     "contact": {
       "title": "Developer and contact",
@@ -342,7 +359,10 @@
           "label": "Quiet first",
           "description": "Only allows learned RPM decreases, avoiding unnecessary fan ramp-up."
         }
-      }
+      },
+      "predictiveTitle": "Power-aware prediction",
+      "predictiveDescription": "Ramps up early from CPU/GPU power surges and temperature trends, before the measured temperature crosses a curve point. Independent from adaptive learning.",
+      "predictiveToggleAria": "Toggle power-aware prediction"
     },
     "noiseTest": {
       "title": "Fan noise test",
@@ -417,7 +437,13 @@
       "bypassDescription": "Temporarily ignore the range above this temperature so cooling wins first.",
       "summary": "Avoid {{min}} - {{max}} RPM with a {{margin}} RPM margin",
       "activeHint": "Current target {{rpm}} RPM is inside the sensitive range and will be avoided automatically",
-      "autoOnlyHint": "Only applies in smart control mode"
+      "autoOnlyHint": "Only applies in smart control mode",
+      "revealButton": "Tune",
+      "hiddenHint": "Hidden by default. These are generic default values that must be tuned for your device. Do not enable if you are unsure.",
+      "confirmTitle": "Enable RPM avoidance tuning",
+      "confirmBody1": "All parameters below are generic defaults. They only make sense after tuning against your device’s measured noise.",
+      "confirmBody2": "If you are unsure what you need, do not enable this to avoid harming normal cooling.",
+      "confirmAccept": "I understand, show settings"
     },
     "schedule": {
       "title": "Time-based curves",

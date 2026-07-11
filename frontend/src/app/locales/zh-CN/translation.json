@@ -239,7 +239,24 @@
       "updatable": "可更新",
       "checkFailed": "检查更新失败，请稍后重试",
       "newVersionFound": "发现新版本 {{version}}",
-      "emptyReleaseNotes": "暂无日志内容，或本次获取失败。"
+      "emptyReleaseNotes": "暂无日志内容，或本次获取失败。",
+      "downloadAndInstall": "下载并安装",
+      "downloading": "下载中 {{percent}}%",
+      "installing": "正在安装…",
+      "installStarted": "即将重启",
+      "autoInstallHint": "将下载并全自动静默安装，完成后自动重启（仅需一次 UAC 授权，无需手动确认安装）。",
+      "installingHint": "正在安装，完成后会自动重启新版本…",
+      "installFailed": "下载或安装更新失败：{{error}}",
+      "noInstallerHint": "本次发布未提供可自动安装的安装包，请前往发布页手动下载。",
+      "floatDownloadingTitle": "正在下载更新",
+      "floatInstallingTitle": "正在安装更新",
+      "floatDoneTitle": "即将开始安装",
+      "floatErrorTitle": "更新失败",
+      "floatRetry": "重试",
+      "floatDoneHint": "本程序即将关闭并自动安装，更新窗口会展示进度，完成后自动重启新版本。",
+      "updaterWindowTitle": "THRM 正在更新",
+      "updaterWindowBody": "正在自动安装新版本，请勿关闭此窗口",
+      "updaterWindowRestarting": "更新完成，正在重启应用"
     },
     "contact": {
       "title": "开发者与联系",
@@ -342,7 +359,10 @@
           "label": "静音优先",
           "description": "只允许学习降低转速，避免自动把风扇拉高。"
         }
-      }
+      },
+      "predictiveTitle": "功耗预测前馈",
+      "predictiveDescription": "根据 CPU/GPU 功耗突增与温升趋势提前升速，先于实测温度越过曲线点。此项独立于自适应学习。",
+      "predictiveToggleAria": "切换功耗预测前馈"
     },
     "noiseTest": {
       "title": "风扇噪音测试",
@@ -417,7 +437,13 @@
       "bypassDescription": "温度达到该阈值时临时忽略避让，优先散热。",
       "summary": "避让区间 {{min}} - {{max}} RPM，余量 {{margin}} RPM",
       "activeHint": "当前目标 {{rpm}} RPM 处于敏感区间，系统会自动避让",
-      "autoOnlyHint": "仅在智能变频模式下生效"
+      "autoOnlyHint": "仅在智能变频模式下生效",
+      "revealButton": "调参",
+      "hiddenHint": "该功能已默认隐藏。以下均为通用默认值，需要按你的设备实测调参；如果不清楚需求请勿开启。",
+      "confirmTitle": "开启避噪转速区间调参",
+      "confirmBody1": "以下参数均为通用默认值，需要结合你设备的实测噪音进行调参才有意义。",
+      "confirmBody2": "如果不清楚具体需求，请不要开启，以免影响正常散热。",
+      "confirmAccept": "我已了解，展开设置"
     },
     "schedule": {
       "title": "分时曲线",

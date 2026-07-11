@@ -238,7 +238,24 @@
       "updatable": "アップデートがあります",
       "checkFailed": "アップデートの確認に失敗しました。しばらくしてから再試行してください。",
       "newVersionFound": "新しいバージョン {{version}} が見つかりました",
-      "emptyReleaseNotes": "リリースノートがないか、今回の取得に失敗しました。"
+      "emptyReleaseNotes": "リリースノートがないか、今回の取得に失敗しました。",
+      "downloadAndInstall": "ダウンロードしてインストール",
+      "downloading": "ダウンロード中 {{percent}}%",
+      "installing": "インストール中…",
+      "installStarted": "まもなく再起動します",
+      "autoInstallHint": "ダウンロードして全自動でサイレントインストールし、完了後に自動再起動します（UAC の許可が一度必要なだけで、手動確認は不要です）。",
+      "installingHint": "インストール中です。完了すると新しいバージョンが自動的に再起動します…",
+      "installFailed": "更新のダウンロードまたはインストールに失敗しました：{{error}}",
+      "noInstallerHint": "今回のリリースには自動インストール可能なパッケージがありません。リリースページから手動でダウンロードしてください。",
+      "floatDownloadingTitle": "更新をダウンロード中",
+      "floatInstallingTitle": "更新をインストール中",
+      "floatDoneTitle": "まもなくインストールを開始します",
+      "floatErrorTitle": "更新に失敗しました",
+      "floatRetry": "再試行",
+      "floatDoneHint": "本アプリは自動的に終了してインストールされます。ステータスウィンドウに進行状況が表示され、完了後に新しいバージョンが再起動します。",
+      "updaterWindowTitle": "THRM を更新しています",
+      "updaterWindowBody": "新しいバージョンを自動でインストールしています。このウィンドウを閉じないでください",
+      "updaterWindowRestarting": "更新が完了しました。アプリを再起動しています"
     },
     "contact": {
       "title": "開発者と連絡先",
@@ -341,7 +358,10 @@
           "label": "サイレント優先",
           "description": "RPM の低下のみを許可し、学習カーブによる不要な加速をできるだけを防ぎます。"
         }
-      }
+      },
+      "predictiveTitle": "消費電力予測フィードフォワード",
+      "predictiveDescription": "CPU/GPU の消費電力の急増と温度上昇トレンドに基づき、実測温度がカーブ点を越える前に先行して回転数を上げます。適応学習とは独立しています。",
+      "predictiveToggleAria": "消費電力予測フィードフォワードの切り替え"
     },
     "noiseTest": {
       "title": "ファン騒音テスト",
@@ -416,7 +436,13 @@
       "bypassDescription": "この温度以上では回避を一時的に無視し、冷却を優先します。",
       "summary": "{{min}} - {{max}} RPM を回避、余白 {{margin}} RPM",
       "activeHint": "現在の目標 {{rpm}} RPM は敏感な回転域にあり、自動回避されます",
-      "autoOnlyHint": "スマート制御モードでのみ有効です"
+      "autoOnlyHint": "スマート制御モードでのみ有効です",
+      "revealButton": "調整",
+      "hiddenHint": "この機能は既定で非表示です。これらは汎用の初期値で、お使いのデバイスに合わせて実測しながら調整する必要があります。要件が不明な場合は有効にしないでください。",
+      "confirmTitle": "避騒音回転数レンジの調整を有効化",
+      "confirmBody1": "以下のパラメーターはすべて汎用の初期値です。デバイスの実測ノイズに合わせて調整して初めて意味を持ちます。",
+      "confirmBody2": "要件が不明な場合は、通常の冷却に影響しないよう有効にしないでください。",
+      "confirmAccept": "了解しました。設定を表示"
     },
     "schedule": {
       "title": "時間帯別カーブ",

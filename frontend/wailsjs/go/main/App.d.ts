@@ -3,6 +3,7 @@
 import {types} from '../models';
 import {theme} from '../models';
 import {context} from '../models';
+import {guiapp} from '../models';
 
 export function CheckWindowsAutoStart():Promise<boolean>;
 
@@ -11,6 +12,8 @@ export function ConnectDevice():Promise<boolean>;
 export function DeleteFanCurveProfile(arg1:string):Promise<void>;
 
 export function DisconnectDevice():Promise<void>;
+
+export function DownloadAndInstallUpdate(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
 export function ExportFanCurveProfiles():Promise<string>;
 
@@ -60,6 +63,8 @@ export function OnWindowClosing(arg1:context.Context):Promise<boolean>;
 
 export function OpenThemesFolder():Promise<void>;
 
+export function PersistWindowState():Promise<void>;
+
 export function QuitAll():Promise<void>;
 
 export function QuitApp():Promise<void>;
@@ -71,6 +76,8 @@ export function ReinstallPawnIO():Promise<Record<string, any>>;
 export function ResetLearnedOffsets():Promise<void>;
 
 export function RestartPawnIO():Promise<types.BridgeTemperatureData>;
+
+export function RestoreWindowPosition(arg1:guiapp.WindowState):Promise<void>;
 
 export function SaveFanCurveProfile(arg1:string,arg2:string,arg3:Array<types.FanCurvePoint>,arg4:boolean):Promise<types.FanCurveProfile>;
 

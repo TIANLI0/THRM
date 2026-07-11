@@ -18,6 +18,10 @@ export function DisconnectDevice() {
   return window['go']['main']['App']['DisconnectDevice']();
 }
 
+export function DownloadAndInstallUpdate(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['DownloadAndInstallUpdate'](arg1, arg2, arg3, arg4);
+}
+
 export function ExportFanCurveProfiles() {
   return window['go']['main']['App']['ExportFanCurveProfiles']();
 }
@@ -114,6 +118,10 @@ export function OpenThemesFolder() {
   return window['go']['main']['App']['OpenThemesFolder']();
 }
 
+export function PersistWindowState() {
+  return window['go']['main']['App']['PersistWindowState']();
+}
+
 export function QuitAll() {
   return window['go']['main']['App']['QuitAll']();
 }
@@ -136,6 +144,10 @@ export function ResetLearnedOffsets() {
 
 export function RestartPawnIO() {
   return window['go']['main']['App']['RestartPawnIO']();
+}
+
+export function RestoreWindowPosition(arg1) {
+  return window['go']['main']['App']['RestoreWindowPosition'](arg1);
 }
 
 export function SaveFanCurveProfile(arg1, arg2, arg3, arg4) {
