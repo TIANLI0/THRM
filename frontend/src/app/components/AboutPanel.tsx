@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
-import { Heart, Mail, MessageCircleMore, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { Download, Heart, Mail, MessageCircleMore, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { apiService } from '../services/api';
@@ -11,13 +12,33 @@ import { Badge, Button, ScrollArea } from './ui/index';
 
 type ReleaseChannel = 'stable' | 'prerelease';
 
+type GithubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
+
 type GithubRelease = {
   tag_name?: string;
   html_url?: string;
   body?: string;
   prerelease?: boolean;
   draft?: boolean;
+  assets?: GithubReleaseAsset[];
 };
+
+const INSTALLER_ASSET_NAME = 'THRM-amd64-installer.exe';
+
+function findInstallerAsset(assets: GithubReleaseAsset[] | undefined): string {
+  if (!Array.isArray(assets)) return '';
+  const exact = assets.find((asset) => asset?.name === INSTALLER_ASSET_NAME);
+  if (exact?.browser_download_url) return exact.browser_download_url;
+  const fuzzy = assets.find(
+    (asset) => typeof asset?.name === 'string' && /installer\.exe$/i.test(asset.name) && !!asset.browser_download_url,
+  );
+  return fuzzy?.browser_download_url || '';
+}
+
+type UpdateStage = 'idle' | 'downloading' | 'installing' | 'done' | 'error';
 
 function openUrl(url: string) {
   try {
@@ -83,6 +104,10 @@ export default function AboutPanel() {
   const [latestReleaseIsPrerelease, setLatestReleaseIsPrerelease] = useState(false);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
+  const [installerUrl, setInstallerUrl] = useState('');
+  const [updateStage, setUpdateStage] = useState<UpdateStage>('idle');
+  const [updatePercent, setUpdatePercent] = useState(0);
+  const [updateError, setUpdateError] = useState('');
   const [isSponsorHovered, setIsSponsorHovered] = useState(false);
   const [isSponsorPinned, setIsSponsorPinned] = useState(false);
   const [sponsorPopupStyle, setSponsorPopupStyle] = useState<{ top: number; left: number; placement: 'top' | 'bottom' } | null>(null);
@@ -112,6 +137,7 @@ export default function AboutPanel() {
   const checkLatestRelease = useCallback(async (channel: ReleaseChannel = releaseChannel) => {
     setReleaseLoading(true);
     setReleaseError('');
+    setInstallerUrl('');
 
     const headers = { Accept: 'application/vnd.github+json' };
 
@@ -143,6 +169,7 @@ export default function AboutPanel() {
       setLatestReleaseUrl(targetRelease?.html_url || BRAND.latestReleaseUrl);
       setLatestReleaseBody(typeof targetRelease?.body === 'string' ? targetRelease.body.trim() : '');
       setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
+      setInstallerUrl(findInstallerAsset(targetRelease?.assets));
     } catch {
       setLatestReleaseTag('');
       setLatestReleaseUrl(BRAND.latestReleaseUrl);
@@ -171,6 +198,50 @@ export default function AboutPanel() {
   useEffect(() => {
     void checkLatestRelease(releaseChannel);
   }, [checkLatestRelease, releaseChannel]);
+
+  useEffect(() => {
+    const dispose = apiService.onUpdateDownloadProgress((payload) => {
+      const stage = payload?.stage;
+      if (stage === 'downloading') {
+        setUpdateStage('downloading');
+        setUpdatePercent(typeof payload.percent === 'number' && payload.percent >= 0 ? payload.percent : 0);
+      } else if (stage === 'installing') {
+        setUpdateStage('installing');
+        setUpdatePercent(100);
+      } else if (stage === 'done') {
+        setUpdateStage('done');
+        setUpdatePercent(100);
+      } else if (stage === 'error') {
+        setUpdateStage('error');
+        setUpdateError(payload?.message || '');
+      }
+    });
+    return () => {
+      dispose?.();
+    };
+  }, []);
+
+  const startDownloadInstall = useCallback(async () => {
+    if (!installerUrl) {
+      return;
+    }
+    setUpdateStage('downloading');
+    setUpdatePercent(0);
+    setUpdateError('');
+    try {
+      await apiService.downloadAndInstallUpdate(
+        installerUrl,
+        t('aboutPanel.version.updaterWindowTitle'),
+        t('aboutPanel.version.updaterWindowBody'),
+        t('aboutPanel.version.updaterWindowRestarting'),
+      );
+    } catch (error) {
+      setUpdateStage('error');
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateError(message);
+      toast.error(t('aboutPanel.version.installFailed', { error: message }));
+    }
+  }, [installerUrl, t]);
 
   const clearSponsorHoverTimer = useCallback(() => {
     if (sponsorHoverTimerRef.current !== null) {
@@ -370,14 +441,44 @@ export default function AboutPanel() {
                   >
                     {releaseLoading ? t('aboutPanel.version.checkingButton') : t('aboutPanel.version.checkUpdate')}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)}
-                    icon={<Rocket className="h-3.5 w-3.5" />}
-                  >
-                    {t('aboutPanel.version.openReleasePage')}
-                  </Button>
+                  {hasNewVersion && installerUrl ? (
+                    <div className="inline-flex items-stretch overflow-hidden rounded-lg shadow-sm">
+                      <button
+                        type="button"
+                        disabled={updateStage === 'downloading' || updateStage === 'installing' || updateStage === 'done'}
+                        onClick={() => {
+                          void startDownloadInstall();
+                        }}
+                        className="inline-flex cursor-pointer items-center gap-1.5 bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {updateStage === 'downloading'
+                          ? t('aboutPanel.version.downloading', { percent: updatePercent })
+                          : updateStage === 'installing'
+                            ? t('aboutPanel.version.installing')
+                            : updateStage === 'done'
+                              ? t('aboutPanel.version.installStarted')
+                              : t('aboutPanel.version.downloadAndInstall')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)}
+                        className="inline-flex cursor-pointer items-center gap-1.5 border-l border-primary-foreground/25 bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90"
+                      >
+                        <Rocket className="h-3.5 w-3.5" />
+                        {t('aboutPanel.version.openReleasePage')}
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)}
+                      icon={<Rocket className="h-3.5 w-3.5" />}
+                    >
+                      {t('aboutPanel.version.openReleasePage')}
+                    </Button>
+                  )}
                   <div
                     ref={sponsorRef}
                     className="relative"
@@ -402,6 +503,13 @@ export default function AboutPanel() {
                 </div>
 
                 {releaseError && <div className="mt-3 text-xs text-amber-600 dark:text-amber-300">{releaseError}</div>}
+
+                {hasNewVersion && !installerUrl && (
+                  <div className="mt-3 text-xs text-muted-foreground">{t('aboutPanel.version.noInstallerHint')}</div>
+                )}
+                {hasNewVersion && installerUrl && updateStage === 'idle' && (
+                  <div className="mt-2 text-xs text-muted-foreground">{t('aboutPanel.version.autoInstallHint')}</div>
+                )}
               </div>
             </div>
 
@@ -559,6 +667,95 @@ export default function AboutPanel() {
                 <div className="mt-3 text-center text-sm font-medium text-foreground">{item.label}</div>
               </div>
             ))}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {updateStage !== 'idle' && typeof document !== 'undefined' && createPortal(
+        <div className="fixed bottom-6 right-6 z-[90] w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-border/80 bg-popover/98 p-4 shadow-xl backdrop-blur-xl animate-in fade-in-0 slide-in-from-bottom-2">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              {updateStage === 'error' ? <Rocket className="h-4 w-4 text-amber-500" /> : <Download className="h-4 w-4" />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-foreground">
+                  {updateStage === 'downloading'
+                    ? t('aboutPanel.version.floatDownloadingTitle')
+                    : updateStage === 'installing'
+                      ? t('aboutPanel.version.floatInstallingTitle')
+                      : updateStage === 'done'
+                        ? t('aboutPanel.version.floatDoneTitle')
+                        : t('aboutPanel.version.floatErrorTitle')}
+                </div>
+                {(updateStage === 'error' || updateStage === 'done') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUpdateStage('idle');
+                      setUpdateError('');
+                    }}
+                    className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    aria-label={t('common.actions.close')}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {updateStage === 'error' ? (
+                <p className="mt-1 text-xs leading-relaxed text-amber-600 dark:text-amber-300">
+                  {updateError ? t('aboutPanel.version.installFailed', { error: updateError }) : t('aboutPanel.version.floatErrorTitle')}
+                </p>
+              ) : updateStage === 'done' ? (
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {t('aboutPanel.version.floatDoneHint')}
+                </p>
+              ) : (
+                <>
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border/60">
+                    <div
+                      className={`h-full rounded-full bg-primary transition-[width] duration-200 ${updateStage !== 'downloading' ? 'animate-pulse' : ''}`}
+                      style={{ width: `${updateStage === 'downloading' ? updatePercent : 100}%` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {updateStage === 'downloading'
+                        ? t('aboutPanel.version.downloading', { percent: updatePercent })
+                        : updateStage === 'installing'
+                          ? t('aboutPanel.version.installingHint')
+                          : t('aboutPanel.version.installStarted')}
+                    </span>
+                    {updateStage === 'downloading' && <span className="tabular-nums">{updatePercent}%</span>}
+                  </div>
+                </>
+              )}
+
+              {updateStage === 'error' && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      void startDownloadInstall();
+                    }}
+                    icon={<Download className="h-3.5 w-3.5" />}
+                  >
+                    {t('aboutPanel.version.floatRetry')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)}
+                    icon={<Rocket className="h-3.5 w-3.5" />}
+                  >
+                    {t('aboutPanel.version.openReleasePage')}
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         </div>,
         document.body,

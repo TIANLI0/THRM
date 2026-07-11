@@ -71,6 +71,28 @@ class ApiService {
     return await GetAppVersion();
   }
 
+  // 下载并全自动静默安装应用更新（Windows），期间弹出 CMD 状态窗口展示更新动态。
+  // 下载进度通过 update-download-progress 事件推送；三个文案参数为状态窗口的本地化文字。
+  async downloadAndInstallUpdate(
+    downloadURL: string,
+    windowTitle: string,
+    windowBody: string,
+    windowRestarting: string,
+  ): Promise<void> {
+    return await (window as any).go?.main?.App?.DownloadAndInstallUpdate(
+      downloadURL,
+      windowTitle,
+      windowBody,
+      windowRestarting,
+    );
+  }
+
+  onUpdateDownloadProgress(
+    callback: (payload: { percent: number; received: number; total: number; stage: string; message: string }) => void,
+  ): () => void {
+    return EventsOn('update-download-progress', callback);
+  }
+
   async updateConfig(config: types.AppConfig): Promise<void> {
     return await UpdateConfig(config);
   }
