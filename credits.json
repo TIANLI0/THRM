@@ -1,0 +1,38 @@
+{
+  "_note": "鸣谢清单 / Credits. THRM 会在「关于」页拉取并解析此文件。contributors 建议保留 GitHub 字段；sponsors 的 name / avatar / note 均可省略（省略时 App 会显示为匿名赞助者）。修改后推送到 main 分支即可，无需重新发版。",
+  "_sponsorSchema": {
+    "name": "昵称（可省略，省略时显示为匿名）",
+    "avatar": "头像 URL（可省略，省略时显示占位图标）",
+    "url": "主页链接（可省略）",
+    "note": "备注 / 留言（可省略）"
+  },
+  "updatedAt": "2026-07-12",
+  "contributors": [
+    {
+      "login": "TIANLI0",
+      "name": "Tianli",
+      "url": "https://github.com/TIANLI0",
+      "avatar": "https://avatars.githubusercontent.com/u/52097638?v=4",
+      "role": "author"
+    },
+    {
+      "login": "bigmoonur",
+      "name": "bigmoonur",
+      "url": "https://github.com/bigmoonur",
+      "avatar": "https://avatars.githubusercontent.com/u/20268321?v=4"
+    },
+    {
+      "login": "RockingSisyphus",
+      "name": "RockingSisyphus",
+      "url": "https://github.com/RockingSisyphus",
+      "avatar": "https://avatars.githubusercontent.com/u/49829857?v=4"
+    },
+    {
+      "login": "valhir",
+      "name": "valhir",
+      "url": "https://github.com/valhir",
+      "avatar": "https://avatars.githubusercontent.com/u/46245068?v=4"
+    }
+  ],
+  "sponsors": []
+}
