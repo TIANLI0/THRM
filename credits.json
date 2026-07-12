@@ -1,10 +1,11 @@
 {
-  "_note": "鸣谢清单 / Credits. THRM 会在「关于」页拉取并解析此文件。contributors 建议保留 GitHub 字段；sponsors 的 name / avatar / note 均可省略（省略时 App 会显示为匿名赞助者）。修改后推送到 main 分支即可，无需重新发版。",
+  "_note": "鸣谢清单 / Credits. THRM 会在「关于」页拉取并解析此文件。contributors 建议保留 GitHub 字段；sponsors 的 name / avatar / url / note / amount 均可省略（省略昵称时显示为匿名，省略头像时显示占位图标）。修改后推送到 main 分支即可，无需重新发版。",
   "_sponsorSchema": {
     "name": "昵称（可省略，省略时显示为匿名）",
     "avatar": "头像 URL（可省略，省略时显示占位图标）",
     "url": "主页链接（可省略）",
-    "note": "备注 / 留言（可省略）"
+    "note": "备注 / 留言（可省略）",
+    "amount": "赞助金额，数字（可省略，省略时不显示金额）"
   },
   "updatedAt": "2026-07-12",
   "contributors": [
@@ -14,6 +15,10 @@
       "url": "https://github.com/TIANLI0",
       "avatar": "https://avatars.githubusercontent.com/u/52097638?v=4",
       "role": "author"
+    },
+    {
+      "name": "Whether",
+      "avatar": "https://q1.qlogo.cn/g?b=qq&nk=3051530459&s=640"
     },
     {
       "login": "bigmoonur",
@@ -34,5 +39,29 @@
       "avatar": "https://avatars.githubusercontent.com/u/46245068?v=4"
     }
   ],
-  "sponsors": []
+  "sponsors": [
+    { "name": "麦克阿兰", "avatar": "https://q1.qlogo.cn/g?b=qq&nk=1318825181&s=640", "amount": 50.00 },
+    { "name": "*雨", "amount": 28.80, "note": "好软件，好同志" },
+    { "name": "这个冬天不太冷。", "amount": 20.00 },
+    { "name": "*🌈", "amount": 19.90 },
+    { "name": "P*g", "amount": 18.88, "note": "感谢大佬开发的 THRM，非常好用，请大佬喝红牛充充能" },
+    { "name": "*强", "amount": 18.88, "note": "请作者喝奶茶" },
+    { "name": "*秋", "amount": 15.00, "note": "请你喝奶茶" },
+    { "name": "*昊", "amount": 12.00 },
+    { "name": "*人", "amount": 10.00 },
+    { "name": "F*X", "amount": 10.00 },
+    { "name": "*达", "amount": 10.00 },
+    { "name": "A*s", "amount": 10.00 },
+    { "name": "*氢", "amount": 8.88 },
+    { "name": "Y*t", "amount": 6.66, "note": "请老大喝杯柠檬水" },
+    { "name": "*菁", "amount": 6.00, "note": "散热器软件不错" },
+    { "name": "*哥", "amount": 5.00, "note": "能给 app 增加一个关灯吹风的功能吗" },
+    { "name": "X*y", "amount": 5.00 },
+    { "name": "鸡耀白水25-275hx-70ti", "amount": 4.59 },
+    { "name": "*撒", "amount": 2.00, "note": "感谢大佬的驱动🫡" },
+    { "name": "*ド", "amount": 1.88 },
+    { "name": "**延", "amount": 1.66 },
+    { "name": "A*s", "amount": 1.00, "note": "支持一下吧" },
+    { "name": "H*l", "amount": 1.00 }
+  ]
 }
