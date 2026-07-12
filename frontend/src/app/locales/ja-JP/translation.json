@@ -59,6 +59,10 @@
       "openAria": "{{name}} の GitHub リポジトリを開く",
       "openTooltip": "GitHub リポジトリを開く"
     },
+    "sidebar": {
+      "expand": "サイドバーを展開",
+      "collapse": "サイドバーを折りたたむ"
+    },
     "bridgeWarning": {
       "closeAria": "警告を閉じる"
     }

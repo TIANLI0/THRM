@@ -59,6 +59,10 @@
       "openAria": "Open {{name}} GitHub repository",
       "openTooltip": "Open GitHub repository"
     },
+    "sidebar": {
+      "expand": "Expand sidebar",
+      "collapse": "Collapse sidebar"
+    },
     "bridgeWarning": {
       "closeAria": "Close warning"
     }

@@ -18,7 +18,10 @@ import {
   Thermometer,
   Sparkles,
   Info,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { BrowserOpenURL, Environment, Quit, WindowIsMaximised, WindowMinimise, WindowToggleMaximise } from '../../../wailsjs/runtime/runtime';
 import { WindowBlurEnabled } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
@@ -36,6 +39,18 @@ const MAIN_TAB_ITEMS = [
 const ABOUT_TAB = { id: 'about', titleKey: 'appShell.tabs.about', icon: Info } as const;
 
 type ActiveTab = (typeof MAIN_TAB_ITEMS)[number]['id'] | typeof ABOUT_TAB.id;
+
+const SIDEBAR_COLLAPSED_WIDTH = 64; // w-16
+const SIDEBAR_EXPANDED_WIDTH = 216;
+const SIDEBAR_EXPANDED_STORAGE_KEY = 'thrm.sidebar.expanded';
+
+function readStoredSidebarExpanded(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_EXPANDED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 const TAB_TRANSITION_ORDER: ActiveTab[] = [...MAIN_TAB_ITEMS.map((tab) => tab.id), ABOUT_TAB.id];
 
@@ -144,6 +159,7 @@ function TitleBar({
   closeLabel,
   isMaximised,
   leftSlot,
+  leftOffset,
   onMinimise,
   onToggleMaximise,
   onClose,
@@ -154,6 +170,7 @@ function TitleBar({
   closeLabel: string;
   isMaximised: boolean;
   leftSlot?: ReactNode;
+  leftOffset: number;
   onMinimise: () => void;
   onToggleMaximise: () => void;
   onClose: () => void;
@@ -161,8 +178,8 @@ function TitleBar({
   return (
     <div
       // z-[9999]：保证最小化/最大化/关闭三键始终高于 Dialog 遮罩（z-50）等弹层并可交互
-      className="glacier-titlebar pointer-events-auto absolute left-16 right-0 top-0 z-[9999] flex h-10 items-center justify-between bg-background"
-      style={DRAG_STYLE}
+      className="glacier-titlebar pointer-events-auto absolute right-0 top-0 z-[9999] flex h-10 items-center justify-between bg-background transition-[left] duration-300 ease-out"
+      style={{ ...DRAG_STYLE, left: leftOffset }}
       onDoubleClick={onToggleMaximise}
     >
       <div className="flex h-full min-w-0 flex-1 items-center px-3 pt-1">
@@ -413,6 +430,61 @@ function OverlayScrollbar({
   );
 }
 
+function SidebarNavButton({
+  icon: Icon,
+  label,
+  isActive,
+  expanded,
+  onClick,
+  role,
+}: {
+  icon: LucideIcon;
+  label: string;
+  isActive: boolean;
+  expanded: boolean;
+  onClick: () => void;
+  role?: 'tab';
+}) {
+  // 布局在收起/展开两态下完全一致：图标固定居中于最左 64px 槽位、始终不移动；
+  // 文字标签为 flex-1 + truncate，宽度随侧边栏宽度过渡从 0 平滑展开/收起并自动裁剪。
+  // 这样收起时图标不会横向扫动、文字也不会突然消失。
+  const button = (
+    <button
+      type="button"
+      role={role}
+      aria-label={label}
+      aria-selected={isActive}
+      onClick={onClick}
+      className={clsx(
+        'group/nav relative flex h-11 w-full cursor-pointer items-center rounded-xl text-left transition-colors duration-200',
+        isActive ? 'text-primary' : 'text-sidebar-foreground/62 hover:text-sidebar-foreground',
+      )}
+    >
+      <span
+        className={clsx(
+          'pointer-events-none absolute inset-y-0 left-2.5 right-2.5 rounded-xl transition-colors duration-200',
+          isActive ? 'border border-primary/15 bg-primary/10' : 'bg-transparent group-hover/nav:bg-sidebar-accent',
+        )}
+      />
+      <span className="relative z-10 flex w-16 shrink-0 items-center justify-center">
+        <Icon className="h-4.5 w-4.5" />
+      </span>
+      <span className="relative z-10 min-w-0 flex-1 truncate pr-3 text-sm font-medium">{label}</span>
+    </button>
+  );
+
+  if (expanded) {
+    return button;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /* ──────────────────────────────────────────────────────────────
  * AppShell — layout
  * ────────────────────────────────────────────────────────────── */
@@ -437,6 +509,7 @@ export default function AppShell({
   // 是否启用系统模糊材质(云母)：关闭时窗口为不透明，前端需回退为不透明背景。
   const [nativeBackdrop, setNativeBackdrop] = useState(false);
   const [isMaximised, setIsMaximised] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(readStoredSidebarExpanded);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousActiveTabRef = useRef<ActiveTab>(activeTab);
 
@@ -512,6 +585,20 @@ export default function AppShell({
     }
   }, [handleOpenRepository]);
 
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarExpanded((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SIDEBAR_EXPANDED_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        /* 持久化失败不影响交互 */
+      }
+      return next;
+    });
+  }, []);
+
+  const sidebarWidth = sidebarExpanded ? SIDEBAR_EXPANDED_WIDTH : SIDEBAR_COLLAPSED_WIDTH;
+
   const handleTabChange = (tab: ActiveTab) => {
     if (tab === activeTab) return;
     onTabChange(tab);
@@ -552,6 +639,7 @@ export default function AppShell({
           restoreLabel={t('appShell.titleBar.restore')}
           closeLabel={t('appShell.titleBar.close')}
           isMaximised={isMaximised}
+          leftOffset={sidebarWidth}
           leftSlot={<StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} autoControl={autoControl} compact />}
           onMinimise={() => WindowMinimise()}
           onToggleMaximise={handleToggleMaximise}
@@ -559,94 +647,92 @@ export default function AppShell({
         />
       )}
 
-      <aside className="glacier-sidebar flex w-16 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(15,23,42,0.04)] dark:shadow-[1px_0_0_rgba(255,255,255,0.04)]">
-        <div className="flex h-[76px] items-center justify-center px-2" style={DRAG_STYLE}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                aria-label={t('appShell.repository.openAria', { name: BRAND.name })}
-                role="link"
-                tabIndex={0}
-                onClick={handleOpenRepository}
-                onKeyDown={handleLogoKeyDown}
-                className="group flex cursor-pointer items-center justify-center outline-none"
-                style={NO_DRAG_STYLE}
-              >
-                <img
-                  src="/brand/wordmark-light.png"
-                  alt={BRAND.name}
-                  draggable={false}
-                  className="h-auto w-[46px] object-contain transition-transform duration-200 group-hover:scale-[1.03] dark:hidden"
-                />
-                <img
-                  src="/brand/wordmark-dark.png"
-                  alt={BRAND.name}
-                  draggable={false}
-                  className="hidden h-auto w-[46px] object-contain transition-transform duration-200 group-hover:scale-[1.03] dark:block"
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="right">{t('appShell.repository.openTooltip')}</TooltipContent>
-          </Tooltip>
+      <aside
+        className="glacier-sidebar flex shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(15,23,42,0.04)] transition-[width] duration-300 ease-out dark:shadow-[1px_0_0_rgba(255,255,255,0.04)]"
+        style={{ width: sidebarWidth }}
+      >
+        <div className="flex h-[76px] items-center" style={DRAG_STYLE}>
+          <div className="flex w-16 shrink-0 items-center justify-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  aria-label={t('appShell.repository.openAria', { name: BRAND.name })}
+                  role="link"
+                  tabIndex={0}
+                  onClick={handleOpenRepository}
+                  onKeyDown={handleLogoKeyDown}
+                  className="group flex cursor-pointer items-center justify-center outline-none"
+                  style={NO_DRAG_STYLE}
+                >
+                  <img
+                    src="/brand/wordmark-light.png"
+                    alt={BRAND.name}
+                    draggable={false}
+                    className="h-auto w-[46px] object-contain transition-transform duration-200 group-hover:scale-[1.03] dark:hidden"
+                  />
+                  <img
+                    src="/brand/wordmark-dark.png"
+                    alt={BRAND.name}
+                    draggable={false}
+                    className="hidden h-auto w-[46px] object-contain transition-transform duration-200 group-hover:scale-[1.03] dark:block"
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right">{t('appShell.repository.openTooltip')}</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
-        <nav className="flex flex-1 flex-col items-center gap-1 px-2" role="tablist" style={NO_DRAG_STYLE}>
-          {MAIN_TAB_ITEMS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            const tabTitle = t(tab.titleKey);
-            return (
-              <Tooltip key={tab.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    role="tab"
-                    aria-label={tabTitle}
-                    aria-selected={isActive}
-                    onClick={() => handleTabChange(tab.id)}
-                    className={clsx(
-                      'relative flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors duration-200',
-                      isActive
-                        ? 'text-primary'
-                        : 'text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                    )}
-                  >
-                    {isActive && (
-                      <span
-                        className="absolute inset-0 rounded-xl border border-primary/15 bg-primary/10"
-                      />
-                    )}
-                    <Icon className="relative z-10 h-4.5 w-4.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{tabTitle}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+        <nav className="flex flex-1 flex-col gap-1" role="tablist" style={NO_DRAG_STYLE}>
+          {MAIN_TAB_ITEMS.map((tab) => (
+            <SidebarNavButton
+              key={tab.id}
+              icon={tab.icon}
+              label={t(tab.titleKey)}
+              isActive={activeTab === tab.id}
+              expanded={sidebarExpanded}
+              onClick={() => handleTabChange(tab.id)}
+              role="tab"
+            />
+          ))}
         </nav>
 
-        <div className="px-2 pb-5" style={NO_DRAG_STYLE}>
-          <Tooltip>
-            <TooltipTrigger asChild>
+        <div className="flex flex-col gap-1 pb-5" style={NO_DRAG_STYLE}>
+          <SidebarNavButton
+            icon={ABOUT_TAB.icon}
+            label={t(ABOUT_TAB.titleKey)}
+            isActive={activeTab === ABOUT_TAB.id}
+            expanded={sidebarExpanded}
+            onClick={() => handleTabChange(ABOUT_TAB.id)}
+          />
+
+          {(() => {
+            const toggleLabel = sidebarExpanded ? t('appShell.sidebar.collapse') : t('appShell.sidebar.expand');
+            const ToggleIcon = sidebarExpanded ? PanelLeftClose : PanelLeftOpen;
+            const toggleButton = (
               <button
                 type="button"
-                aria-label={t(ABOUT_TAB.titleKey)}
-                aria-selected={activeTab === ABOUT_TAB.id}
-                onClick={() => handleTabChange(ABOUT_TAB.id)}
-                className={clsx(
-                  'relative mx-auto flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors duration-200',
-                  activeTab === ABOUT_TAB.id
-                    ? 'text-primary'
-                    : 'text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                )}
+                aria-label={toggleLabel}
+                aria-expanded={sidebarExpanded}
+                onClick={handleToggleSidebar}
+                className="group/nav relative flex h-11 w-full cursor-pointer items-center rounded-xl text-left text-sidebar-foreground/62 transition-colors duration-200 hover:text-sidebar-foreground"
               >
-                {activeTab === ABOUT_TAB.id && (
-                  <span className="absolute inset-0 rounded-xl border border-primary/15 bg-primary/10" />
-                )}
-                <ABOUT_TAB.icon className="relative z-10 h-4.5 w-4.5" />
+                <span className="pointer-events-none absolute inset-y-0 left-2.5 right-2.5 rounded-xl bg-transparent transition-colors duration-200 group-hover/nav:bg-sidebar-accent" />
+                <span className="relative z-10 flex w-16 shrink-0 items-center justify-center">
+                  <ToggleIcon className="h-4.5 w-4.5" />
+                </span>
+                <span className="relative z-10 min-w-0 flex-1 truncate pr-3 text-sm font-medium">{toggleLabel}</span>
               </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{t(ABOUT_TAB.titleKey)}</TooltipContent>
-          </Tooltip>
+            );
+            return sidebarExpanded ? (
+              toggleButton
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>{toggleButton}</TooltipTrigger>
+                <TooltipContent side="right">{toggleLabel}</TooltipContent>
+              </Tooltip>
+            );
+          })()}
         </div>
       </aside>
 
