@@ -84,11 +84,11 @@ const getTranslatedWorkMode = (
 };
 
 const AnimatedTemperatureValue = memo(function AnimatedTemperatureValue({ temp, colorClass }: { temp: number | undefined; colorClass: string }) {
-  return <span className={clsx('text-[28px] font-bold leading-none tabular-nums tracking-tight', colorClass)}>{temp ?? '--'}</span>;
+  return <span className={clsx('text-[28px] min-[1800px]:text-[36px] font-bold leading-none tabular-nums tracking-tight', colorClass)}>{temp ?? '--'}</span>;
 });
 
 const AnimatedRpmValue = memo(function AnimatedRpmValue({ rpm }: { rpm: number | undefined }) {
-  return <span className="text-[28px] font-bold leading-none tabular-nums tracking-tight text-primary">{rpm ?? '--'}</span>;
+  return <span className="text-[28px] min-[1800px]:text-[36px] font-bold leading-none tabular-nums tracking-tight text-primary">{rpm ?? '--'}</span>;
 });
 
 interface SemiGaugeProps {
@@ -109,7 +109,7 @@ const SemiGauge = memo(function SemiGauge({ value, color, children }: SemiGaugeP
   const dashOffset = arc * (1 - safe);
 
   return (
-    <div className="relative w-full max-w-[15rem]">
+    <div className="relative w-full max-w-[15rem] min-[1800px]:max-w-[17.5rem]">
       <svg
         viewBox="0 0 200 116"
         className="block w-full"
@@ -161,7 +161,7 @@ const MetricHeader = memo(function MetricHeader({
 }) {
   return (
     <div className="mb-2 flex items-center justify-center">
-      <div className="flex min-w-0 max-w-full items-center justify-center gap-2 text-[13px] font-medium text-muted-foreground">
+      <div className="flex min-w-0 max-w-full items-center justify-center gap-2 text-[13px] min-[1800px]:text-sm font-medium text-muted-foreground">
         <span className="shrink-0">{icon}</span>
         <span className="shrink-0">{label}</span>
       </div>
@@ -227,10 +227,10 @@ const TempGaugeDisplay = memo(function TempGaugeDisplay({
   // 未就绪 → 占位：灰色弧、"--"、"读取中…"，不进入正常状态色
   if (!ready) {
     return (
-      <div className="flex h-full w-full max-w-[20rem] flex-1 flex-col items-center justify-end">
+      <div className="flex h-full w-full max-w-[20rem] min-[1800px]:max-w-[22rem] flex-1 flex-col items-center justify-end">
         <SemiGauge value={0} color="var(--muted-foreground)">
           <div className="flex items-baseline gap-0.5">
-            <span className="text-[28px] font-bold leading-none tabular-nums tracking-tight text-muted-foreground/70">--</span>
+            <span className="text-[28px] min-[1800px]:text-[36px] font-bold leading-none tabular-nums tracking-tight text-muted-foreground/70">--</span>
             <span className="text-xs font-medium text-muted-foreground/70">°C</span>
           </div>
           <span className="mt-1 inline-flex items-center gap-1 text-[11px] leading-none text-muted-foreground">
@@ -246,7 +246,7 @@ const TempGaugeDisplay = memo(function TempGaugeDisplay({
   const ratio = Math.min(1, (temp || 0) / 100);
   const arcColor = getTempArcColor(temp || 0);
   return (
-    <div className="flex h-full w-full max-w-[20rem] flex-1 flex-col items-center justify-end">
+    <div className="flex h-full w-full max-w-[20rem] min-[1800px]:max-w-[22rem] flex-1 flex-col items-center justify-end">
       <SemiGauge value={ratio} color={arcColor}>
         <div className="flex items-baseline gap-0.5">
           <AnimatedTemperatureValue temp={temp} colorClass={status.color} />
@@ -279,7 +279,7 @@ const FanRpmDisplay = memo(function FanRpmDisplay({
     : t('deviceStatus.fan.targetSummary', { target: targetRpm ?? '--', gear: getManualGearLabel(setGear) || '--' });
 
   return (
-    <div className="flex h-full w-full max-w-[20rem] flex-1 flex-col items-center justify-end">
+    <div className="flex h-full w-full max-w-[20rem] min-[1800px]:max-w-[22rem] flex-1 flex-col items-center justify-end">
       <SemiGauge value={ratio} color="var(--primary)">
         <div className="flex items-baseline gap-0.5">
           <AnimatedRpmValue rpm={currentRpm} />
@@ -484,7 +484,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
       onClick={onOpen}
       onKeyDown={handlePanelKeyDown}
       className={clsx(
-        'glacier-chart-card group flex h-full min-h-[239px] flex-col rounded-xl border border-border bg-card p-3 shadow-sm shadow-black/5',
+        'glacier-chart-card group flex h-full min-h-[239px] min-[1800px]:min-h-[288px] flex-col rounded-xl border border-border bg-card p-3 shadow-sm shadow-black/5',
         onOpen && 'cursor-pointer transition-colors hover:border-primary/35 hover:bg-primary/5 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
       )}
     >
@@ -698,9 +698,9 @@ export default function DeviceStatus({
   const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 min-[1800px]:space-y-4">
       {/* ── Device header card ── */}
-      <div className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5">
+      <div className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5 min-[1800px]:p-5">
         <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
           <img
             src="/theme/ice-operator-banner.png"
@@ -717,7 +717,7 @@ export default function DeviceStatus({
         <div className="glacier-hero-content relative z-10 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div
-              className="flex h-14 w-20 items-center justify-center overflow-hidden rounded-xl bg-muted/45 p-1.5"
+              className="flex h-14 w-20 min-[1800px]:h-[68px] min-[1800px]:w-24 items-center justify-center overflow-hidden rounded-xl bg-muted/45 p-1.5"
             >
               <img
                 src={deviceImageSrc}
@@ -728,7 +728,7 @@ export default function DeviceStatus({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-base font-semibold text-foreground">{deviceModelName}</span>
+                <span className="text-base min-[1800px]:text-lg font-semibold text-foreground">{deviceModelName}</span>
                 <span
                   className={clsx(
                     'rounded-md px-2 py-0.5 text-[11px] font-semibold',
@@ -785,10 +785,10 @@ export default function DeviceStatus({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-3"
+          className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-3 min-[1800px]:gap-4"
         >
           {/* CPU */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px]">
+          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
             <MetricHeader
               icon={<Cpu className="h-4 w-4" />}
               label={t('deviceStatus.metrics.cpuTemperature')}
@@ -797,7 +797,7 @@ export default function DeviceStatus({
           </div>
 
           {/* GPU */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px]">
+          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
             <MetricHeader
               icon={<Gpu className="h-4 w-4" />}
               label={t('deviceStatus.metrics.gpuTemperature')}
@@ -806,7 +806,7 @@ export default function DeviceStatus({
           </div>
 
           {/* Fan */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px]">
+          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
             <MetricHeader
               icon={(
                 <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />
@@ -901,7 +901,7 @@ export default function DeviceStatus({
           </div>
 
           <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.controlMode')}
@@ -911,7 +911,7 @@ export default function DeviceStatus({
               </div>
             </div>
 
-            <div className="glacier-stat-tile group rounded-xl border border-border bg-background/55 p-3">
+            <div className="glacier-stat-tile group rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
               <div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <Power className="h-3.5 w-3.5" />
@@ -937,7 +937,7 @@ export default function DeviceStatus({
               </div>
             </div>
 
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Fan className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.workMode')}
@@ -945,7 +945,7 @@ export default function DeviceStatus({
               <div className="text-sm font-semibold">{getTranslatedWorkMode(fanData?.workMode, t)}</div>
             </div>
 
-            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3">
+            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.tempStatus')}
@@ -964,7 +964,7 @@ export default function DeviceStatus({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.3 }}
-          className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)]"
+          className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)] min-[1800px]:gap-4"
         >
           <MiniFanCurveChart curve={config.fanCurve} currentTemp={referenceTemp} onOpen={onOpenCurveEditor} />
           <TemperatureHistoryPanel

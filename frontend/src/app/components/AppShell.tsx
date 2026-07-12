@@ -651,36 +651,40 @@ export default function AppShell({
         className="glacier-sidebar flex shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[1px_0_0_rgba(15,23,42,0.04)] transition-[width] duration-300 ease-out dark:shadow-[1px_0_0_rgba(255,255,255,0.04)]"
         style={{ width: sidebarWidth }}
       >
-        <div className="flex h-[76px] items-center" style={DRAG_STYLE}>
-          <div className="flex w-16 shrink-0 items-center justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  aria-label={t('appShell.repository.openAria', { name: BRAND.name })}
-                  role="link"
-                  tabIndex={0}
-                  onClick={handleOpenRepository}
-                  onKeyDown={handleLogoKeyDown}
-                  className="group flex cursor-pointer items-center justify-center outline-none"
-                  style={NO_DRAG_STYLE}
-                >
-                  <img
-                    src="/brand/wordmark-light.png"
-                    alt={BRAND.name}
-                    draggable={false}
-                    className="h-auto w-[46px] object-contain transition-transform duration-200 group-hover:scale-[1.03] dark:hidden"
-                  />
-                  <img
-                    src="/brand/wordmark-dark.png"
-                    alt={BRAND.name}
-                    draggable={false}
-                    className="hidden h-auto w-[46px] object-contain transition-transform duration-200 group-hover:scale-[1.03] dark:block"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="right">{t('appShell.repository.openTooltip')}</TooltipContent>
-            </Tooltip>
-          </div>
+        <div className="flex h-[76px] items-center pl-2" style={DRAG_STYLE}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                aria-label={t('appShell.repository.openAria', { name: BRAND.name })}
+                role="link"
+                tabIndex={0}
+                onClick={handleOpenRepository}
+                onKeyDown={handleLogoKeyDown}
+                className="group flex cursor-pointer items-center outline-none"
+                style={NO_DRAG_STYLE}
+              >
+                <img
+                  src="/brand/wordmark-light.png"
+                  alt={BRAND.name}
+                  draggable={false}
+                  className={clsx(
+                    'h-auto origin-left object-contain transition-all duration-300 ease-out group-hover:scale-[1.03] dark:hidden',
+                    sidebarExpanded ? 'w-[104px]' : 'w-[48px]',
+                  )}
+                />
+                <img
+                  src="/brand/wordmark-dark.png"
+                  alt={BRAND.name}
+                  draggable={false}
+                  className={clsx(
+                    'hidden h-auto origin-left object-contain transition-all duration-300 ease-out group-hover:scale-[1.03] dark:block',
+                    sidebarExpanded ? 'w-[104px]' : 'w-[48px]',
+                  )}
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="right">{t('appShell.repository.openTooltip')}</TooltipContent>
+          </Tooltip>
         </div>
 
         <nav className="flex flex-1 flex-col gap-1" role="tablist" style={NO_DRAG_STYLE}>
@@ -742,7 +746,7 @@ export default function AppShell({
             className="shrink-0 border-b border-border/65 bg-background/92 px-4 pb-3 pt-3 backdrop-blur-xl sm:px-5 lg:px-6"
             style={DRAG_STYLE}
           >
-            <div className="mx-auto flex min-h-9 max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] items-center justify-start gap-3" style={NO_DRAG_STYLE}>
+            <div className="mx-auto flex min-h-9 max-w-[1120px] min-[1536px]:max-w-[1280px] min-[1800px]:max-w-[1440px] min-[2400px]:max-w-[1560px] items-center justify-start gap-3" style={NO_DRAG_STYLE}>
               <StatusBadges isConnected={isConnected} fanData={fanData} temperature={temperature} autoControl={autoControl} />
             </div>
           </header>
@@ -757,7 +761,7 @@ export default function AppShell({
             <div className="min-h-full px-4 pb-6 pt-4 sm:px-5 lg:px-6">
 
           {/* Alerts */}
-          <div className="mx-auto max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px]">
+          <div className="mx-auto max-w-[1120px] min-[1536px]:max-w-[1280px] min-[1800px]:max-w-[1440px] min-[2400px]:max-w-[1560px]">
             <AnimatePresence>
               {error && (
                 <motion.div
@@ -797,7 +801,7 @@ export default function AppShell({
           </div>
 
           {/* Tab content */}
-          <main className="mx-auto w-full max-w-[1120px] min-[1680px]:max-w-[1280px] min-[2200px]:max-w-[1480px] min-w-0 overflow-hidden">
+          <main className="mx-auto w-full max-w-[1120px] min-[1536px]:max-w-[1280px] min-[1800px]:max-w-[1440px] min-[2400px]:max-w-[1560px] min-w-0 overflow-hidden">
             <AnimatePresence mode="wait" initial={false} custom={transitionDirection}>
               <motion.div
                 key={activeTab}
