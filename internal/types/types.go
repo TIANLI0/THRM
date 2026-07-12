@@ -32,6 +32,12 @@ const (
 	WindowBlurAuto = "auto"
 	// WindowBlurOn 强制开启窗口模糊效果。
 	WindowBlurOn = "on"
+	// WindowBlurAcrylic 使用亚克力窗口材质。
+	WindowBlurAcrylic = "acrylic"
+	// WindowBlurMica 使用云母窗口材质。
+	WindowBlurMica = "mica"
+	// WindowBlurTabbed 使用云母 Alt（Tabbed）窗口材质。
+	WindowBlurTabbed = "tabbed"
 	// WindowBlurOff 强制关闭窗口模糊效果。
 	WindowBlurOff = "off"
 )
@@ -39,8 +45,8 @@ const (
 // NormalizeWindowBlur 归一化窗口模糊效果设置，非法值回退为 auto。
 func NormalizeWindowBlur(mode string) string {
 	switch mode {
-	case WindowBlurOn:
-		return WindowBlurOn
+	case WindowBlurOn, WindowBlurAcrylic, WindowBlurMica, WindowBlurTabbed:
+		return mode
 	case WindowBlurOff:
 		return WindowBlurOff
 	default:
@@ -487,7 +493,7 @@ type AppConfig struct {
 	CpuSensor                string                    `json:"cpuSensor"`                // CPU 传感器选择: auto 或传感器 key
 	CpuSensors               []string                  `json:"cpuSensors"`               // CPU 多传感器选择(多核平均): 为空则按 cpuSensor 单选/自动
 	GpuSensor                string                    `json:"gpuSensor"`                // GPU 传感器选择: auto 或传感器 key
-	WindowBlur               string                    `json:"windowBlur"`               // 窗口模糊效果: auto/on/off (Win11 默认开, Win10 默认关)
+	WindowBlur               string                    `json:"windowBlur"`               // 窗口材质: auto/acrylic/mica/tabbed/off；兼容旧值 on
 	SuspendFanOff            bool                      `json:"suspendFanOff"`            // 系统休眠/睡眠时自动归零转速并关闭挡位灯与 RGB
 	ConfigPath               string                    `json:"configPath"`               // 配置文件路径
 	ManualGear               string                    `json:"manualGear"`               // 手动挡位设置

@@ -721,8 +721,8 @@
       "reconnectTitle": "断连保持配置",
       "reconnectDescription": "重连后继续使用 APP 配置",
       "reconnectTip": "推荐开启，防止断连后进入设备默认模式",
-      "blurTitle": "窗口模糊效果",
-      "blurDescription": "亚克力/云母半透明效果。默认 Windows 11 开启、Windows 10 关闭，修改后需重启应用生效。",
+      "blurTitle": "窗口材质",
+      "blurDescription": "选择亚克力、云母或云母 Alt 材质，修改后需重启应用生效。",
       "suspendFanOffTitle": "休眠时自动关闭",
       "suspendFanOffDescription": "系统进入睡眠/休眠时，将风扇转速归零并关闭挡位灯与 RGB。"
     },
@@ -848,7 +848,9 @@
       },
       "windowBlur": {
         "auto": "自动（随系统）",
-        "on": "开启",
+        "acrylic": "亚克力",
+        "mica": "云母",
+        "tabbed": "云母 Alt",
         "off": "关闭"
       }
     }

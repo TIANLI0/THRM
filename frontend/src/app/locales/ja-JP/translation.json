@@ -720,8 +720,8 @@
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
-      "blurTitle": "ウィンドウのぼかし効果",
-      "blurDescription": "アクリル/マイカの半透明効果。既定は Windows 11 でオン、Windows 10 でオフ。変更後は再起動で反映されます。",
+      "blurTitle": "ウィンドウ素材",
+      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。",
       "suspendFanOffTitle": "スリープ時に停止",
       "suspendFanOffDescription": "システムがスリープ/休止状態になると、ファンを 0 RPM にし、ギアライトと RGB をオフにします。"
     },
@@ -847,7 +847,9 @@
       },
       "windowBlur": {
         "auto": "自動（システムに従う）",
-        "on": "オン",
+        "acrylic": "アクリル",
+        "mica": "マイカ",
+        "tabbed": "マイカ Alt",
         "off": "オフ"
       }
     }
