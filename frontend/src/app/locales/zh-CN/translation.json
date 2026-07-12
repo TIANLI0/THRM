@@ -196,7 +196,9 @@
       "maxRpm": "最高转速",
       "maxRpmHintAria": "最高转速提示",
       "workMode": "工作模式",
-      "tempStatus": "温度状态"
+      "tempStatus": "温度状态",
+      "cpuPower": "CPU 功耗",
+      "gpuPower": "GPU 功耗"
     }
   },
   "manualGear": {

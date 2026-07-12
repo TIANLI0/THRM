@@ -3,6 +3,7 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
   Bluetooth,
@@ -15,7 +16,6 @@ import {
   Settings,
   Gauge,
   Power,
-  ShieldCheck,
   Sparkles,
 } from 'lucide-react';
 import { types } from '../../../wailsjs/go/models';
@@ -695,7 +695,8 @@ export default function DeviceStatus({
           : maxRpmInfo.codeHex
             ? t('deviceStatus.maxRpmHint.unknownCode', { code: maxRpmInfo.codeHex })
             : t('deviceStatus.maxRpmHint.waiting');
-  const maxTempStatus = getTempStatus(temperature?.maxTemp || 0);
+  const cpuPowerText = (temperature?.cpuPower ?? 0) > 0 ? `${Math.round(temperature?.cpuPower ?? 0)}W` : '--';
+  const gpuPowerText = (temperature?.gpuPower ?? 0) > 0 ? `${Math.round(temperature?.gpuPower ?? 0)}W` : '--';
 
   return (
     <div className="space-y-3 min-[1800px]:space-y-4">
@@ -900,7 +901,7 @@ export default function DeviceStatus({
             <HardwareIdentitySummary cpuModel={temperature?.cpuModel} gpuModel={temperature?.gpuModel} />
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 min-[560px]:grid-cols-5">
             <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -947,12 +948,18 @@ export default function DeviceStatus({
 
             <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
               <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {t('deviceStatus.stats.tempStatus')}
+                <Zap className="h-3.5 w-3.5" />
+                {t('deviceStatus.stats.cpuPower')}
               </div>
-              <div className={clsx('text-sm font-semibold tabular-nums', maxTempStatus.color)}>
-                {t(maxTempStatus.labelKey)}
+              <div className="text-sm font-semibold tabular-nums">{cpuPowerText}</div>
+            </div>
+
+            <div className="glacier-stat-tile rounded-xl border border-border bg-background/55 p-3 min-[1800px]:p-4">
+              <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Activity className="h-3.5 w-3.5" />
+                {t('deviceStatus.stats.gpuPower')}
               </div>
+              <div className="text-sm font-semibold tabular-nums">{gpuPowerText}</div>
             </div>
           </div>
 

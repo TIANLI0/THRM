@@ -195,7 +195,9 @@
       "maxRpm": "最大回転数",
       "maxRpmHintAria": "最大回転数の詳細",
       "workMode": "動作ギア",
-      "tempStatus": "温度状態"
+      "tempStatus": "温度状態",
+      "cpuPower": "CPU 消費電力",
+      "gpuPower": "GPU 消費電力"
     }
   },
   "manualGear": {

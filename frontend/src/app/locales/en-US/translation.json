@@ -196,7 +196,9 @@
       "maxRpm": "Maximum RPM",
       "maxRpmHintAria": "Maximum RPM details",
       "workMode": "Work mode",
-      "tempStatus": "Temperature status"
+      "tempStatus": "Temperature status",
+      "cpuPower": "CPU power",
+      "gpuPower": "GPU power"
     }
   },
   "manualGear": {
