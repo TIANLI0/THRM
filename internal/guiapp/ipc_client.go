@@ -3,12 +3,27 @@ package guiapp
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/types"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+func ipcRequestPolicy(reqType ipc.RequestType) (time.Duration, bool) {
+	switch reqType {
+	case ipc.ReqGetDeviceStatus, ipc.ReqGetCurrentFanData, ipc.ReqGetConfig,
+		ipc.ReqGetFanCurve, ipc.ReqGetFanCurveProfiles, ipc.ReqGetTemperature,
+		ipc.ReqGetTemperatureHistory, ipc.ReqGetBridgeProgramStatus,
+		ipc.ReqGetDebugInfo, ipc.ReqGetDeviceDebugFrames, ipc.ReqPing:
+		return 6 * time.Second, true
+	case ipc.ReqConnect, ipc.ReqRestartPawnIO, ipc.ReqReinstallPawnIO:
+		return 30 * time.Second, false
+	default:
+		return 12 * time.Second, false
+	}
+}
 
 func mergeTemperatureMetadata(previous, incoming types.TemperatureData) types.TemperatureData {
 	merged := incoming
@@ -146,6 +161,7 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 
 // sendRequest 发送请求到核心服务
 func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, error) {
+	timeout, retryable := ipcRequestPolicy(reqType)
 	if !a.ipcClient.IsConnected() {
 		if !EnsureCoreServiceRunning() {
 			err := fmt.Errorf("核心服务未运行且启动失败")
@@ -161,7 +177,7 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 		a.emitCoreServiceOK()
 	}
 
-	resp, err := a.ipcClient.SendRequest(reqType, data)
+	resp, err := a.ipcClient.SendRequestWithTimeout(reqType, data, timeout)
 	if err == nil {
 		a.emitCoreServiceOK()
 		return resp, nil
@@ -180,8 +196,13 @@ func (a *App) sendRequest(reqType ipc.RequestType, data any) (*ipc.Response, err
 		return nil, wrapped
 	}
 	a.ipcClient.SetEventHandler(a.handleCoreEvent)
+	if !retryable {
+		wrapped := fmt.Errorf("request %s may have been applied before IPC disconnected; state was not replayed automatically: %v", reqType, err)
+		a.emitCoreServiceError(wrapped.Error())
+		return nil, wrapped
+	}
 
-	resp, err = a.ipcClient.SendRequest(reqType, data)
+	resp, err = a.ipcClient.SendRequestWithTimeout(reqType, data, timeout)
 	if err != nil {
 		a.emitCoreServiceError(err.Error())
 		return nil, err
