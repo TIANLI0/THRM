@@ -1,17 +1,19 @@
 'use client';
 
 import { useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { types } from '../../wailsjs/go/models';
 import { useShallow } from 'zustand/react/shallow';
 import AppFatalError from './components/AppFatalError';
 import AppLoadingSkeleton from './components/AppLoadingSkeleton';
-import AboutPanel from './components/AboutPanel';
 import AppShell from './components/AppShell';
-import ControlPanel from './components/ControlPanel';
-import DeviceStatus from './components/DeviceStatus';
-import FanCurve from './components/FanCurve';
 import { useAppBootstrap } from './hooks/useAppBootstrap';
 import { useAppStore } from './store/app-store';
+
+const DeviceStatus = dynamic(() => import('./components/DeviceStatus'), { ssr: false });
+const FanCurve = dynamic(() => import('./components/FanCurve'), { ssr: false });
+const ControlPanel = dynamic(() => import('./components/ControlPanel'), { ssr: false });
+const AboutPanel = dynamic(() => import('./components/AboutPanel'), { ssr: false });
 
 export default function Home() {
   useAppBootstrap();
@@ -32,6 +34,7 @@ export default function Home() {
       error: state.error,
       activeTab: state.activeTab,
       curveFocusTarget: state.curveFocusTarget,
+      timelineEvents: state.timelineEvents,
     })),
   );
 
@@ -95,6 +98,7 @@ export default function Home() {
           deviceModel={view.deviceModel}
           focusTarget={view.curveFocusTarget}
           onFocusHandled={clearCurveFocusTarget}
+          timelineEvents={view.timelineEvents}
         />
       }
       controlContent={

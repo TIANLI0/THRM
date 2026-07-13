@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RotateCw,
@@ -21,12 +21,13 @@ import {
   X,
   AudioLines,
 } from 'lucide-react';
+import type { TimelineEvent } from '../store/app-store';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { useLocale } from '../lib/i18n';
-import { type HistorySeriesKey } from '../lib/temperature-history';
+import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
 import { BS1_MANUAL_GEAR_PRESETS, getManualGearLabel, getManualLevelLabel, MANUAL_GEAR_PRESETS, getEffectiveManualGearPresets, normalizeManualGearRpmMap, MANUAL_GEAR_RPM_MAX, MANUAL_GEAR_RPM_MIN, type ManualGearRpmMap } from '../lib/manualGearPresets';
@@ -272,6 +273,7 @@ interface FanCurveProps {
   deviceModel: string | null;
   focusTarget: CurveFocusTarget | null;
   onFocusHandled: () => void;
+  timelineEvents: TimelineEvent[];
 }
 
 function formatHistoryTime(timestamp: number, locale: string) {
@@ -289,6 +291,69 @@ function formatHistoryDateTime(timestamp: number, locale: string) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+interface HistorySeriesMetaItem {
+  key: HistorySeriesKey;
+  label: string;
+  color: string;
+}
+
+const HISTORY_SERIES_FIELD: Record<HistorySeriesKey, keyof TemperatureHistoryPoint> = {
+  cpu: 'cpuTemp',
+  gpu: 'gpuTemp',
+  fan: 'fanRpm',
+  cpuPower: 'cpuPower',
+  gpuPower: 'gpuPower',
+};
+
+function formatHistorySeriesValue(key: HistorySeriesKey, value: number) {
+  if (key === 'fan') return `${Math.round(value)} RPM`;
+  if (key === 'cpuPower' || key === 'gpuPower') return `${value.toFixed(1)} W`;
+  return `${Math.round(value)} °C`;
+}
+
+// 温度/风扇趋势图与功耗图共用同一个 tooltip：无论悬停哪张图，都同时展示温度、转速与功耗，
+// 保证「跟踪最近趋势时也能看到功耗信息，反之亦然」。仅展示当前已开启且有数据的曲线。
+function HistoryTrendTooltip(props: {
+  active?: boolean;
+  label?: string | number;
+  payload?: Array<{ payload?: TemperatureHistoryPoint }>;
+  locale: string;
+  meta: HistorySeriesMetaItem[];
+  visibility: Record<HistorySeriesKey, boolean>;
+}) {
+  const { active, label, payload, locale, meta, visibility } = props;
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+
+  const rows = meta
+    .filter((series) => visibility[series.key])
+    .map((series) => ({ series, value: Number(point[HISTORY_SERIES_FIELD[series.key]] ?? 0) }))
+    .filter((row) => row.value > 0);
+  if (rows.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        backgroundColor: 'var(--chart-tooltip-bg)',
+        border: '1px solid var(--chart-tooltip-border)',
+        borderRadius: 8,
+        boxShadow: 'var(--chart-tooltip-shadow)',
+        padding: '8px 12px',
+        color: 'var(--chart-tooltip-text)',
+      }}
+    >
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>{formatHistoryDateTime(Number(label), locale)}</div>
+      {rows.map(({ series, value }) => (
+        <div key={series.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, lineHeight: '18px' }}>
+          <span style={{ width: 8, height: 8, borderRadius: 9999, backgroundColor: series.color, display: 'inline-block' }} />
+          <span>{series.label}</span>
+          <span style={{ marginLeft: 'auto', fontWeight: 600 }}>{formatHistorySeriesValue(series.key, value)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function formatHistoryDuration(
@@ -407,7 +472,7 @@ const DraggablePoint = memo(function DraggablePoint({
    ─── Main FanCurve Component ───
    ═══════════════════════════════════════════════════════════ */
 
-const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, deviceModel, focusTarget, onFocusHandled }: FanCurveProps) {
+const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, fanData, temperature, deviceModel, focusTarget, onFocusHandled, timelineEvents }: FanCurveProps) {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const [localCurve, setLocalCurve] = useState<types.FanCurvePoint[]>([]);
@@ -729,6 +794,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
   }, [locale, t, temperatureHistory]);
   const historyChartData = useMemo(() => detailHistoryPoints.map((point) => ({ ...point })), [detailHistoryPoints]);
+  const visibleTimelineEvents = useMemo(() => {
+    const first = detailHistoryPoints[0]?.timestamp ?? 0;
+    const last = detailHistoryPoints[detailHistoryPoints.length - 1]?.timestamp ?? Number.MAX_SAFE_INTEGER;
+    return timelineEvents.filter((event) => event.timestamp >= first && event.timestamp <= last).slice(-12);
+  }, [detailHistoryPoints, timelineEvents]);
 
   const historySeriesMeta = useMemo(() => ([
     { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: '#2f6df6' },
@@ -2200,18 +2270,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           width={52}
                         />
                         <RechartsTooltip
-                          labelFormatter={(value) => formatHistoryDateTime(Number(value), locale)}
-                          formatter={(value, name) => {
-                            const numericValue = Number(value ?? 0);
-                            if (name === 'fanRpm') {
-                              return [`${numericValue} RPM`, t('fanCurve.history.series.fan')];
-                            }
-                            return [`${numericValue} °C`, name === 'cpuTemp' ? t('fanCurve.history.series.cpu') : t('fanCurve.history.series.gpu')];
-                          }}
-                          contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
-                          labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
-                          itemStyle={{ color: 'var(--chart-tooltip-text)' }}
+                          content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} />}
                         />
+                        {visibleTimelineEvents.map((event, index) => (
+                          <ReferenceLine
+                            key={`${event.timestamp}-${event.type}-${index}`}
+                            x={event.timestamp}
+                            yAxisId="temp"
+                            stroke={event.type === 'disconnect' ? '#ef4444' : event.type === 'resume' ? '#8b5cf6' : '#0ea5e9'}
+                            strokeDasharray="4 3"
+                            label={{ value: event.label, position: 'insideTopRight', fontSize: 10 }}
+                          />
+                        ))}
                         {historySeriesVisibility.cpu && <Line yAxisId="temp" type="monotone" dataKey="cpuTemp" stroke="#2f6df6" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {historySeriesVisibility.gpu && <Line yAxisId="temp" type="monotone" dataKey="gpuTemp" stroke="#f97316" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke="#10b981" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
@@ -2259,14 +2329,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             unit=" W"
                           />
                           <RechartsTooltip
-                            labelFormatter={(value) => formatHistoryDateTime(Number(value), locale)}
-                            formatter={(value, name) => {
-                              const numericValue = Number(value ?? 0);
-                              return [`${numericValue.toFixed(1)} W`, name === 'cpuPower' ? t('fanCurve.history.series.cpuPower') : t('fanCurve.history.series.gpuPower')];
-                            }}
-                            contentStyle={{ backgroundColor: 'var(--chart-tooltip-bg)', border: '1px solid', borderColor: 'var(--chart-tooltip-border)', borderRadius: '8px', boxShadow: 'var(--chart-tooltip-shadow)', padding: '8px 12px', color: 'var(--chart-tooltip-text)' }}
-                            labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
-                            itemStyle={{ color: 'var(--chart-tooltip-text)' }}
+                            content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} />}
                           />
                           {historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPower" stroke="#8b5cf6" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                           {historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPower" stroke="#ec4899" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
