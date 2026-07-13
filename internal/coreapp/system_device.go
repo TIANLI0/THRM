@@ -326,6 +326,20 @@ func shouldReconnectAfterResume(proactivelySuspended, resumeReconnectWanted, aut
 	return forceReconnect && !autoReconnectSuppressed
 }
 
+// resumeReconnectWantedOnSuspend 判断休眠时是否应记住“唤醒后自动重连”的意图。
+//
+// coreConnected/deviceConnected 反映当前实时连接状态；reconnectInProgress 表示上一次
+// 唤醒排定的重连仍在退避等待中——此时设备虽未连上，但用户确实希望设备保持连接，
+// 必须视为“已连接”，否则紧接着的再次休眠会把意图误清成 false，最终唤醒便会当作
+// 用户手动断开而放弃重连。autoReconnectSuppressed 为真表示用户已手动断开，任何情况
+// 下都不应记住重连意图。
+func resumeReconnectWantedOnSuspend(coreConnected, deviceConnected, reconnectInProgress, autoReconnectSuppressed bool) bool {
+	if autoReconnectSuppressed {
+		return false
+	}
+	return coreConnected || deviceConnected || reconnectInProgress
+}
+
 func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInterval time.Duration) bool {
 	if !shouldRecoverFromSystemResumeGap(gap, expectedInterval) {
 		return false
@@ -343,15 +357,15 @@ func (a *CoreApp) onSystemSuspend() {
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 
-	// 在用 suspend 标志覆盖自动重连抑制状态前，记住用户是否确实有一台已连接设备。
-	// 这样唤醒不会意外连接用户此前手动断开的设备。
 	a.mutex.RLock()
-	wasConnected := a.isConnected
+	coreConnected := a.isConnected
 	a.mutex.RUnlock()
-	if !wasConnected {
-		wasConnected = a.deviceManager.IsConnected()
-	}
-	a.resumeReconnectWanted.Store(wasConnected && !a.autoReconnectSuppressed.Load())
+	a.resumeReconnectWanted.Store(resumeReconnectWantedOnSuspend(
+		coreConnected,
+		a.deviceManager.IsConnected(),
+		a.reconnectInProgress.Load(),
+		a.autoReconnectSuppressed.Load(),
+	))
 	a.cancelReconnect()
 	a.connectGeneration.Add(1)
 	a.autoReconnectSuppressed.Store(true)

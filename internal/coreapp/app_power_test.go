@@ -98,6 +98,51 @@ func TestShouldReconnectAfterResume(t *testing.T) {
 	}
 }
 
+func TestResumeReconnectWantedOnSuspend(t *testing.T) {
+	tests := []struct {
+		name                    string
+		coreConnected           bool
+		deviceConnected         bool
+		reconnectInProgress     bool
+		autoReconnectSuppressed bool
+		want                    bool
+	}{
+		{name: "remembers a connected device", coreConnected: true, want: true},
+		{name: "remembers an opened device handle", deviceConnected: true, want: true},
+		{
+			name:                "remembers an in-flight resume reconnect",
+			reconnectInProgress: true,
+			want:                true,
+		},
+		{name: "forgets when nothing is connected or pending", want: false},
+		{
+			name:                    "never remembers a manually disconnected device",
+			coreConnected:           true,
+			autoReconnectSuppressed: true,
+			want:                    false,
+		},
+		{
+			name:                    "manual disconnect wins over an in-flight reconnect",
+			reconnectInProgress:     true,
+			autoReconnectSuppressed: true,
+			want:                    false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := resumeReconnectWantedOnSuspend(
+				test.coreConnected,
+				test.deviceConnected,
+				test.reconnectInProgress,
+				test.autoReconnectSuppressed,
+			); got != test.want {
+				t.Fatalf("resumeReconnectWantedOnSuspend() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestConnectionAttemptCurrent(t *testing.T) {
 	tests := []struct {
 		name                    string
