@@ -197,11 +197,16 @@ func (a *CoreApp) ImportFanCurveProfiles(code string) error {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	cfg.FanCurveProfiles = curveprofiles.CloneProfiles(profiles)
-	cfg.ActiveFanCurveProfileID = activeID
-	if curveprofiles.NormalizeConfig(&cfg) {
-		// normalized in place
+	curveprofiles.NormalizeConfig(&cfg)
+	storeSmartControlOffsetsForActiveProfile(&cfg)
+
+	merged, importedActiveID := curveprofiles.AppendImportedProfiles(cfg.FanCurveProfiles, profiles, activeID)
+	if importedActiveID == "" {
+		return fmt.Errorf("导入数据中没有可用的曲线方案")
 	}
+	cfg.FanCurveProfiles = merged
+	cfg.ActiveFanCurveProfileID = importedActiveID
+	curveprofiles.NormalizeConfig(&cfg)
 
 	return a.applyCurveProfilesConfig(cfg)
 }
