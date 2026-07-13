@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useEffect, useMemo, useState } from 'react';
+import ConnectionRecoveryPanel from './ConnectionRecoveryPanel';
 import { motion } from 'framer-motion';
 import {
   Activity,
@@ -780,8 +781,29 @@ export default function DeviceStatus({
         </div>
       </div>
 
+      {/* ── Connection guide (centered in the empty area while offline) ── */}
+      {!isConnected && (
+        <div className="flex min-h-[56vh] items-center justify-center px-1 py-2">
+          <ConnectionRecoveryPanel
+            connected={false}
+            coreError={coreServiceError}
+            onRetry={onConnect}
+          />
+        </div>
+      )}
+
+      {/* ── Recovery guide while connected but core/temperature has issues ── */}
+      {isConnected && (!!coreServiceError || (tempPushed && referenceTemp <= 0)) && (
+        <ConnectionRecoveryPanel
+          connected
+          coreError={coreServiceError}
+          temperatureUnavailable={tempPushed && referenceTemp <= 0}
+          onRetry={onConnect}
+        />
+      )}
+
       {/* ── Metric cards ── */}
-      {isConnected ? (
+      {isConnected && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -822,22 +844,6 @@ export default function DeviceStatus({
               maxRpm={maxGearHighLevelRpm || 4000}
             />
           </div>
-        </motion.div>
-      ) : (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-          className="rounded-xl border border-dashed border-border bg-card p-14 text-center"
-        >
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-            <Bluetooth className="h-7 w-7 text-muted-foreground" />
-          </div>
-          <h3 className="mb-1.5 text-lg font-semibold">{t('deviceStatus.disconnected.title')}</h3>
-          <p className="mb-5 text-base text-muted-foreground">{t('deviceStatus.disconnected.description')}</p>
-          <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
-            {t('deviceStatus.actions.connectDevice')}
-          </Button>
         </motion.div>
       )}
 

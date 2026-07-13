@@ -1,4 +1,28 @@
 {
+  "connectionRecovery": {
+    "title": "接続ガイド",
+    "temperatureTitle": "温度監視の復旧が必要です",
+    "steps": {
+      "connection": "デバイスの電源を確認してください。BS1 は THRM が自動接続します。BS2/BS3 シリーズは、先にシステム設定で Bluetooth 接続してください。",
+      "release": "センサーやデバイス接続を使用している可能性がある他のハードウェアツールを終了してください。",
+      "diagnostics": "再試行しても失敗する場合は、診断パッケージを出力して報告に添付してください。"
+    },
+    "actions": {
+      "retry": "再接続",
+      "temperatureTest": "温度テスト",
+      "exportDiagnostics": "診断パッケージを出力"
+    },
+    "toasts": {
+      "retryStarted": "デバイスの再接続を開始しました",
+      "recoveryFailed": "復旧に失敗しました",
+      "temperatureRecovered": "温度ソースが復旧しました：{{temperature}}°C",
+      "temperatureUnavailable": "有効な温度を取得できません",
+      "temperatureUnavailableDescription": "他のハードウェア監視ツールを終了して再試行してください。安全なファン速度を維持します。",
+      "temperatureTestFailed": "温度テストに失敗しました",
+      "diagnosticsExported": "診断パッケージを出力しました",
+      "diagnosticsExportFailed": "診断パッケージの出力に失敗しました"
+    }
+  },
   "common": {
     "appName": "THRM",
     "metaDescription": "FlyDigi 高密度エアフロー式ノート PC クーラーシリーズ向けのサードパーティ製ドライバー兼制御ツールです。",

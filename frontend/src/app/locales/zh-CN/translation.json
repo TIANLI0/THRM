@@ -1,4 +1,28 @@
 {
+  "connectionRecovery": {
+    "title": "连接向导",
+    "temperatureTitle": "温度监控需要恢复",
+    "steps": {
+      "connection": "确认设备已供电；BS1 由 THRM 自动连接，BS2/BS3 系列需要您先在系统中手动连接蓝牙。",
+      "release": "关闭可能占用传感器或设备连接的其他硬件工具。",
+      "diagnostics": "重试后仍然失败时，请导出诊断包并提交反馈。"
+    },
+    "actions": {
+      "retry": "重新连接",
+      "temperatureTest": "温度自检",
+      "exportDiagnostics": "导出诊断包"
+    },
+    "toasts": {
+      "retryStarted": "已重新发起设备连接",
+      "recoveryFailed": "恢复失败",
+      "temperatureRecovered": "温度源已恢复：{{temperature}}°C",
+      "temperatureUnavailable": "仍未获得有效温度",
+      "temperatureUnavailableDescription": "请关闭其他硬件监控工具后重试，应用会保持安全转速。",
+      "temperatureTestFailed": "温度自检失败",
+      "diagnosticsExported": "诊断包已导出",
+      "diagnosticsExportFailed": "诊断包导出失败"
+    }
+  },
   "common": {
     "appName": "THRM",
     "metaDescription": "面向飞智笔记本压风散热器系列设备的第三方驱动与控制工具",

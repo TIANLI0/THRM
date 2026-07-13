@@ -1,4 +1,28 @@
 {
+  "connectionRecovery": {
+    "title": "Connection guide",
+    "temperatureTitle": "Temperature monitoring needs attention",
+    "steps": {
+      "connection": "Make sure the device is powered on. THRM connects to BS1 automatically; BS2/BS3 models must first be connected over Bluetooth in system settings.",
+      "release": "Close other hardware tools that may be using the sensors or device connection.",
+      "diagnostics": "If retrying still fails, export a diagnostics package and include it with your report."
+    },
+    "actions": {
+      "retry": "Reconnect",
+      "temperatureTest": "Test temperature",
+      "exportDiagnostics": "Export diagnostics"
+    },
+    "toasts": {
+      "retryStarted": "Device reconnection started",
+      "recoveryFailed": "Recovery failed",
+      "temperatureRecovered": "Temperature source recovered: {{temperature}}°C",
+      "temperatureUnavailable": "No valid temperature reading",
+      "temperatureUnavailableDescription": "Close other hardware monitoring tools and retry. The app will maintain a safe fan speed.",
+      "temperatureTestFailed": "Temperature test failed",
+      "diagnosticsExported": "Diagnostics package exported",
+      "diagnosticsExportFailed": "Diagnostics export failed"
+    }
+  },
   "common": {
     "appName": "THRM",
     "metaDescription": "A third-party driver and control utility for the FlyDigi laptop cooler lineup.",
