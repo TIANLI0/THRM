@@ -767,6 +767,16 @@
         "reinstallFailed": "PawnIO の再インストールに失敗しました: {{error}}"
       }
     },
+    "diagnostics": {
+      "title": "診断パッケージをエクスポート",
+      "description": "デバッグ情報・現在の設定・最近のログを ZIP にまとめて、問題報告に利用できます。",
+      "button": "エクスポート",
+      "toasts": {
+        "exported": "診断パッケージをエクスポートしました: {{path}}",
+        "cancelled": "エクスポートをキャンセルしました",
+        "failed": "診断パッケージのエクスポートに失敗しました: {{error}}"
+      }
+    },
     "customSpeedDialog": {
       "title": "リスク確認",
       "enabledTitle": "有効にすると:",

@@ -24,6 +24,7 @@ import {
   Sparkles,
   X,
   RotateCw,
+  FileArchive,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
@@ -618,7 +619,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       if (enabled) await apiService.setAutoStartWithMethod(true, isAdmin ? 'task_scheduler' : 'registry');
       else await apiService.setAutoStartWithMethod(false, '');
       onConfigChange(types.AppConfig.createFrom({ ...config, windowsAutoStart: enabled }));
-    } catch (e) { alert(t('controlPanel.alerts.autoStartFailed', { error: getErrorMessage(e) })); } finally { setLoading('windowsAutoStart', false); }
+    } catch (e) { toast.error(t('controlPanel.alerts.autoStartFailed', { error: getErrorMessage(e) })); } finally { setLoading('windowsAutoStart', false); }
   }, [config, onConfigChange, t]);
 
   const handleIgnoreDeviceOnReconnectChange = useCallback(async (enabled: boolean) => {
@@ -685,6 +686,22 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('pawnIOReinstall', false);
     }
   }, [fetchDebugInfo, t]);
+
+  const handleExportDiagnostics = useCallback(async () => {
+    setLoading('diagnosticsExport', true);
+    try {
+      const path = await apiService.exportDiagnosticPackage();
+      if (path) {
+        toast.success(t('controlPanel.diagnostics.toasts.exported', { path }));
+      } else {
+        toast.info(t('controlPanel.diagnostics.toasts.cancelled'));
+      }
+    } catch (error) {
+      toast.error(t('controlPanel.diagnostics.toasts.failed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('diagnosticsExport', false);
+    }
+  }, [t]);
 
   const handleSampleCountChange = useCallback(async (count: number) => {
     try {
@@ -949,7 +966,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       });
       await apiService.setLightStrip(submitConfig);
       onConfigChange(types.AppConfig.createFrom({ ...config, lightStrip: submitConfig }));
-    } catch (e) { alert(t('controlPanel.alerts.lightStripFailed', { error: getErrorMessage(e) })); } finally { setLoading('lightStrip', false); }
+    } catch (e) { toast.error(t('controlPanel.alerts.lightStripFailed', { error: getErrorMessage(e) })); } finally { setLoading('lightStrip', false); }
   }, [lightStripConfig, config, onConfigChange, requiredColorCount, t]);
 
   // 加载安装目录/用户目录下发现的自定义主题。
@@ -1735,6 +1752,30 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             {t('controlPanel.offline.message')}
           </div>
         )}
+
+        {/* ═══════════ 诊断包导出 ═══════════ */}
+        <div className="rounded-2xl border border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <FileArchive className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{t('controlPanel.diagnostics.title')}</div>
+                <div className="text-[11px] leading-relaxed text-muted-foreground">{t('controlPanel.diagnostics.description')}</div>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportDiagnostics}
+              loading={loadingStates.diagnosticsExport}
+              icon={<FileArchive className="h-3.5 w-3.5" />}
+            >
+              {t('controlPanel.diagnostics.button')}
+            </Button>
+          </div>
+        </div>
 
         {/* ═══════════ 5. 调试面板 ═══════════ */}
         <Collapsible open={debugPanelOpen} onOpenChange={setDebugPanelOpen}>

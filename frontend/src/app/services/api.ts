@@ -290,6 +290,11 @@ class ApiService {
     return await GetDebugInfo() as DebugInfo;
   }
 
+  async exportDiagnosticPackage(): Promise<string> {
+    const value = await (window as any).go?.main?.App?.ExportDiagnosticPackage?.();
+    return typeof value === 'string' ? value : '';
+  }
+
   async setDebugMode(enabled: boolean): Promise<void> {
     return await SetDebugMode(enabled);
   }

@@ -768,6 +768,16 @@
         "reinstallFailed": "重新安装 PawnIO 失败：{{error}}"
       }
     },
+    "diagnostics": {
+      "title": "导出诊断包",
+      "description": "将调试信息、当前配置和最近日志打包为 ZIP，便于反馈排查问题。",
+      "button": "导出",
+      "toasts": {
+        "exported": "诊断包已导出：{{path}}",
+        "cancelled": "已取消导出",
+        "failed": "导出诊断包失败：{{error}}"
+      }
+    },
     "customSpeedDialog": {
       "title": "风险提示",
       "enabledTitle": "启用后：",

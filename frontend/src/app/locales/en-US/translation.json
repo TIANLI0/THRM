@@ -768,6 +768,16 @@
         "reinstallFailed": "Failed to reinstall PawnIO: {{error}}"
       }
     },
+    "diagnostics": {
+      "title": "Export diagnostics",
+      "description": "Bundle debug info, current config, and recent logs into a ZIP to share for troubleshooting.",
+      "button": "Export",
+      "toasts": {
+        "exported": "Diagnostics exported: {{path}}",
+        "cancelled": "Export cancelled",
+        "failed": "Failed to export diagnostics: {{error}}"
+      }
+    },
     "customSpeedDialog": {
       "title": "Risk notice",
       "enabledTitle": "After enabling:",

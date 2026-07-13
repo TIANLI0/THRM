@@ -15,6 +15,8 @@ export function DisconnectDevice():Promise<void>;
 
 export function DownloadAndInstallUpdate(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
 
+export function ExportDiagnosticPackage():Promise<string>;
+
 export function ExportFanCurveProfiles():Promise<string>;
 
 export function GetAppVersion():Promise<string>;
