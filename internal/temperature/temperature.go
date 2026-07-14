@@ -82,10 +82,9 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		if strings.TrimSpace(temp.BridgeMsg) == "" {
 			temp.BridgeMsg = "CPU/GPU 温度读取失败，可重新初始化温度监控；若 CPU 仍为空，请安装/更新 PawnIO 或关闭其它硬件监控工具。"
 		}
-	} else if r.bridgeManager != nil {
-		temp.BridgeOk = false
-		temp.BridgeMsg = "当前平台不支持桥接程序，已使用内置温度读取。"
 	}
+	// 桥接程序为 Windows 专用（LibreHardwareMonitor/PawnIO）。在不支持的平台（如 Linux）
+	// 上，内置传感器读取才是正常路径，不应作为错误提示，因此保持 BridgeOk 默认的 true。
 
 	// 读取CPU温度
 	temp.CPUTemp = r.readCPUTemperature()

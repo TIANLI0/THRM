@@ -10,7 +10,8 @@ import (
 )
 
 // TestBridgeFallbackPath verifies temperature reading falls back to native
-// when the bridge is not supported (standard Linux path).
+// when the bridge is not supported (standard Linux path). On these platforms
+// the native path is the normal path, so no bridge warning must be raised.
 func TestBridgeFallbackPath(t *testing.T) {
 	oldExec := execHelperCommand
 	defer func() { execHelperCommand = oldExec }()
@@ -29,13 +30,12 @@ func TestBridgeFallbackPath(t *testing.T) {
 	sel := types.TemperatureSelection{TempSource: types.TempSourceMax}
 	result := r.Read(sel)
 
-	if result.BridgeOk {
-		t.Error("BridgeOk should be false when bridge is not supported")
+	if !result.BridgeOk {
+		t.Error("BridgeOk should stay true when the bridge is not supported (native path is normal)")
 	}
-	if result.BridgeMsg == "" {
-		t.Error("BridgeMsg should explain why bridge is unavailable")
+	if result.BridgeMsg != "" {
+		t.Errorf("BridgeMsg should be empty when the bridge is not supported, got: %s", result.BridgeMsg)
 	}
-	t.Logf("Bridge fallback message: %s", result.BridgeMsg)
 	t.Logf("CPU temp: %d, GPU temp: %d", result.CPUTemp, result.GPUTemp)
 }
 
