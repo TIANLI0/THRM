@@ -8,6 +8,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/autostart"
 	"github.com/TIANLI0/THRM/internal/config"
 	"github.com/TIANLI0/THRM/internal/curveprofiles"
+	"github.com/TIANLI0/THRM/internal/device"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/powernotify"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
@@ -147,6 +148,16 @@ func (a *CoreApp) Start() error {
 		a.powerNotifyStop = stop
 		a.logInfo("已注册系统睡眠/唤醒通知")
 	}
+	if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
+		device.VendorID,
+		[]uint16{device.ProductIDBS2PRO, device.ProductIDBS3, device.ProductIDBS3PRO, device.ProductIDBS2},
+		a.onSupportedHIDArrival,
+	); err != nil {
+		a.logDebug("注册 HID 接口到达通知失败，将使用周期性重试兜底: %v", err)
+	} else {
+		a.hidArrivalNotifyStop = stop
+		a.logInfo("已注册飞智 HID 设备接口到达通知")
+	}
 
 	// 启动健康监控
 	if cfg.GuiMonitoring {
@@ -198,6 +209,10 @@ func (a *CoreApp) Stop() {
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
+	}
+	if a.hidArrivalNotifyStop != nil {
+		a.safeRun("hid-arrival-notify-unregister", a.hidArrivalNotifyStop)
+		a.hidArrivalNotifyStop = nil
 	}
 	if done := a.stopTemperatureMonitoring(); done != nil {
 		select {

@@ -29,6 +29,10 @@ const (
 
 var supportedHIDProductIDs = []uint16{ProductIDBS2PRO, ProductIDBS3, ProductIDBS3PRO, ProductIDBS2}
 
+func shouldSkipBLEFallback(preferLastTransport bool, lastDeviceType string) bool {
+	return preferLastTransport && lastDeviceType == types.DeviceTypeHID
+}
+
 const (
 	maxConsecutiveReadErrors          = 20
 	maxConsecutiveRealtimeWriteErrors = 3
@@ -57,6 +61,7 @@ type Manager struct {
 	isConnected      bool
 	productID        uint16 // 当前连接的产品ID
 	deviceType       string // "hid" 或 "ble"
+	lastDeviceType   string // last successful transport, retained across disconnects
 	mutex            sync.RWMutex
 	logger           types.Logger
 	currentFanData   atomic.Pointer[types.FanData]
@@ -126,8 +131,20 @@ func (m *Manager) Exit() error {
 	return hid.Exit()
 }
 
-// Connect 连接设备（先尝试 HID BS2/BS2PRO/BS3/BS3PRO，再尝试 BLE BS1）
+// Connect performs full discovery and is used for startup and explicit user
+// requests where the attached model may have changed.
 func (m *Manager) Connect() (bool, map[string]string) {
+	return m.connect(false)
+}
+
+// Reconnect prefers the last successful transport. A Bluetooth-connected
+// BS2PRO is exposed by Windows as HID, so falling through to the BS1 BLE scan
+// while that HID interface is still re-enumerating only delays the next retry.
+func (m *Manager) Reconnect() (bool, map[string]string) {
+	return m.connect(true)
+}
+
+func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -159,6 +176,7 @@ func (m *Manager) Connect() (bool, map[string]string) {
 		m.isConnected = true
 		m.productID = connectedProductID
 		m.deviceType = types.DeviceTypeHID
+		m.lastDeviceType = types.DeviceTypeHID
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()
 		m.connectionGen.Add(1)
@@ -200,6 +218,11 @@ func (m *Manager) Connect() (bool, map[string]string) {
 		return true, info
 	}
 
+	if shouldSkipBLEFallback(preferLastTransport, m.lastDeviceType) {
+		m.logInfo("上次连接设备为 HID，等待 Windows 重新枚举 HID 接口，跳过仅用于 BS1 的 BLE 扫描")
+		return false, nil
+	}
+
 	// HID 连接失败，尝试 BLE 连接 (BS1)
 	m.logInfo("HID 设备未找到，尝试 BLE 扫描 BS1 设备...")
 	m.mutex.Unlock() // 释放锁，BLE 扫描可能耗时较长
@@ -214,6 +237,7 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	if success {
 		m.isConnected = true
 		m.deviceType = types.DeviceTypeBLE
+		m.lastDeviceType = types.DeviceTypeBLE
 		m.productID = 0
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()

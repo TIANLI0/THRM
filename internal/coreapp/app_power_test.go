@@ -205,7 +205,7 @@ func TestReconnectDelayElapsed(t *testing.T) {
 		cancel := make(chan struct{})
 		result := make(chan bool, 1)
 		go func() {
-			result <- reconnectDelayElapsed(time.Second, cancel)
+			result <- reconnectDelayElapsed(time.Second, cancel, make(chan struct{}))
 		}()
 
 		close(cancel)
@@ -220,8 +220,26 @@ func TestReconnectDelayElapsed(t *testing.T) {
 	})
 
 	t.Run("zero delay runs immediately", func(t *testing.T) {
-		if !reconnectDelayElapsed(0, make(chan struct{})) {
+		if !reconnectDelayElapsed(0, make(chan struct{}), make(chan struct{})) {
 			t.Fatal("zero reconnect delay did not elapse immediately")
+		}
+	})
+
+	t.Run("HID arrival interrupts backoff", func(t *testing.T) {
+		wake := make(chan struct{}, 1)
+		result := make(chan bool, 1)
+		go func() {
+			result <- reconnectDelayElapsed(time.Second, make(chan struct{}), wake)
+		}()
+
+		wake <- struct{}{}
+		select {
+		case elapsed := <-result:
+			if !elapsed {
+				t.Fatal("HID arrival did not release reconnect backoff")
+			}
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("HID arrival did not wake reconnect promptly")
 		}
 	})
 }

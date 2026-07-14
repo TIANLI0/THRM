@@ -173,14 +173,16 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 	}
 	cancel := make(chan struct{})
 	done := make(chan struct{})
+	wake := make(chan struct{}, 1)
 	a.reconnectCancel = cancel
 	a.reconnectDone = done
+	a.reconnectWake = wake
 	a.reconnectMutex.Unlock()
 
 	delays := cloneReconnectDelays(retryDelays)
 	a.safeGo("reconnect@"+reason, func() {
-		defer a.finishReconnect(cancel, done)
-		a.runReconnectLoop(reason, delays, cancel)
+		defer a.finishReconnect(cancel, done, wake)
+		a.runReconnectLoop(reason, delays, cancel, wake)
 	})
 }
 
@@ -195,13 +197,16 @@ func (a *CoreApp) cancelReconnect() {
 	a.reconnectMutex.Unlock()
 }
 
-func (a *CoreApp) finishReconnect(cancel, done chan struct{}) {
+func (a *CoreApp) finishReconnect(cancel, done, wake chan struct{}) {
 	a.reconnectMutex.Lock()
 	if a.reconnectCancel == cancel {
 		a.reconnectCancel = nil
 	}
 	if a.reconnectDone == done {
 		a.reconnectDone = nil
+	}
+	if a.reconnectWake == wake {
+		a.reconnectWake = nil
 	}
 	a.reconnectInProgress.Store(false)
 	// 唤醒恢复可能正等待此通道；先在互斥保护下清除进行中标记，再通知等待者，
@@ -229,7 +234,7 @@ func (a *CoreApp) requestReconnectAfterCurrent(reason string, retryDelays []time
 	})
 }
 
-func reconnectDelayElapsed(delay time.Duration, cancel <-chan struct{}) bool {
+func reconnectDelayElapsed(delay time.Duration, cancel, wake <-chan struct{}) bool {
 	if delay <= 0 {
 		return true
 	}
@@ -240,11 +245,27 @@ func reconnectDelayElapsed(delay time.Duration, cancel <-chan struct{}) bool {
 		return true
 	case <-cancel:
 		return false
+	case <-wake:
+		return true
 	}
 }
 
+func (a *CoreApp) wakeReconnect() bool {
+	a.reconnectMutex.Lock()
+	wake := a.reconnectWake
+	a.reconnectMutex.Unlock()
+	if wake == nil {
+		return false
+	}
+	select {
+	case wake <- struct{}{}:
+	default:
+	}
+	return true
+}
+
 // runReconnectLoop 安排设备重连
-func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration, cancel <-chan struct{}) {
+func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration, cancel, wake <-chan struct{}) {
 	a.logInfo("启动设备重连流程: %s", reason)
 
 	for i, delay := range retryDelays {
@@ -272,7 +293,7 @@ func (a *CoreApp) runReconnectLoop(reason string, retryDelays []time.Duration, c
 
 		if delay > 0 {
 			a.logInfo("等待 %v 后尝试第 %d 次重连...", delay, i+1)
-			if !reconnectDelayElapsed(delay, cancel) {
+			if !reconnectDelayElapsed(delay, cancel, wake) {
 				a.logInfo("重连流程已取消: %s", reason)
 				return
 			}
@@ -464,6 +485,23 @@ func (a *CoreApp) onSystemResume() {
 	a.triggerResumeRecovery("power-event", 0, true)
 }
 
+func (a *CoreApp) onSupportedHIDArrival(devicePath string) {
+	if a.stopping.Load() || a.systemSuspended.Load() || a.autoReconnectSuppressed.Load() {
+		return
+	}
+	a.mutex.RLock()
+	connected := a.isConnected
+	a.mutex.RUnlock()
+	if connected || a.deviceManager.IsConnected() {
+		return
+	}
+
+	a.logInfo("检测到飞智 HID 接口已就绪，立即触发设备重连: %s", devicePath)
+	if !a.wakeReconnect() {
+		a.requestReconnect("hid-interface-arrival", []time.Duration{0})
+	}
+}
+
 // triggerResumeRecovery 以节流方式触发唤醒恢复，避免电源事件与基于时间间隔的检测重复执行。
 func (a *CoreApp) triggerResumeRecovery(source string, gap time.Duration, forceReconnect bool) {
 	nowUnix := time.Now().UnixNano()
@@ -555,8 +593,8 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 	}
 
 	a.requestReconnectAfterCurrent("system-resume", []time.Duration{
-		systemResumeReconnectDelay,
-		8 * time.Second,
+		0,
+		15 * time.Second,
 		15 * time.Second,
 		20 * time.Second,
 		30 * time.Second,
@@ -620,7 +658,7 @@ func (a *CoreApp) connectDevice(manual bool) bool {
 	a.connectDone = done
 	a.connectMutex.Unlock()
 
-	success := a.connectDeviceOnce(generation)
+	success := a.connectDeviceOnce(generation, manual)
 
 	a.connectMutex.Lock()
 	a.connectResult = success
@@ -632,8 +670,14 @@ func (a *CoreApp) connectDevice(manual bool) bool {
 	return success
 }
 
-func (a *CoreApp) connectDeviceOnce(generation uint64) bool {
-	success, deviceInfo := a.deviceManager.Connect()
+func (a *CoreApp) connectDeviceOnce(generation uint64, manual bool) bool {
+	var success bool
+	var deviceInfo map[string]string
+	if manual {
+		success, deviceInfo = a.deviceManager.Connect()
+	} else {
+		success, deviceInfo = a.deviceManager.Reconnect()
+	}
 	if success && !a.isConnectionAttemptCurrent(generation) {
 		a.logInfo("连接结果已过期，关闭新建立的设备连接")
 		a.deviceManager.DisconnectSilently()

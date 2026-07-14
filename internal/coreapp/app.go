@@ -60,7 +60,8 @@ type CoreApp struct {
 	stopping                atomic.Bool
 	lastResumeRecoveryUnix  int64
 
-	powerNotifyStop func()
+	powerNotifyStop      func()
+	hidArrivalNotifyStop func()
 
 	guiLastResponse   int64
 	guiMonitorEnabled bool
@@ -82,18 +83,18 @@ type CoreApp struct {
 	reconnectMutex        sync.Mutex
 	reconnectCancel       chan struct{}
 	reconnectDone         chan struct{}
+	reconnectWake         chan struct{}
 	manualGearLevelMemory map[string]string
 }
 
 const (
-	systemResumeDetectionFloor   = 20 * time.Second
-	systemResumeDetectionCeiling = 45 * time.Second
-	systemResumeRecoveryCooldown = 15 * time.Second
-	systemResumeReconnectDelay   = 3 * time.Second
-	suspendCleanupGrace          = 2 * time.Second
-	pawnIOInstallerTimeout       = 90 * time.Second
-	pawnIOAlreadyExistsExitCode  = 183
-	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO`
+	systemResumeDetectionFloor   = 20 * time.Second                                             // 系统恢复检测阈值下限
+	systemResumeDetectionCeiling = 45 * time.Second                                             // 系统恢复检测阈值上限
+	systemResumeRecoveryCooldown = 5 * time.Second                                              // 系统恢复后自动重连的冷却时间
+	suspendCleanupGrace          = 2 * time.Second                                              // 挂起清理宽限时间
+	pawnIOInstallerTimeout       = 90 * time.Second                                             // PawnIO 安装程序超时时间
+	pawnIOAlreadyExistsExitCode  = 183                                                          // PawnIO 安装程序退出码，表示已存在安装
+	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO` // PawnIO 注册表路径
 )
 
 func systemResumeDetectionThreshold(expectedInterval time.Duration) time.Duration {
