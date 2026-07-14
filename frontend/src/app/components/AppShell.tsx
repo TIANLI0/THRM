@@ -2,7 +2,7 @@
 
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Copy,
   LineChart,
@@ -63,7 +63,7 @@ function getTabTransitionDirection(fromTab: ActiveTab, toTab: ActiveTab) {
   return toIndex > fromIndex ? 1 : -1;
 }
 
-const TAB_CONTENT_VARIANTS = {
+const TAB_CONTENT_VARIANTS: Variants = {
   enter: (direction: number) => ({
     opacity: 0,
     y: direction === 0 ? 8 : direction * 18,
@@ -71,10 +71,18 @@ const TAB_CONTENT_VARIANTS = {
   center: {
     opacity: 1,
     y: 0,
+    transition: {
+      duration: 0.19,
+      ease: [0.22, 1, 0.36, 1],
+    },
   },
   exit: (direction: number) => ({
     opacity: 0,
     y: direction === 0 ? -6 : direction * -14,
+    transition: {
+      duration: 0.16,
+      ease: [0.22, 1, 0.36, 1],
+    },
   }),
 };
 
@@ -810,10 +818,7 @@ export default function AppShell({
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{
-                  duration: 0.2,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
+                data-page-reveal="cards"
                 className="w-full min-w-0 px-1 pb-2 will-change-transform"
               >
                 {contentMap[activeTab]}

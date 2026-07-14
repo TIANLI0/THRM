@@ -158,6 +158,41 @@
   display: none !important;
 }
 
+@keyframes page-card-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-page-reveal="cards"] > * > * {
+  animation: page-card-fade 0.285s ease-out both;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(5) {
+  animation-delay: 0.32s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-page-reveal="cards"] > * > * {
+    animation: none;
+  }
+}
+
 /* body 画布必须透明，否则系统材质会被 @layer base 的 bg-background 完全挡住 */
 body:has(.glacier-native-backdrop) {
   background: transparent;

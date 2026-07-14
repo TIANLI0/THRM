@@ -538,7 +538,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const windowBlurOptions = useMemo(
     () => [
       { value: 'auto', label: t('controlPanel.options.windowBlur.auto') },
-      { value: 'on', label: t('controlPanel.options.windowBlur.on') },
+      { value: 'acrylic', label: t('controlPanel.options.windowBlur.acrylic') },
+      { value: 'mica', label: t('controlPanel.options.windowBlur.mica') },
+      { value: 'tabbed', label: t('controlPanel.options.windowBlur.tabbed') },
       { value: 'off', label: t('controlPanel.options.windowBlur.off') },
     ],
     [locale, t],
@@ -1722,7 +1724,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           >
             <div className="w-36">
               <Select
-                value={((config as any).windowBlur || 'auto') as string}
+                value={((config as any).windowBlur === 'on' ? 'mica' : ((config as any).windowBlur || 'auto')) as string}
                 onChange={(v: string | number) => handleWindowBlurChange(String(v))}
                 options={windowBlurOptions}
                 size="sm"

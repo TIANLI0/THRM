@@ -52,6 +52,9 @@ func TestNormalizeWindowBlur(t *testing.T) {
 	}{
 		{WindowBlurAuto, WindowBlurAuto},
 		{WindowBlurOn, WindowBlurOn},
+		{"acrylic", "acrylic"},
+		{"mica", "mica"},
+		{"tabbed", "tabbed"},
 		{WindowBlurOff, WindowBlurOff},
 		{"invalid", WindowBlurAuto},
 	}
