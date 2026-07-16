@@ -29,6 +29,32 @@ const (
 
 var supportedHIDProductIDs = []uint16{ProductIDBS2PRO, ProductIDBS3, ProductIDBS3PRO, ProductIDBS2}
 
+// idleBLEScanCooldown 限制“本会话从未连接成功”时自动重连的 BLE 扫描频率。
+//
+// Windows 上 BLE 扫描经由 WinRT 广播监听，每条收到的广播都会产生原生层分配，
+// 在广播密集的环境（办公室）里每 30 秒一次的健康检查扫描会让原生内存无限增长
+// （Go 堆不可见）。BS1 用户开机首连与手动连接仍走全量发现，不受此冷却限制。
+const idleBLEScanCooldown = 15 * time.Minute
+
+func shouldSkipBLEFallback(preferLastTransport bool, lastDeviceType string, sinceLastBLEScan time.Duration) bool {
+	if !preferLastTransport {
+		return false
+	}
+	switch lastDeviceType {
+	case types.DeviceTypeHID:
+		// 上次是 HID：等待 Windows 重新枚举 HID 接口即可，BLE 扫描只会白白泄漏。
+		return true
+	case types.DeviceTypeBLE:
+		// 本会话确实在用 BS1，设备大概率就在附近，保持每次重连都扫描。
+		return false
+	default:
+		// 本会话从未连接成功：设备很可能根本不在（未携带/未通电），
+		// 只保留低频兜底扫描，避免健康检查每 30 秒触发一次原生内存泄漏。
+		// sinceLastBLEScan < 0 表示本会话尚未扫描过，放行首次扫描。
+		return sinceLastBLEScan >= 0 && sinceLastBLEScan < idleBLEScanCooldown
+	}
+}
+
 const (
 	maxConsecutiveReadErrors          = 20
 	maxConsecutiveRealtimeWriteErrors = 3
@@ -57,6 +83,7 @@ type Manager struct {
 	isConnected      bool
 	productID        uint16 // 当前连接的产品ID
 	deviceType       string // "hid" 或 "ble"
+	lastDeviceType   string // last successful transport, retained across disconnects
 	mutex            sync.RWMutex
 	logger           types.Logger
 	currentFanData   atomic.Pointer[types.FanData]
@@ -77,6 +104,8 @@ type Manager struct {
 
 	// BLE 管理器 (BS1)
 	bleManager *BLEManager
+	// lastBLEScanAt 记录最近一次自动重连触发 BLE 扫描的时间，用于空闲冷却限频。
+	lastBLEScanAt time.Time
 
 	// 回调函数
 	onFanDataUpdate func(data *types.FanData)
@@ -98,6 +127,20 @@ func NewManager(logger types.Logger) *Manager {
 	return &Manager{
 		logger:     logger,
 		bleManager: NewBLEManager(logger),
+	}
+}
+
+// SeedLastTransport 用持久化的“上次成功连接方式”初始化自动重连偏好，
+// 使 BLE 扫描的跳过/限频策略在进程重启后依然成立。
+// 仅在本会话尚未建立过连接时生效，且只接受已知的传输类型。
+func (m *Manager) SeedLastTransport(transport string) {
+	if transport != types.DeviceTypeHID && transport != types.DeviceTypeBLE {
+		return
+	}
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.lastDeviceType == "" {
+		m.lastDeviceType = transport
 	}
 }
 
@@ -126,8 +169,20 @@ func (m *Manager) Exit() error {
 	return hid.Exit()
 }
 
-// Connect 连接设备（先尝试 HID BS2/BS2PRO/BS3/BS3PRO，再尝试 BLE BS1）
+// Connect performs full discovery and is used for startup and explicit user
+// requests where the attached model may have changed.
 func (m *Manager) Connect() (bool, map[string]string) {
+	return m.connect(false)
+}
+
+// Reconnect prefers the last successful transport. A Bluetooth-connected
+// BS2PRO is exposed by Windows as HID, so falling through to the BS1 BLE scan
+// while that HID interface is still re-enumerating only delays the next retry.
+func (m *Manager) Reconnect() (bool, map[string]string) {
+	return m.connect(true)
+}
+
+func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -159,6 +214,7 @@ func (m *Manager) Connect() (bool, map[string]string) {
 		m.isConnected = true
 		m.productID = connectedProductID
 		m.deviceType = types.DeviceTypeHID
+		m.lastDeviceType = types.DeviceTypeHID
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()
 		m.connectionGen.Add(1)
@@ -200,8 +256,22 @@ func (m *Manager) Connect() (bool, map[string]string) {
 		return true, info
 	}
 
+	var sinceLastBLEScan time.Duration = -1
+	if !m.lastBLEScanAt.IsZero() {
+		sinceLastBLEScan = time.Since(m.lastBLEScanAt)
+	}
+	if shouldSkipBLEFallback(preferLastTransport, m.lastDeviceType, sinceLastBLEScan) {
+		if m.lastDeviceType == types.DeviceTypeHID {
+			m.logInfo("上次连接设备为 HID，等待 Windows 重新枚举 HID 接口，跳过仅用于 BS1 的 BLE 扫描")
+		} else {
+			m.logDebug("本会话尚未连接过设备，BLE 扫描处于冷却期（距上次 %v），跳过本轮扫描", sinceLastBLEScan.Round(time.Second))
+		}
+		return false, nil
+	}
+
 	// HID 连接失败，尝试 BLE 连接 (BS1)
 	m.logInfo("HID 设备未找到，尝试 BLE 扫描 BS1 设备...")
+	m.lastBLEScanAt = time.Now()
 	m.mutex.Unlock() // 释放锁，BLE 扫描可能耗时较长
 	success, bleInfo := m.bleManager.Connect()
 	m.mutex.Lock() // 重新获取锁
@@ -214,6 +284,7 @@ func (m *Manager) Connect() (bool, map[string]string) {
 	if success {
 		m.isConnected = true
 		m.deviceType = types.DeviceTypeBLE
+		m.lastDeviceType = types.DeviceTypeBLE
 		m.productID = 0
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()

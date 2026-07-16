@@ -1,6 +1,7 @@
 'use client';
 
 import { memo, useEffect, useMemo, useState } from 'react';
+import ConnectionRecoveryPanel from './ConnectionRecoveryPanel';
 import { motion } from 'framer-motion';
 import {
   Activity,
@@ -109,7 +110,7 @@ const SemiGauge = memo(function SemiGauge({ value, color, children }: SemiGaugeP
   const dashOffset = arc * (1 - safe);
 
   return (
-    <div className="relative w-full max-w-[15rem] min-[1800px]:max-w-[17.5rem]">
+    <div className="relative w-full max-w-60 min-[1800px]:max-w-70">
       <svg
         viewBox="0 0 200 116"
         className="block w-full"
@@ -217,12 +218,46 @@ const getTempArcColor = (temp: number) => {
 const TempGaugeDisplay = memo(function TempGaugeDisplay({
   temp,
   ready,
+  laptopFanRpm = 0,
+  monitoringDisabled = false,
 }: {
   temp: number | undefined;
   /** 后端首次推送有效温度后置为 true；之前显示占位避免误读 0 °C */
   ready: boolean;
+  /** 笔记本内置风扇转速（仅 Uniwill/同方机型可读）；0 或不支持时不渲染 */
+  laptopFanRpm?: number;
+  /** 用户在设置中停用了该路温度监测（如混合显卡停用 GPU 监测） */
+  monitoringDisabled?: boolean;
 }) {
   const { t } = useTranslation();
+
+  // 用户已停用监测 → 灰色占位 + "已停用监测"，与"读取中"区分开。
+  // 本机风扇转速走 EC 读取、与 GPU 温度监测互不影响，停用后仍照常显示。
+  if (monitoringDisabled) {
+    return (
+      <div className="flex h-full w-full max-w-[20rem] min-[1800px]:max-w-[22rem] flex-1 flex-col items-center justify-end">
+        <SemiGauge value={0} color="var(--muted-foreground)">
+          <div className="flex items-baseline gap-0.5">
+            <span className="text-[28px] min-[1800px]:text-[36px] font-bold leading-none tabular-nums tracking-tight text-muted-foreground/70">--</span>
+            <span className="text-xs font-medium text-muted-foreground/70">°C</span>
+          </div>
+          {laptopFanRpm > 0 ? (
+            <span
+              className="mt-1 inline-flex items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground"
+              title={t('deviceStatus.metrics.laptopFan')}
+            >
+              <Fan className="h-3 w-3" />
+              {laptopFanRpm} RPM
+            </span>
+          ) : (
+            <span className="mt-1 text-[11px] leading-none text-muted-foreground">
+              {t('deviceStatus.tempGauge.monitoringDisabled')}
+            </span>
+          )}
+        </SemiGauge>
+      </div>
+    );
+  }
 
   // 未就绪 → 占位：灰色弧、"--"、"读取中…"，不进入正常状态色
   if (!ready) {
@@ -252,7 +287,18 @@ const TempGaugeDisplay = memo(function TempGaugeDisplay({
           <AnimatedTemperatureValue temp={temp} colorClass={status.color} />
           <span className="text-xs font-medium text-muted-foreground">°C</span>
         </div>
-        <span className="mt-1 text-[11px] leading-none text-muted-foreground">{t(status.labelKey)}</span>
+        {/* 支持读取本机风扇时，用转速替换状态文字（同一行位，高度不变）；不支持时保持状态文字 */}
+        {laptopFanRpm > 0 ? (
+          <span
+            className="mt-1 inline-flex items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground"
+            title={t('deviceStatus.metrics.laptopFan')}
+          >
+            <Fan className="h-3 w-3" />
+            {laptopFanRpm} RPM
+          </span>
+        ) : (
+          <span className="mt-1 text-[11px] leading-none text-muted-foreground">{t(status.labelKey)}</span>
+        )}
       </SemiGauge>
     </div>
   );
@@ -697,6 +743,9 @@ export default function DeviceStatus({
             : t('deviceStatus.maxRpmHint.waiting');
   const cpuPowerText = (temperature?.cpuPower ?? 0) > 0 ? `${Math.round(temperature?.cpuPower ?? 0)}W` : '--';
   const gpuPowerText = (temperature?.gpuPower ?? 0) > 0 ? `${Math.round(temperature?.gpuPower ?? 0)}W` : '--';
+  // 笔记本内置风扇转速（机械革命等 Uniwill/同方机型）；本机不支持时恒为 0，对应角标隐藏。
+  const laptopCpuFanRpm = temperature?.cpuFanRpm ?? 0;
+  const laptopGpuFanRpm = temperature?.gpuFanRpm ?? 0;
 
   return (
     <div className="space-y-3 min-[1800px]:space-y-4">
@@ -780,8 +829,29 @@ export default function DeviceStatus({
         </div>
       </div>
 
+      {/* ── Connection guide (centered in the empty area while offline) ── */}
+      {!isConnected && (
+        <div className="flex min-h-[56vh] items-center justify-center px-1 py-2">
+          <ConnectionRecoveryPanel
+            connected={false}
+            coreError={coreServiceError}
+            onRetry={onConnect}
+          />
+        </div>
+      )}
+
+      {/* ── Recovery guide while connected but core/temperature has issues ── */}
+      {isConnected && (!!coreServiceError || (tempPushed && referenceTemp <= 0)) && (
+        <ConnectionRecoveryPanel
+          connected
+          coreError={coreServiceError}
+          temperatureUnavailable={tempPushed && referenceTemp <= 0}
+          onRetry={onConnect}
+        />
+      )}
+
       {/* ── Metric cards ── */}
-      {isConnected ? (
+      {isConnected && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -794,7 +864,7 @@ export default function DeviceStatus({
               icon={<Cpu className="h-4 w-4" />}
               label={t('deviceStatus.metrics.cpuTemperature')}
             />
-            <TempGaugeDisplay temp={temperature?.cpuTemp} ready={cpuReady} />
+            <TempGaugeDisplay temp={temperature?.cpuTemp} ready={cpuReady} laptopFanRpm={laptopCpuFanRpm} />
           </div>
 
           {/* GPU */}
@@ -803,7 +873,12 @@ export default function DeviceStatus({
               icon={<Gpu className="h-4 w-4" />}
               label={t('deviceStatus.metrics.gpuTemperature')}
             />
-            <TempGaugeDisplay temp={temperature?.gpuTemp} ready={gpuReady} />
+            <TempGaugeDisplay
+              temp={temperature?.gpuTemp}
+              ready={gpuReady}
+              laptopFanRpm={laptopGpuFanRpm}
+              monitoringDisabled={!!(config as any).disableGpuMonitoring}
+            />
           </div>
 
           {/* Fan */}
@@ -822,22 +897,6 @@ export default function DeviceStatus({
               maxRpm={maxGearHighLevelRpm || 4000}
             />
           </div>
-        </motion.div>
-      ) : (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3 }}
-          className="rounded-xl border border-dashed border-border bg-card p-14 text-center"
-        >
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-            <Bluetooth className="h-7 w-7 text-muted-foreground" />
-          </div>
-          <h3 className="mb-1.5 text-lg font-semibold">{t('deviceStatus.disconnected.title')}</h3>
-          <p className="mb-5 text-base text-muted-foreground">{t('deviceStatus.disconnected.description')}</p>
-          <Button onClick={onConnect} size="md" icon={<RotateCw className="h-4 w-4" />}>
-            {t('deviceStatus.actions.connectDevice')}
-          </Button>
         </motion.div>
       )}
 
@@ -961,6 +1020,7 @@ export default function DeviceStatus({
               </div>
               <div className="text-sm font-semibold tabular-nums">{gpuPowerText}</div>
             </div>
+
           </div>
 
         </motion.div>

@@ -2,7 +2,7 @@
 
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Copy,
   LineChart,
@@ -63,7 +63,7 @@ function getTabTransitionDirection(fromTab: ActiveTab, toTab: ActiveTab) {
   return toIndex > fromIndex ? 1 : -1;
 }
 
-const TAB_CONTENT_VARIANTS = {
+const TAB_CONTENT_VARIANTS: Variants = {
   enter: (direction: number) => ({
     opacity: 0,
     y: direction === 0 ? 8 : direction * 18,
@@ -71,10 +71,18 @@ const TAB_CONTENT_VARIANTS = {
   center: {
     opacity: 1,
     y: 0,
+    transition: {
+      duration: 0.19,
+      ease: [0.22, 1, 0.36, 1],
+    },
   },
   exit: (direction: number) => ({
     opacity: 0,
     y: direction === 0 ? -6 : direction * -14,
+    transition: {
+      duration: 0.16,
+      ease: [0.22, 1, 0.36, 1],
+    },
   }),
 };
 
@@ -228,8 +236,9 @@ function StatusBadges({
       <span
         className={clsx(
           baseClass,
+          'glacier-status-chip',
           isConnected
-            ? 'border-primary/20 bg-primary/10 text-primary'
+            ? 'glacier-status-chip--tint border-primary/20 bg-primary/10 text-primary'
             : 'border-border bg-card text-muted-foreground',
         )}
       >
@@ -240,7 +249,8 @@ function StatusBadges({
       <span
         className={clsx(
           baseClass,
-          autoControl ? 'border-primary/20 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground',
+          'glacier-status-chip',
+          autoControl ? 'glacier-status-chip--tint border-primary/20 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground',
         )}
       >
         <Sparkles className="h-3.5 w-3.5" />
@@ -249,13 +259,13 @@ function StatusBadges({
 
       {isConnected && (
         <>
-          <span className={clsx(baseClass, 'border-border bg-card font-semibold shadow-sm shadow-black/5')}>
+          <span className={clsx(baseClass, 'glacier-status-chip border-border bg-card font-semibold shadow-sm shadow-black/5')}>
             <Thermometer className={clsx('h-3.5 w-3.5', getTempColor(temperature?.maxTemp))} />
             <span className={clsx(getTempColor(temperature?.maxTemp))}>
               {temperature?.maxTemp ?? '--'}°C
             </span>
           </span>
-          <span className={clsx(baseClass, 'border-border bg-card font-semibold text-primary shadow-sm shadow-black/5')}>
+          <span className={clsx(baseClass, 'glacier-status-chip border-border bg-card font-semibold text-primary shadow-sm shadow-black/5')}>
             <span className={clsx('inline-flex', fanSpinDuration && 'animate-spin')} style={fanSpinStyle}>
               <Fan className="h-3.5 w-3.5" />
             </span>
@@ -810,10 +820,7 @@ export default function AppShell({
                 initial="enter"
                 animate="center"
                 exit="exit"
-                transition={{
-                  duration: 0.2,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
+                data-page-reveal="cards"
                 className="w-full min-w-0 px-1 pb-2 will-change-transform"
               >
                 {contentMap[activeTab]}

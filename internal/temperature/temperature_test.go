@@ -6,16 +6,28 @@ import (
 	"time"
 )
 
+func TestResolveControlTempFallsBackToAvailableSensor(t *testing.T) {
+	if got := resolveControlTemp(0, 67, "cpu"); got != 67 {
+		t.Fatalf("CPU source fallback = %d, want 67", got)
+	}
+	if got := resolveControlTemp(58, 0, "gpu"); got != 58 {
+		t.Fatalf("GPU source fallback = %d, want 58", got)
+	}
+	if got := resolveControlTemp(0, 0, "max"); got != 0 {
+		t.Fatalf("empty fallback = %d, want 0", got)
+	}
+}
+
 type testLogger struct{}
 
-func (testLogger) Info(string, ...any)           {}
-func (testLogger) Error(string, ...any)          {}
-func (testLogger) Warn(string, ...any)           {}
-func (testLogger) Debug(string, ...any)          {}
-func (testLogger) Close()                        {}
-func (testLogger) CleanOldLogs()                 {}
-func (testLogger) SetDebugMode(bool)             {}
-func (testLogger) GetLogDir() string             { return "" }
+func (testLogger) Info(string, ...any)  {}
+func (testLogger) Error(string, ...any) {}
+func (testLogger) Warn(string, ...any)  {}
+func (testLogger) Debug(string, ...any) {}
+func (testLogger) Close()               {}
+func (testLogger) CleanOldLogs()        {}
+func (testLogger) SetDebugMode(bool)    {}
+func (testLogger) GetLogDir() string    { return "" }
 
 func TestDetectGPUVendorCachesResult(t *testing.T) {
 	oldExec := execHelperCommand

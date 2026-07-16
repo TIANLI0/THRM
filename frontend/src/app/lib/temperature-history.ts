@@ -5,9 +5,12 @@ export interface TemperatureHistoryPoint {
   cpuPower: number;
   gpuPower: number;
   fanRpm: number;
+  /** 笔记本内置 CPU/GPU 风扇转速；0 表示本机不支持读取 */
+  cpuFanRpm: number;
+  gpuFanRpm: number;
 }
 
-export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuPower' | 'gpuPower';
+export type HistorySeriesKey = 'cpu' | 'gpu' | 'fan' | 'cpuFan' | 'gpuFan' | 'cpuPower' | 'gpuPower';
 
 export const CORE_HISTORY_LIMIT = 720;
 export const SESSION_HISTORY_LIMIT = 60;
@@ -34,6 +37,8 @@ export const normalizeHistoryPoint = (point: Partial<TemperatureHistoryPoint> | 
   const cpuPower = Number(point.cpuPower || 0);
   const gpuPower = Number(point.gpuPower || 0);
   const fanRpm = Number(point.fanRpm || 0);
+  const cpuFanRpm = Number(point.cpuFanRpm || 0);
+  const gpuFanRpm = Number(point.gpuFanRpm || 0);
 
   if (timestamp <= 0 || (cpuTemp <= 0 && gpuTemp <= 0 && fanRpm <= 0)) {
     return null;
@@ -46,6 +51,8 @@ export const normalizeHistoryPoint = (point: Partial<TemperatureHistoryPoint> | 
     cpuPower: Number.isFinite(cpuPower) && cpuPower > 0 ? cpuPower : 0,
     gpuPower: Number.isFinite(gpuPower) && gpuPower > 0 ? gpuPower : 0,
     fanRpm,
+    cpuFanRpm: Number.isFinite(cpuFanRpm) && cpuFanRpm > 0 ? cpuFanRpm : 0,
+    gpuFanRpm: Number.isFinite(gpuFanRpm) && gpuFanRpm > 0 ? gpuFanRpm : 0,
   };
 };
 
@@ -117,7 +124,7 @@ export const appendSampledHistoryPoint = (
 };
 
 export const createLiveHistoryPoint = (
-  payload: { updateTime?: number; cpuTemp?: number; gpuTemp?: number; cpuPower?: number; gpuPower?: number } | null | undefined,
+  payload: { updateTime?: number; cpuTemp?: number; gpuTemp?: number; cpuPower?: number; gpuPower?: number; cpuFanRpm?: number; gpuFanRpm?: number } | null | undefined,
   fanRpm = 0,
 ) => {
   if (!payload) return null;
@@ -129,5 +136,7 @@ export const createLiveHistoryPoint = (
     cpuPower: Number(payload.cpuPower || 0),
     gpuPower: Number(payload.gpuPower || 0),
     fanRpm: Number(fanRpm || 0),
+    cpuFanRpm: Number(payload.cpuFanRpm || 0),
+    gpuFanRpm: Number(payload.gpuFanRpm || 0),
   });
 };

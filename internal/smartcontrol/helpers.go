@@ -179,3 +179,47 @@ func enforceNonDecreasingRPM(curve []types.FanCurvePoint) {
 		}
 	}
 }
+
+/* ── 本机风扇联动缓降（LaptopFanGuard） ── */
+
+const (
+	// laptopFanPeakDecayPerTick 近期峰值每个采样周期的自然衰减量(RPM)，
+	// 使旧峰值在约 1~2 分钟内淡出，避免早先的高负荷长期抑制降速。
+	laptopFanPeakDecayPerTick = 40
+	// laptopFanGuardPeakRatio 本机风扇转速仍达到近期峰值的该百分比时，
+	// 认为机内仍在高负荷散热，散热器不应快速降速。
+	laptopFanGuardPeakRatio = 88
+	// laptopFanGuardMaxDropPerTick 缓降生效时单周期允许的最大降速(RPM)。
+	laptopFanGuardMaxDropPerTick = 60
+)
+
+// DecayLaptopFanPeak 维护本机风扇转速的近期峰值：新读数刷新峰值，
+// 否则峰值按固定速率衰减。currentRPM<=0（本机不支持读取）时峰值只衰减。
+func DecayLaptopFanPeak(peakRPM, currentRPM int) int {
+	peakRPM -= laptopFanPeakDecayPerTick
+	if peakRPM < 0 {
+		peakRPM = 0
+	}
+	if currentRPM > peakRPM {
+		peakRPM = currentRPM
+	}
+	return peakRPM
+}
+
+// ApplyLaptopFanGuard 抑制“温度骤降→散热器快速降速→温度回升→再升速”的振荡：
+// 当本机 CPU/GPU 风扇转速仍接近近期峰值（机内仍在高负荷散热）时，
+// 将散热器目标转速的单周期降幅限制在很小的步长内；升速方向不受影响。
+// 返回抑制后的目标转速与是否生效。
+func ApplyLaptopFanGuard(targetRPM, prevTargetRPM, laptopRPM, laptopPeakRPM int) (int, bool) {
+	if targetRPM >= prevTargetRPM || prevTargetRPM <= 0 || laptopRPM <= 0 || laptopPeakRPM <= 0 {
+		return targetRPM, false
+	}
+	if laptopRPM*100 < laptopPeakRPM*laptopFanGuardPeakRatio {
+		return targetRPM, false
+	}
+	limited := prevTargetRPM - laptopFanGuardMaxDropPerTick
+	if limited > targetRPM {
+		return limited, true
+	}
+	return targetRPM, false
+}

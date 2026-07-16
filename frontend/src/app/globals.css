@@ -158,16 +158,70 @@
   display: none !important;
 }
 
+/* 侧栏内的真实交互内容始终位于主题装饰性 ::before/::after 伪元素之上，
+   避免主题在侧栏添加的装饰（如竖排文字水印）遮挡「关于」等底部按钮。
+   此为基础层规则，任何主题无需改动即可生效。 */
+.glacier-sidebar > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 基础层默认覆盖任意主题（含内置 THRM）加在侧栏上的竖排装饰水印定位：
+   将其上移到导航区与底部按钮之间的空白带，避免压住底部的「关于」/折叠按钮。
+   用 !important 确保默认压过主题（如 THRM 的 bottom: 5.5rem），并置为不可交互。 */
+.glacier-sidebar::after {
+  bottom: 9.5rem !important;
+  pointer-events: none !important;
+}
+
+@keyframes page-card-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-page-reveal="cards"] > * > * {
+  animation: page-card-fade 0.285s ease-out both;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+[data-page-reveal="cards"] > * > :nth-child(5) {
+  animation-delay: 0.32s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-page-reveal="cards"] > * > * {
+    animation: none;
+  }
+}
+
 /* body 画布必须透明，否则系统材质会被 @layer base 的 bg-background 完全挡住 */
 body:has(.glacier-native-backdrop) {
   background: transparent;
 }
 
+/* 整个窗口铺一层统一的半透明浅洗层：既让 Mica 透出，又避免高对比壁纸
+   直接透底导致侧边栏/顶栏文字可读性变差。统一铺在 shell 上（而非分别铺在
+   侧边栏和顶栏）可以避免两块洗层颜色不一致在内容面板圆角处露出接缝。 */
 .glacier-native-backdrop {
-  background: transparent !important;
+  background: color-mix(in srgb, var(--background) 35%, transparent) !important;
 }
 
-/* 侧边栏与顶栏不叠加任何背景色，只让 Mica 透出，二者视觉连成一体 */
+/* 侧边栏与顶栏不再叠加自己的背景色，统一由 shell 洗层衬底，二者视觉连成一体 */
 .glacier-native-backdrop .glacier-sidebar {
   background: transparent;
   border-right-color: transparent;
@@ -176,6 +230,16 @@ body:has(.glacier-native-backdrop) {
 
 .glacier-native-backdrop .glacier-titlebar {
   background: transparent;
+}
+
+/* 顶栏状态徽章：原本 bg-primary/10 在 Mica 上几乎全透明，壁纸直接透过来。
+   开启系统材质时改为不透明的「主题色染卡片色」，其余徽章补一层近不透明卡片底。 */
+.glacier-native-backdrop .glacier-status-chip {
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+}
+
+.glacier-native-backdrop .glacier-status-chip--tint {
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
 }
 
 .glacier-native-backdrop .glacier-content {

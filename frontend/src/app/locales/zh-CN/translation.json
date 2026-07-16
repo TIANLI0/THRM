@@ -1,4 +1,28 @@
 {
+  "connectionRecovery": {
+    "title": "连接向导",
+    "temperatureTitle": "温度监控需要恢复",
+    "steps": {
+      "connection": "确认设备已供电；BS1 由 THRM 自动连接，BS2/BS3 系列需要您先在系统中手动连接蓝牙。",
+      "release": "关闭可能占用传感器或设备连接的其他硬件工具。",
+      "diagnostics": "重试后仍然失败时，请导出诊断包并提交反馈。"
+    },
+    "actions": {
+      "retry": "重新连接",
+      "temperatureTest": "温度自检",
+      "exportDiagnostics": "导出诊断包"
+    },
+    "toasts": {
+      "retryStarted": "已重新发起设备连接",
+      "recoveryFailed": "恢复失败",
+      "temperatureRecovered": "温度源已恢复：{{temperature}}°C",
+      "temperatureUnavailable": "仍未获得有效温度",
+      "temperatureUnavailableDescription": "请关闭其他硬件监控工具后重试，应用会保持安全转速。",
+      "temperatureTestFailed": "温度自检失败",
+      "diagnosticsExported": "诊断包已导出",
+      "diagnosticsExportFailed": "诊断包导出失败"
+    }
+  },
   "common": {
     "appName": "THRM",
     "metaDescription": "面向飞智笔记本压风散热器系列设备的第三方驱动与控制工具",
@@ -104,7 +128,8 @@
       "good": "良好"
     },
     "tempGauge": {
-      "loading": "读取中…"
+      "loading": "读取中…",
+      "monitoringDisabled": "已停用监测"
     },
     "fan": {
       "targetSummary": "目标 {{target}} · {{gear}}"
@@ -174,7 +199,8 @@
     "metrics": {
       "cpuTemperature": "CPU 温度",
       "gpuTemperature": "GPU 温度",
-      "fanRpm": "风扇转速"
+      "fanRpm": "风扇转速",
+      "laptopFan": "本机风扇转速"
     },
     "disconnected": {
       "title": "设备未连接",
@@ -381,6 +407,9 @@
       },
       "predictiveTitle": "功耗预测前馈",
       "predictiveDescription": "根据 CPU/GPU 功耗突增与温升趋势提前升速，先于实测温度越过曲线点。此项独立于自适应学习。",
+      "laptopGuardTitle": "本机风扇联动缓降",
+      "laptopGuardDescription": "本机 CPU/GPU 风扇仍接近近期峰值时，限制散热器降速幅度，避免温度骤降后散热器快速降速、温度又回升的忽高忽低振荡。",
+      "laptopGuardToggleAria": "开关本机风扇联动缓降",
       "predictiveToggleAria": "切换功耗预测前馈"
     },
     "noiseTest": {
@@ -511,6 +540,8 @@
         "cpu": "CPU",
         "gpu": "GPU",
         "fan": "风扇 RPM",
+        "cpuFan": "本机 CPU 风扇",
+        "gpuFan": "本机 GPU 风扇",
         "cpuPower": "CPU 功耗",
         "gpuPower": "GPU 功耗"
       },
@@ -540,26 +571,40 @@
       "title": "曲线方案",
       "currentCurveName": "当前曲线",
       "newCurveName": "新曲线",
+      "add": "新建",
+      "manage": "管理",
+      "createTitle": "新建曲线方案",
+      "createDescription": "以当前曲线为基础创建新方案，原方案不会被修改。",
+      "createAction": "创建并切换",
+      "newNamePlaceholder": "新方案名称（最多6字）",
+      "manageTitle": "管理曲线方案",
+      "manageDescription": "重命名当前方案，或导入、导出方案。",
+      "renameLabel": "当前方案名称",
       "namePlaceholder": "当前方案命名（最多6字）",
       "saveName": "保存命名",
       "saveAsNew": "另存为新方案",
       "deleteCurrent": "删除当前方案",
-      "createTitle": "新增曲线方案",
-      "createDescription": "基于当前画布上的曲线创建一个新方案，名称最多 6 字。",
-      "manageTitle": "管理曲线方案",
-      "manageDescription": "在这里重命名或删除已有的曲线方案。",
       "addAction": "新增方案",
       "activeBadge": "当前",
-      "deleteLastError": "至少保留一个曲线方案"
+      "deleteLastError": "至少保留一个曲线方案",
+      "deleteProfileLabel": "删除方案 {{name}}",
+      "unsavedSwitchTitle": "当前曲线尚未保存",
+      "unsavedSwitchDescription": "切换方案前，可以保存当前修改或放弃修改。",
+      "saveAndSwitch": "保存并切换",
+      "discardAndSwitch": "放弃并切换",
+      "deleteConfirmTitle": "确认删除方案",
+      "deleteDescription": "确定删除“{{name}}”吗？删除后将自动切换到相邻方案。",
+      "deleteUnsavedDescription": "“{{name}}”还有未保存修改。删除方案将同时放弃这些修改。"
     },
     "importExport": {
       "title": "导入 / 导出曲线方案",
-      "description": "可复制粘贴短字符串",
+      "description": "支持复制、粘贴方案码",
       "exportTitle": "导出",
-      "generate": "生成",
-      "exportPlaceholder": "点击“生成”后显示导出字符串",
+      "exportHint": "复制方案码可快速分享。未保存的当前曲线会先保存。",
+      "copyCode": "复制方案码",
       "importTitle": "导入",
-      "importPlaceholder": "粘贴 B2C1. 开头的导入字符串"
+      "importPlaceholder": "粘贴 B2C1. 开头的方案码",
+      "importAction": "导入为新方案"
     },
     "warning": {
       "title": "注意",
@@ -581,7 +626,7 @@
       "exportCopiedAgain": "已复制导出字符串",
       "exportFailed": "导出失败: {{error}}",
       "importMissingCode": "请先粘贴导入字符串",
-      "importSucceeded": "曲线方案导入成功",
+      "importSucceeded": "已导入为新曲线方案",
       "importFailed": "导入失败: {{error}}",
       "saveLearningFailed": "保存学习设置失败",
       "saveFeatureFailed": "保存风扇增强设置失败",
@@ -633,6 +678,11 @@
       "currentBaselineTemperature": "当前基准温度 {{temperature}}°C",
       "noCpuTemperatureData": "当前无可用 CPU 温度数据",
       "gpuBaseline": "GPU 基准",
+      "gpuMonitoringToggle": "监测",
+      "gpuMonitoringToggleAria": "开关 GPU 温度监测",
+      "gpuMonitoringDisabledToast": "已停用 GPU 温度监测",
+      "gpuMonitoringEnabledToast": "已恢复 GPU 温度监测",
+      "gpuMonitoringDisabledHint": "不再轮询 GPU 传感器（混合显卡下可避免独显被持续唤醒），控温基准仅使用 CPU 温度。",
       "gpuDevice": "显卡设备",
       "gpuDeviceHintDetected": "自动模式当前命中：{{model}}",
       "gpuDeviceHintAuto": "自动模式会优先尝试独显。",
@@ -721,8 +771,8 @@
       "reconnectTitle": "断连保持配置",
       "reconnectDescription": "重连后继续使用 APP 配置",
       "reconnectTip": "推荐开启，防止断连后进入设备默认模式",
-      "blurTitle": "窗口模糊效果",
-      "blurDescription": "亚克力/云母半透明效果。默认 Windows 11 开启、Windows 10 关闭，修改后需重启应用生效。",
+      "blurTitle": "窗口材质",
+      "blurDescription": "选择亚克力、云母或云母 Alt 材质，修改后需重启应用生效。",
       "suspendFanOffTitle": "休眠时自动关闭",
       "suspendFanOffDescription": "系统进入睡眠/休眠时，将风扇转速归零并关闭挡位灯与 RGB。"
     },
@@ -742,6 +792,16 @@
         "uninstallWarning": "PawnIO 卸载步骤返回提示：{{warning}}",
         "bridgeWarning": "温度监控重新初始化失败：{{warning}}",
         "reinstallFailed": "重新安装 PawnIO 失败：{{error}}"
+      }
+    },
+    "diagnostics": {
+      "title": "导出诊断包",
+      "description": "将调试信息、当前配置和最近日志打包为 ZIP，便于反馈排查问题。",
+      "button": "导出",
+      "toasts": {
+        "exported": "诊断包已导出：{{path}}",
+        "cancelled": "已取消导出",
+        "failed": "导出诊断包失败：{{error}}"
       }
     },
     "customSpeedDialog": {
@@ -848,7 +908,9 @@
       },
       "windowBlur": {
         "auto": "自动（随系统）",
-        "on": "开启",
+        "acrylic": "亚克力",
+        "mica": "云母",
+        "tabbed": "云母 Alt",
         "off": "关闭"
       }
     }

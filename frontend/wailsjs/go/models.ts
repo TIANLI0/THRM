@@ -126,6 +126,7 @@ export namespace types {
 	    predictiveBoost: boolean;
 	    learningBias: string;
 	    filterTransientSpike: boolean;
+	    laptopFanGuard: boolean;
 	    targetTemp: number;
 	    aggressiveness: number;
 	    hysteresis: number;
@@ -162,6 +163,7 @@ export namespace types {
 	        this.predictiveBoost = source["predictiveBoost"];
 	        this.learningBias = source["learningBias"];
 	        this.filterTransientSpike = source["filterTransientSpike"];
+	        this.laptopFanGuard = source["laptopFanGuard"];
 	        this.targetTemp = source["targetTemp"];
 	        this.aggressiveness = source["aggressiveness"];
 	        this.hysteresis = source["hysteresis"];
@@ -413,6 +415,7 @@ export namespace types {
 	    tempUpdateRate: number;
 	    tempSampleCount: number;
 	    tempSource: string;
+	    disableGpuMonitoring: boolean;
 	    gpuDevice: string;
 	    cpuSensor: string;
 	    cpuSensors: string[];
@@ -458,6 +461,7 @@ export namespace types {
 	        this.tempUpdateRate = source["tempUpdateRate"];
 	        this.tempSampleCount = source["tempSampleCount"];
 	        this.tempSource = source["tempSource"];
+	        this.disableGpuMonitoring = source["disableGpuMonitoring"];
 	        this.gpuDevice = source["gpuDevice"];
 	        this.cpuSensor = source["cpuSensor"];
 	        this.cpuSensors = source["cpuSensors"];
@@ -898,6 +902,8 @@ export namespace types {
 	    updateTime: number;
 	    bridgeOk: boolean;
 	    bridgeMessage: string;
+	    cpuFanRpm: number;
+	    gpuFanRpm: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new TemperatureData(source);
@@ -923,6 +929,8 @@ export namespace types {
 	        this.updateTime = source["updateTime"];
 	        this.bridgeOk = source["bridgeOk"];
 	        this.bridgeMessage = source["bridgeMessage"];
+	        this.cpuFanRpm = source["cpuFanRpm"];
+	        this.gpuFanRpm = source["gpuFanRpm"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -951,6 +959,8 @@ export namespace types {
 	    cpuPower: number;
 	    gpuPower: number;
 	    fanRpm: number;
+	    cpuFanRpm: number;
+	    gpuFanRpm: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new TemperatureHistoryPoint(source);
@@ -964,6 +974,8 @@ export namespace types {
 	        this.cpuPower = source["cpuPower"];
 	        this.gpuPower = source["gpuPower"];
 	        this.fanRpm = source["fanRpm"];
+	        this.cpuFanRpm = source["cpuFanRpm"];
+	        this.gpuFanRpm = source["gpuFanRpm"];
 	    }
 	}
 	export class TemperatureHistoryPayload {

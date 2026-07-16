@@ -10,20 +10,21 @@ import (
 // 决定背景透明度，确保与窗口的真实材质一致(模糊设置更改需重启才生效)。
 var resolvedBlurEnabled bool
 
-// ResolveWindowsOptions 根据用户配置(windowBlur)与系统版本决定窗口的模糊(云母/亚克力)效果。
+// ResolveWindowsOptions 根据用户配置(windowBlur)与系统版本决定窗口材质。
 //
-//   - on   : 始终启用模糊(透明 + 云母背景)。
-//   - off  : 关闭模糊(不透明窗口)。
-//   - auto : Win11 启用、Win10 关闭(模糊设置的默认值)。
+//   - auto：Win11 使用云母，Win10 关闭。
+//   - on：兼容旧配置，继续使用云母。
+//   - acrylic/mica/tabbed/off：使用对应材质。
 //
 // 该选项在 Wails 中只能于窗口创建时生效，更改后需重启应用。
 func ResolveWindowsOptions() *windows.Options {
-	resolvedBlurEnabled = blurEnabledForCurrentSystem(resolveWindowBlurMode())
+	backdrop := backdropTypeForMode(resolveWindowBlurMode(), isWindows11())
+	resolvedBlurEnabled = backdrop != windows.None
 	if resolvedBlurEnabled {
 		return &windows.Options{
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
-			BackdropType:         windows.Mica,
+			BackdropType:         backdrop,
 		}
 	}
 	return &windows.Options{
@@ -39,14 +40,23 @@ func (a *App) WindowBlurEnabled() bool {
 	return resolvedBlurEnabled
 }
 
-func blurEnabledForCurrentSystem(mode string) bool {
-	switch mode {
+func backdropTypeForMode(mode string, windows11 bool) windows.BackdropType {
+	switch types.NormalizeWindowBlur(mode) {
+	case types.WindowBlurAcrylic:
+		return windows.Acrylic
+	case types.WindowBlurMica:
+		return windows.Mica
+	case types.WindowBlurTabbed:
+		return windows.Tabbed
 	case types.WindowBlurOn:
-		return true
+		return windows.Mica
 	case types.WindowBlurOff:
-		return false
-	default: // auto: Win11 开启, Win10 关闭
-		return isWindows11()
+		return windows.None
+	default:
+		if windows11 {
+			return windows.Mica
+		}
+		return windows.None
 	}
 }
 

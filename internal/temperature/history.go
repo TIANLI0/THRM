@@ -20,7 +20,8 @@ const (
 	DefaultHistoryRelativePath          = "telemetry/history.bin"
 	historyBinaryMagic                  = "THST"
 	historyBinaryVersionLegacy   uint16 = 1
-	historyBinaryVersion         uint16 = 2
+	historyBinaryVersionPower    uint16 = 2
+	historyBinaryVersion         uint16 = 3 // v3: 追加笔记本内置 CPU/GPU 风扇转速
 	historyEnabledFlag           uint8  = 1
 
 	dirtyFlushThreshold = 6
@@ -122,6 +123,8 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 		CPUPower:  normalizeHistoryPower(temp.CPUPower),
 		GPUPower:  normalizeHistoryPower(temp.GPUPower),
 		FanRPM:    fanRPM,
+		CPUFanRPM: temp.CPUFanRPM,
+		GPUFanRPM: temp.GPUFanRPM,
 	}
 
 	var flushPayload []byte
@@ -226,7 +229,7 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 	if err := binary.Read(reader, binary.LittleEndian, &version); err != nil {
 		return err
 	}
-	if version != historyBinaryVersionLegacy && version != historyBinaryVersion {
+	if version != historyBinaryVersionLegacy && version != historyBinaryVersionPower && version != historyBinaryVersion {
 		return fmt.Errorf("unsupported history version: %d", version)
 	}
 
@@ -271,11 +274,21 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 		if err := binary.Read(reader, binary.LittleEndian, &fanRPM); err != nil {
 			return err
 		}
-		if version >= historyBinaryVersion {
+		var cpuFanRPM int32
+		var gpuFanRPM int32
+		if version >= historyBinaryVersionPower {
 			if err := binary.Read(reader, binary.LittleEndian, &cpuPower); err != nil {
 				return err
 			}
 			if err := binary.Read(reader, binary.LittleEndian, &gpuPower); err != nil {
+				return err
+			}
+		}
+		if version >= historyBinaryVersion {
+			if err := binary.Read(reader, binary.LittleEndian, &cpuFanRPM); err != nil {
+				return err
+			}
+			if err := binary.Read(reader, binary.LittleEndian, &gpuFanRPM); err != nil {
 				return err
 			}
 		}
@@ -286,6 +299,8 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 			CPUPower:  normalizeHistoryPower(float64(cpuPower)),
 			GPUPower:  normalizeHistoryPower(float64(gpuPower)),
 			FanRPM:    int(fanRPM),
+			CPUFanRPM: int(cpuFanRPM),
+			GPUFanRPM: int(gpuFanRPM),
 		})
 	}
 
@@ -349,8 +364,8 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 	if r.enabled {
 		flags |= historyEnabledFlag
 	}
-	// header 24B + 每点 28B (timestamp, CPU/GPU temperature, fan RPM, CPU/GPU power)
-	buf := make([]byte, 0, len(historyBinaryMagic)+24+pointCount*28)
+	// header 24B + 每点 36B (timestamp, CPU/GPU temperature, fan RPM, CPU/GPU power, 笔记本 CPU/GPU 风扇)
+	buf := make([]byte, 0, len(historyBinaryMagic)+24+pointCount*36)
 	buf = append(buf, historyBinaryMagic...)
 	buf = binary.LittleEndian.AppendUint16(buf, historyBinaryVersion)
 	buf = append(buf, flags, 0) // flags + reserved
@@ -364,6 +379,8 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.FanRPM)))
 		buf = binary.LittleEndian.AppendUint32(buf, math.Float32bits(float32(normalizeHistoryPower(p.CPUPower))))
 		buf = binary.LittleEndian.AppendUint32(buf, math.Float32bits(float32(normalizeHistoryPower(p.GPUPower))))
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.CPUFanRPM)))
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(int32(p.GPUFanRPM)))
 	}
 	if r.filled {
 		for _, p := range r.points[r.next:] {

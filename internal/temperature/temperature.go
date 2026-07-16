@@ -54,15 +54,20 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	if r.bridgeManager != nil && r.bridgeManager.IsSupported() {
 		bridgeTemp := r.bridgeManager.GetTemperature(selection)
 		copyBridgeTemperatureMetadata(&temp, bridgeTemp, selection)
+		if selection.DisableGpu {
+			stripGpuReadings(&temp, selection.TempSource)
+		}
 		if bridgeTemp.Success {
-			if bridgeTemp.CpuTemp == 0 && bridgeTemp.GpuTemp == 0 {
+			if bridgeTemp.CpuTemp == 0 && (selection.DisableGpu || bridgeTemp.GpuTemp == 0) {
 				temp.BridgeOk = false
 				temp.BridgeMsg = "桥接程序返回空温度（CPU/GPU 均为 0），已尝试备用读取；可重新初始化温度监控或检查 PawnIO/其它硬件监控工具。"
 				r.logger.Warn("桥接程序返回空温度数据，使用备用方法")
 
 				temp.CPUTemp = r.readCPUTemperature()
-				temp.GPUTemp = r.readGPUTemperature()
-				temp.GPUPower = r.readGPUPower()
+				if !selection.DisableGpu {
+					temp.GPUTemp = r.readGPUTemperature()
+					temp.GPUPower = r.readGPUPower()
+				}
 				temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 				temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 				return temp
@@ -82,23 +87,38 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		if strings.TrimSpace(temp.BridgeMsg) == "" {
 			temp.BridgeMsg = "CPU/GPU 温度读取失败，可重新初始化温度监控；若 CPU 仍为空，请安装/更新 PawnIO 或关闭其它硬件监控工具。"
 		}
-	} else if r.bridgeManager != nil {
-		temp.BridgeOk = false
-		temp.BridgeMsg = "当前平台不支持桥接程序，已使用内置温度读取。"
 	}
+	// 桥接程序为 Windows 专用（LibreHardwareMonitor/PawnIO）。在不支持的平台（如 Linux）
+	// 上，内置传感器读取才是正常路径，不应作为错误提示，因此保持 BridgeOk 默认的 true。
 
 	// 读取CPU温度
 	temp.CPUTemp = r.readCPUTemperature()
 
-	// 读取GPU温度
-	temp.GPUTemp = r.readGPUTemperature()
-	temp.GPUPower = r.readGPUPower()
+	// 读取GPU温度（停用 GPU 监测时完全跳过，避免 nvidia-smi 等轮询唤醒独显）
+	if !selection.DisableGpu {
+		temp.GPUTemp = r.readGPUTemperature()
+		temp.GPUPower = r.readGPUPower()
+	}
 
 	// 计算最高温度
 	temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 
 	return temp
+}
+
+// stripGpuReadings 清空 GPU 相关读数与元数据。停用 GPU 监测时即便桥接程序
+// （如旧版本）仍返回 GPU 数据，也保证对外一致为“无 GPU 读数”，控温基准回退 CPU。
+func stripGpuReadings(temp *types.TemperatureData, tempSource string) {
+	temp.GPUTemp = 0
+	temp.GPUPower = 0
+	temp.GpuModel = ""
+	temp.GpuSensors = nil
+	temp.GpuPowerSensors = nil
+	temp.GpuDevices = nil
+	temp.SelectedGpuDevice = ""
+	temp.MaxTemp = temp.CPUTemp
+	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, 0, tempSource)
 }
 
 func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types.BridgeTemperatureData, selection types.TemperatureSelection) {
@@ -175,8 +195,14 @@ func averageSelectedCpuTemp(sensors []types.TemperatureSensor, keys []string) (i
 func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {
 	switch types.NormalizeTempSource(source) {
 	case types.TempSourceCPU:
+		if cpuTemp <= 0 && gpuTemp > 0 {
+			return gpuTemp
+		}
 		return cpuTemp
 	case types.TempSourceGPU:
+		if gpuTemp <= 0 && cpuTemp > 0 {
+			return cpuTemp
+		}
 		return gpuTemp
 	default:
 		return max(cpuTemp, gpuTemp)

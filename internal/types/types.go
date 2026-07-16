@@ -32,6 +32,12 @@ const (
 	WindowBlurAuto = "auto"
 	// WindowBlurOn 强制开启窗口模糊效果。
 	WindowBlurOn = "on"
+	// WindowBlurAcrylic 使用亚克力窗口材质。
+	WindowBlurAcrylic = "acrylic"
+	// WindowBlurMica 使用云母窗口材质。
+	WindowBlurMica = "mica"
+	// WindowBlurTabbed 使用云母 Alt（Tabbed）窗口材质。
+	WindowBlurTabbed = "tabbed"
 	// WindowBlurOff 强制关闭窗口模糊效果。
 	WindowBlurOff = "off"
 )
@@ -39,8 +45,8 @@ const (
 // NormalizeWindowBlur 归一化窗口模糊效果设置，非法值回退为 auto。
 func NormalizeWindowBlur(mode string) string {
 	switch mode {
-	case WindowBlurOn:
-		return WindowBlurOn
+	case WindowBlurOn, WindowBlurAcrylic, WindowBlurMica, WindowBlurTabbed:
+		return mode
 	case WindowBlurOff:
 		return WindowBlurOff
 	default:
@@ -166,6 +172,9 @@ type TemperatureSelection struct {
 	// 取所选传感器温度的算术平均作为 CPU 控温基准。
 	CpuSensors []string `json:"cpuSensors"`
 	GpuSensor  string   `json:"gpuSensor"`
+	// DisableGpu 完全跳过 GPU 温度/功耗读取。混合显卡笔记本上轮询 GPU 传感器
+	// 会持续唤醒独显，开启后控温基准只使用 CPU 温度。
+	DisableGpu bool `json:"disableGpu"`
 }
 
 // NormalizeTemperatureSelection 归一化温度选择配置。
@@ -335,6 +344,8 @@ type TemperatureData struct {
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
 	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
+	CPUFanRPM         int                    `json:"cpuFanRpm"`         // 笔记本内置 CPU 风扇转速（0=不可用）
+	GPUFanRPM         int                    `json:"gpuFanRpm"`         // 笔记本内置 GPU 风扇转速（0=不可用）
 }
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
@@ -345,6 +356,8 @@ type TemperatureHistoryPoint struct {
 	CPUPower  float64 `json:"cpuPower"`
 	GPUPower  float64 `json:"gpuPower"`
 	FanRPM    int     `json:"fanRpm"`
+	CPUFanRPM int     `json:"cpuFanRpm"` // 笔记本内置 CPU 风扇转速（0=不可用）
+	GPUFanRPM int     `json:"gpuFanRpm"` // 笔记本内置 GPU 风扇转速（0=不可用）
 }
 
 // TemperatureHistoryPayload 温度历史返回载荷。
@@ -434,6 +447,7 @@ type SmartControlConfig struct {
 	PredictiveBoost         bool              `json:"predictiveBoost"`                 // 功耗预测前馈开关(独立于学习)
 	LearningBias            string            `json:"learningBias"`                    // 学习倾向: balanced/cooling/quiet
 	FilterTransientSpike    bool              `json:"filterTransientSpike"`            // 是否过滤孤立温度尖峰
+	LaptopFanGuard          bool              `json:"laptopFanGuard"`                  // 本机风扇联动缓降：本机散热仍高负荷时抑制散热器快速降速(仅支持读取本机风扇的机型生效)
 	TargetTemp              int               `json:"targetTemp"`                      // 目标温度(°C)
 	Aggressiveness          int               `json:"aggressiveness"`                  // 响应激进度(1-10)
 	Hysteresis              int               `json:"hysteresis"`                      // 滞回温差(°C)
@@ -483,11 +497,12 @@ type AppConfig struct {
 	TempUpdateRate           int                       `json:"tempUpdateRate"`           // 温度更新频率(秒)
 	TempSampleCount          int                       `json:"tempSampleCount"`          // 温度采样次数(用于平均)
 	TempSource               string                    `json:"tempSource"`               // 控温温度来源: max/cpu/gpu
+	DisableGpuMonitoring     bool                      `json:"disableGpuMonitoring"`     // 停用 GPU 温度监测(混合显卡防止独显被轮询唤醒)
 	GpuDevice                string                    `json:"gpuDevice"`                // GPU 设备选择: auto 或设备 key
 	CpuSensor                string                    `json:"cpuSensor"`                // CPU 传感器选择: auto 或传感器 key
 	CpuSensors               []string                  `json:"cpuSensors"`               // CPU 多传感器选择(多核平均): 为空则按 cpuSensor 单选/自动
 	GpuSensor                string                    `json:"gpuSensor"`                // GPU 传感器选择: auto 或传感器 key
-	WindowBlur               string                    `json:"windowBlur"`               // 窗口模糊效果: auto/on/off (Win11 默认开, Win10 默认关)
+	WindowBlur               string                    `json:"windowBlur"`               // 窗口材质: auto/acrylic/mica/tabbed/off；兼容旧值 on
 	SuspendFanOff            bool                      `json:"suspendFanOff"`            // 系统休眠/睡眠时自动归零转速并关闭挡位灯与 RGB
 	ConfigPath               string                    `json:"configPath"`               // 配置文件路径
 	ManualGear               string                    `json:"manualGear"`               // 手动挡位设置
@@ -497,6 +512,8 @@ type AppConfig struct {
 	CustomSpeedEnabled       bool                      `json:"customSpeedEnabled"`       // 自定义转速开关
 	CustomSpeedRPM           int                       `json:"customSpeedRPM"`           // 自定义转速值(无上下限)
 	IgnoreDeviceOnReconnect  bool                      `json:"ignoreDeviceOnReconnect"`  // 断连后忽略设备状态(保持APP配置)
+	LastDeviceTransport      string                    `json:"lastDeviceTransport"`      // 上次成功连接的传输方式("hid"/"ble")，用于重启后恢复重连偏好
+
 	SpeedAvoidance           SpeedAvoidanceConfig      `json:"speedAvoidance"`           // 智能控温转速避让
 	TimeCurveSchedule        TimeCurveScheduleConfig   `json:"timeCurveSchedule"`        // 分时曲线计划
 	SmartControl             SmartControlConfig        `json:"smartControl"`             // 学习型智能控温配置
@@ -531,6 +548,7 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 		PredictiveBoost:      true,
 		LearningBias:         LearningBiasBalanced,
 		FilterTransientSpike: true,
+		LaptopFanGuard:       true,
 		TargetTemp:           68,
 		Aggressiveness:       5,
 		Hysteresis:           2,

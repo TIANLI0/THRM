@@ -24,6 +24,7 @@ import {
   Sparkles,
   X,
   RotateCw,
+  FileArchive,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
@@ -537,7 +538,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const windowBlurOptions = useMemo(
     () => [
       { value: 'auto', label: t('controlPanel.options.windowBlur.auto') },
-      { value: 'on', label: t('controlPanel.options.windowBlur.on') },
+      { value: 'acrylic', label: t('controlPanel.options.windowBlur.acrylic') },
+      { value: 'mica', label: t('controlPanel.options.windowBlur.mica') },
+      { value: 'tabbed', label: t('controlPanel.options.windowBlur.tabbed') },
       { value: 'off', label: t('controlPanel.options.windowBlur.off') },
     ],
     [locale, t],
@@ -618,7 +621,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       if (enabled) await apiService.setAutoStartWithMethod(true, isAdmin ? 'task_scheduler' : 'registry');
       else await apiService.setAutoStartWithMethod(false, '');
       onConfigChange(types.AppConfig.createFrom({ ...config, windowsAutoStart: enabled }));
-    } catch (e) { alert(t('controlPanel.alerts.autoStartFailed', { error: getErrorMessage(e) })); } finally { setLoading('windowsAutoStart', false); }
+    } catch (e) { toast.error(t('controlPanel.alerts.autoStartFailed', { error: getErrorMessage(e) })); } finally { setLoading('windowsAutoStart', false); }
   }, [config, onConfigChange, t]);
 
   const handleIgnoreDeviceOnReconnectChange = useCallback(async (enabled: boolean) => {
@@ -686,6 +689,22 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, [fetchDebugInfo, t]);
 
+  const handleExportDiagnostics = useCallback(async () => {
+    setLoading('diagnosticsExport', true);
+    try {
+      const path = await apiService.exportDiagnosticPackage();
+      if (path) {
+        toast.success(t('controlPanel.diagnostics.toasts.exported', { path }));
+      } else {
+        toast.info(t('controlPanel.diagnostics.toasts.cancelled'));
+      }
+    } catch (error) {
+      toast.error(t('controlPanel.diagnostics.toasts.failed', { error: getErrorMessage(error) }));
+    } finally {
+      setLoading('diagnosticsExport', false);
+    }
+  }, [t]);
+
   const handleSampleCountChange = useCallback(async (count: number) => {
     try {
       const newCfg = types.AppConfig.createFrom({ ...config, tempSampleCount: count });
@@ -704,6 +723,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('tempSource', false);
     }
   }, [config, onConfigChange]);
+
+  const handleDisableGpuMonitoringChange = useCallback(async (disabled: boolean) => {
+    setLoading('disableGpuMonitoring', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({ ...config, disableGpuMonitoring: disabled });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+      if (disabled) {
+        toast.info(t('controlPanel.fan.gpuMonitoringDisabledToast'), {
+          description: t('controlPanel.fan.gpuMonitoringDisabledHint'),
+        });
+      } else {
+        toast.success(t('controlPanel.fan.gpuMonitoringEnabledToast'));
+      }
+    } catch { /* noop */ } finally {
+      setLoading('disableGpuMonitoring', false);
+    }
+  }, [config, onConfigChange, t]);
 
   const handleGpuDeviceChange = useCallback(async (deviceKey: string) => {
     setLoading('gpuDevice', true);
@@ -949,7 +986,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       });
       await apiService.setLightStrip(submitConfig);
       onConfigChange(types.AppConfig.createFrom({ ...config, lightStrip: submitConfig }));
-    } catch (e) { alert(t('controlPanel.alerts.lightStripFailed', { error: getErrorMessage(e) })); } finally { setLoading('lightStrip', false); }
+    } catch (e) { toast.error(t('controlPanel.alerts.lightStripFailed', { error: getErrorMessage(e) })); } finally { setLoading('lightStrip', false); }
   }, [lightStripConfig, config, onConfigChange, requiredColorCount, t]);
 
   // 加载安装目录/用户目录下发现的自定义主题。
@@ -1284,11 +1321,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                 </div>
 
                 <div className="rounded-xl border border-border/70 bg-card px-4 py-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Gpu className="h-4 w-4 text-primary" />
-                    <span>{t('controlPanel.fan.gpuBaseline')}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                      <Gpu className="h-4 w-4 text-primary" />
+                      <span>{t('controlPanel.fan.gpuBaseline')}</span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">{t('controlPanel.fan.gpuMonitoringToggle')}</span>
+                      <ToggleSwitch
+                        enabled={!(config as any).disableGpuMonitoring}
+                        onChange={(enabled: boolean) => void handleDisableGpuMonitoringChange(!enabled)}
+                        loading={loadingStates.disableGpuMonitoring}
+                        size="sm"
+                        color="blue"
+                        srLabel={t('controlPanel.fan.gpuMonitoringToggleAria')}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-3 space-y-3">
+                  <div className={clsx('mt-3 space-y-3', (config as any).disableGpuMonitoring && 'pointer-events-none opacity-50')}>
                     <SelectionField
                       label={t('controlPanel.fan.gpuDevice')}
                       hint={selectedGpuDevice === 'auto'
@@ -1705,7 +1755,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           >
             <div className="w-36">
               <Select
-                value={((config as any).windowBlur || 'auto') as string}
+                value={((config as any).windowBlur === 'on' ? 'mica' : ((config as any).windowBlur || 'auto')) as string}
                 onChange={(v: string | number) => handleWindowBlurChange(String(v))}
                 options={windowBlurOptions}
                 size="sm"
@@ -1735,6 +1785,30 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             {t('controlPanel.offline.message')}
           </div>
         )}
+
+        {/* ═══════════ 诊断包导出 ═══════════ */}
+        <div className="rounded-2xl border border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <FileArchive className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{t('controlPanel.diagnostics.title')}</div>
+                <div className="text-[11px] leading-relaxed text-muted-foreground">{t('controlPanel.diagnostics.description')}</div>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportDiagnostics}
+              loading={loadingStates.diagnosticsExport}
+              icon={<FileArchive className="h-3.5 w-3.5" />}
+            >
+              {t('controlPanel.diagnostics.button')}
+            </Button>
+          </div>
+        </div>
 
         {/* ═══════════ 5. 调试面板 ═══════════ */}
         <Collapsible open={debugPanelOpen} onOpenChange={setDebugPanelOpen}>

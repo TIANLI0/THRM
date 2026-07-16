@@ -42,6 +42,7 @@ const isCoreServiceFailureDetail = (detail?: string) => {
 
 type ActiveTab = 'status' | 'curve' | 'control' | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
+export interface TimelineEvent { timestamp: number; type: 'mode' | 'disconnect' | 'resume' | 'profile'; label: string }
 
 interface AppStore {
   isConnected: boolean;
@@ -59,6 +60,7 @@ interface AppStore {
   activeTab: ActiveTab;
   curveFocusTarget: CurveFocusTarget | null;
   sessionHistoryPoints: TemperatureHistoryPoint[];
+  timelineEvents: TimelineEvent[];
 
   setActiveTab: (tab: ActiveTab) => void;
   openCurveTab: (target: CurveFocusTarget) => void;
@@ -91,6 +93,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   activeTab: 'status',
   curveFocusTarget: null,
   sessionHistoryPoints: [],
+  timelineEvents: [],
 
   setActiveTab: (tab) => set({ activeTab: tab, curveFocusTarget: null }),
 
@@ -117,6 +120,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       gpuTemp: data.gpuTemp,
       cpuPower: data.cpuPower,
       gpuPower: data.gpuPower,
+      cpuFanRpm: (data as { cpuFanRpm?: number }).cpuFanRpm,
+      gpuFanRpm: (data as { gpuFanRpm?: number }).gpuFanRpm,
     }, Number(get().fanData?.currentRpm || 0));
 
     if (!point) return;
@@ -200,11 +205,40 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       console.error('配置更新失败:', error);
       set({ error: i18n.t('store.errors.saveConfig') });
+      toast.error(i18n.t('store.errors.saveConfig'));
+      throw error;
     }
   },
 
   startEventListeners: () => {
+    if (typeof window === 'undefined' || !(window as any).runtime?.EventsOnMultiple) {
+      return () => {};
+    }
     const unsubscribers: Array<() => void> = [];
+    let telemetryTimer: number | null = null;
+    let pendingFanData: types.FanData | null | undefined;
+    let pendingTemperature: types.TemperatureData | null | undefined;
+    const flushTelemetry = () => {
+      telemetryTimer = null;
+      if (pendingFanData !== undefined) {
+        set({ fanData: pendingFanData });
+        pendingFanData = undefined;
+      }
+      if (pendingTemperature !== undefined) {
+        const data = pendingTemperature;
+        pendingTemperature = undefined;
+        get().handleTemperaturePayload(data);
+        get().appendSessionHistoryPoint(data);
+      }
+    };
+    const scheduleTelemetryFlush = () => {
+      if (telemetryTimer !== null) return;
+      telemetryTimer = window.setTimeout(flushTelemetry, document.hidden ? 1000 : 200);
+    };
+    const addTimelineEvent = (event: TimelineEvent) => set((state) => ({
+      timelineEvents: [...state.timelineEvents, event].slice(-100),
+    }));
+    let lastHeartbeat = 0;
 
     unsubscribers.push(
       apiService.onCoreServiceError((message) => {
@@ -243,6 +277,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           coreServiceError: null,
           error: null,
         });
+        addTimelineEvent({ timestamp: Date.now(), type: 'mode', label: '设备已连接' });
       })
     );
 
@@ -250,6 +285,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       deviceService.onDeviceDisconnected(() => {
         console.log('设备已断开');
         set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, fanData: null });
+        addTimelineEvent({ timestamp: Date.now(), type: 'disconnect', label: '设备断开' });
       })
     );
 
@@ -268,22 +304,40 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       deviceService.onFanDataUpdate((data) => {
-        set({ fanData: data });
+        pendingFanData = data;
+        scheduleTelemetryFlush();
       })
     );
 
     unsubscribers.push(
       deviceService.onTemperatureUpdate((data) => {
-        get().handleTemperaturePayload(data);
-        get().appendSessionHistoryPoint(data);
+        pendingTemperature = data;
+        scheduleTelemetryFlush();
       })
     );
 
     unsubscribers.push(
       configService.onConfigUpdate((updatedConfig) => {
+        const previous = get().config;
         set({ config: updatedConfig });
+        if (previous && previous.autoControl !== updatedConfig.autoControl) {
+          addTimelineEvent({ timestamp: Date.now(), type: 'mode', label: updatedConfig.autoControl ? '切换为智能控温' : '退出智能控温' });
+        }
+        const previousProfile = (previous as any)?.activeFanCurveProfileId;
+        const nextProfile = (updatedConfig as any)?.activeFanCurveProfileId;
+        if (previousProfile && nextProfile && previousProfile !== nextProfile) {
+          addTimelineEvent({ timestamp: Date.now(), type: 'profile', label: '切换风扇曲线' });
+        }
       })
     );
+
+    unsubscribers.push(apiService.onHeartbeat((timestamp) => {
+      const now = Number(timestamp || Date.now());
+      if (lastHeartbeat > 0 && now - lastHeartbeat > 20_000) {
+        addTimelineEvent({ timestamp: now, type: 'resume', label: '系统睡眠唤醒' });
+      }
+      lastHeartbeat = now;
+    }));
 
     unsubscribers.push(
       deviceService.onHotkeyTriggered((payload) => {
@@ -323,6 +377,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
 
     return () => {
+      if (telemetryTimer !== null) window.clearTimeout(telemetryTimer);
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   },

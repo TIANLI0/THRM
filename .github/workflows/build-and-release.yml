@@ -15,16 +15,14 @@ on:
     paths-ignore:
       - 'ota/**'
       - '**/*.md'
-  schedule:
-    - cron: '30 16 * * *'
   workflow_dispatch:
     inputs:
-      target_date:
-        description: 'Backfill date in Asia/Shanghai (YYYY-MM-DD). Leave empty for yesterday.'
+      prerelease_tag:
+        description: 'Preview release tag. Leave empty for nightly-YYYYMMDD (Asia/Shanghai).'
         required: false
         type: string
       publish_release:
-        description: 'Publish prerelease for target_date (nightly-* tag)'
+        description: 'Publish the preview pre-release (compares last formal release -> current commit).'
         required: false
         default: true
         type: boolean
@@ -47,8 +45,7 @@ jobs:
       build_version: ${{ steps.plan.outputs.build_version }}
       target_commitish: ${{ steps.plan.outputs.target_commitish }}
       target_branch: ${{ steps.plan.outputs.target_branch }}
-      window_start: ${{ steps.plan.outputs.window_start }}
-      window_end: ${{ steps.plan.outputs.window_end }}
+      previous_stable_tag: ${{ steps.plan.outputs.previous_stable_tag }}
 
     steps:
       - name: Checkout
@@ -60,7 +57,7 @@ jobs:
         id: plan
         shell: bash
         env:
-          MANUAL_TARGET_DATE: ${{ github.event.inputs.target_date || '' }}
+          MANUAL_PRERELEASE_TAG: ${{ github.event.inputs.prerelease_tag || '' }}
           MANUAL_PUBLISH: ${{ github.event.inputs.publish_release || 'false' }}
         run: |
           set -euo pipefail
@@ -78,8 +75,7 @@ jobs:
             echo "build_version="
             echo "target_commitish=${GITHUB_SHA}"
             echo "target_branch=main"
-            echo "window_start="
-            echo "window_end="
+            echo "previous_stable_tag="
           } >> "$GITHUB_OUTPUT"
 
           has_effective_changes() {
@@ -91,75 +87,29 @@ jobs:
             return 1
           }
 
-          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
-            target_day=$(TZ=Asia/Shanghai date -d 'yesterday' +%F)
-            start_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00" +%Y-%m-%dT%H:%M:%SZ)
-            end_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00 +1 day" +%Y-%m-%dT%H:%M:%SZ)
+          # Latest formal-release tag (v*/V*) reachable from the built commit.
+          # The preview compares this tag -> the current commit ("all changes since the last formal release").
+          latest_stable_tag=$(git tag --list 'v*' 'V*' --sort=-v:refname --merged "${GITHUB_SHA}" | head -n1 || true)
 
-            commit_count=0
-            while IFS= read -r sha; do
-              if has_effective_changes "$sha"; then
-                commit_count=$((commit_count + 1))
-              fi
-            done < <(git log origin/main --since="$start_utc" --until="$end_utc" --pretty=format:%H)
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${MANUAL_PUBLISH}" == "true" ]]; then
+            today=$(TZ=Asia/Shanghai date +%Y%m%d)
+            release_tag="${MANUAL_PRERELEASE_TAG:-nightly-$today}"
 
-            if [[ "$commit_count" != "0" ]]; then
-              {
-                echo "should_build=true"
-                echo "should_publish_release=true"
-                echo "release_type=prerelease"
-                echo "is_prerelease=true"
-                echo "release_tag=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
-                echo "release_name=Daily Pre-release $target_day"
-                echo "release_label=daily pre-release"
-                echo "release_guidance=This is a daily prerelease built from that day's main branch changes. Make it clear that details may still change and do not phrase it as a final stability promise."
-                echo "build_version=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
-                echo "release_date=$target_day"
-                echo "target_commitish=$(git rev-parse origin/main)"
-                echo "target_branch=main"
-                echo "window_start=$start_utc"
-                echo "window_end=$end_utc"
-              } >> "$GITHUB_OUTPUT"
-            fi
-          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${MANUAL_PUBLISH}" == "true" ]]; then
-            target_day="${MANUAL_TARGET_DATE:-}"
-            if [[ -z "$target_day" ]]; then
-              target_day=$(TZ=Asia/Shanghai date -d 'yesterday' +%F)
-            fi
-
-            if ! TZ=Asia/Shanghai date -d "$target_day" +%F >/dev/null 2>&1; then
-              echo "Invalid target_date: $target_day. Expected YYYY-MM-DD in Asia/Shanghai." >&2
-              exit 1
-            fi
-
-            start_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00" +%Y-%m-%dT%H:%M:%SZ)
-            end_utc=$(TZ=Asia/Shanghai date -u -d "${target_day} 00:00:00 +1 day" +%Y-%m-%dT%H:%M:%SZ)
-
-            commit_count=0
-            while IFS= read -r sha; do
-              if has_effective_changes "$sha"; then
-                commit_count=$((commit_count + 1))
-              fi
-            done < <(git log origin/main --since="$start_utc" --until="$end_utc" --pretty=format:%H)
-
-            if [[ "$commit_count" != "0" ]]; then
-              {
-                echo "should_build=true"
-                echo "should_publish_release=true"
-                echo "release_type=prerelease"
-                echo "is_prerelease=true"
-                echo "release_tag=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
-                echo "release_name=Daily Pre-release $target_day"
-                echo "release_label=daily pre-release"
-                echo "release_guidance=This is a daily prerelease built from that day's main branch changes. Make it clear that details may still change and do not phrase it as a final stability promise."
-                echo "build_version=nightly-$(TZ=Asia/Shanghai date -d "$target_day" +%Y%m%d)"
-                echo "release_date=$target_day"
-                echo "target_commitish=$(git rev-parse origin/main)"
-                echo "target_branch=main"
-                echo "window_start=$start_utc"
-                echo "window_end=$end_utc"
-              } >> "$GITHUB_OUTPUT"
-            fi
+            {
+              echo "should_build=true"
+              echo "should_publish_release=true"
+              echo "release_type=prerelease"
+              echo "is_prerelease=true"
+              echo "release_tag=$release_tag"
+              echo "release_name=Pre-release $release_tag"
+              echo "release_label=pre-release"
+              echo "release_guidance=This is a preview pre-release covering all changes since the last formal release. Make it clear that details may still change and do not phrase it as a final stability promise."
+              echo "build_version=$release_tag"
+              echo "release_date=$(TZ=Asia/Shanghai date +%F)"
+              echo "target_commitish=${GITHUB_SHA}"
+              echo "target_branch=${GITHUB_REF_NAME}"
+              echo "previous_stable_tag=$latest_stable_tag"
+            } >> "$GITHUB_OUTPUT"
           elif [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
             if has_effective_changes "${GITHUB_SHA}"; then
               normalized_tag="${GITHUB_REF_NAME#v}"
@@ -498,9 +448,8 @@ jobs:
           RELEASE_LABEL: ${{ needs.prepare-release.outputs.release_label }}
           RELEASE_DATE: ${{ needs.prepare-release.outputs.release_date }}
           RELEASE_GUIDANCE: ${{ needs.prepare-release.outputs.release_guidance }}
-          WINDOW_START: ${{ needs.prepare-release.outputs.window_start }}
-          WINDOW_END: ${{ needs.prepare-release.outputs.window_end }}
-          TARGET_BRANCH: ${{ needs.prepare-release.outputs.target_branch }}
+          TARGET_COMMITISH: ${{ needs.prepare-release.outputs.target_commitish }}
+          PREVIOUS_STABLE_TAG: ${{ needs.prepare-release.outputs.previous_stable_tag }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -546,13 +495,24 @@ jobs:
               $rangeSpec = "$range"
             }
           } else {
-            $branchRef = "origin/$($env:TARGET_BRANCH)"
-            $windowStart = $env:WINDOW_START
-            $windowEnd = $env:WINDOW_END
-            $compareSummary = "Daily prerelease covering main branch commits from $windowStart to $windowEnd UTC, corresponding to $($env:RELEASE_DATE) in Asia/Shanghai."
-            $commitLines = @(git log $branchRef --since="$windowStart" --until="$windowEnd" --pretty=format:"- %h %s (%an, %ad)" --date=short --max-count=60)
-            $fileLines = @(git log $branchRef --since="$windowStart" --until="$windowEnd" --name-only --pretty=format: --max-count=60 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
-            $rangeSpec = "$branchRef --since=$windowStart --until=$windowEnd"
+            $previousStableTag = "$($env:PREVIOUS_STABLE_TAG)".Trim()
+            $currentRef = "$($env:TARGET_COMMITISH)".Trim()
+            if ([string]::IsNullOrWhiteSpace($currentRef)) {
+              $currentRef = 'HEAD'
+            }
+
+            if ([string]::IsNullOrWhiteSpace($previousStableTag)) {
+              $compareSummary = "Preview pre-release $($env:RELEASE_TAG); no earlier formal release tag was found, so the notes cover the currently visible recent commits."
+              $commitLines = @(git log $currentRef --pretty=format:"- %h %s (%an, %ad)" --date=short --max-count=100)
+              $fileLines = @(git log $currentRef --name-only --pretty=format: --max-count=100 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+              $rangeSpec = "$currentRef"
+            } else {
+              $range = "$previousStableTag..$currentRef"
+              $compareSummary = "Preview pre-release $($env:RELEASE_TAG) covering all changes since the last formal release $previousStableTag (change range $range)."
+              $commitLines = @(git log $range --pretty=format:"- %h %s (%an, %ad)" --date=short --max-count=100)
+              $fileLines = @(git log $range --name-only --pretty=format: --max-count=100 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+              $rangeSpec = "$range"
+            }
           }
 
           if (-not $commitLines -or $commitLines.Count -eq 0) {
@@ -669,17 +629,8 @@ jobs:
           }
 
           $codeCommitHashes = @()
-          if ($releaseType -eq 'stable') {
-            if ([string]::IsNullOrWhiteSpace($rangeSpec)) {
-              $codeCommitHashes = @()
-            } else {
-              $codeCommitHashes = @(git log $rangeSpec --pretty=format:%H --max-count=40)
-            }
-          } else {
-            $branchRef = "origin/$($env:TARGET_BRANCH)"
-            $windowStart = $env:WINDOW_START
-            $windowEnd = $env:WINDOW_END
-            $codeCommitHashes = @(git log $branchRef --since="$windowStart" --until="$windowEnd" --pretty=format:%H --max-count=40)
+          if (-not [string]::IsNullOrWhiteSpace($rangeSpec)) {
+            $codeCommitHashes = @(git log $rangeSpec --pretty=format:%H --max-count=60)
           }
 
           $maxCodeContextChars = 28000

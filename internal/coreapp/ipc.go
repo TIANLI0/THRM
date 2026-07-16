@@ -228,6 +228,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 			GpuDevice:  cfg.GpuDevice,
 			CpuSensor:  cfg.CpuSensor,
 			GpuSensor:  cfg.GpuSensor,
+			DisableGpu: cfg.DisableGpuMonitoring,
 		})
 		return a.dataResponse(temp)
 
@@ -238,6 +239,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 			GpuDevice:  cfg.GpuDevice,
 			CpuSensor:  cfg.CpuSensor,
 			GpuSensor:  cfg.GpuSensor,
+			DisableGpu: cfg.DisableGpuMonitoring,
 		})
 		return a.dataResponse(data)
 

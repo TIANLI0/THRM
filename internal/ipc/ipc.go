@@ -185,6 +185,7 @@ type clientState struct {
 }
 
 const clientWriteQueueSize = 64
+const defaultRequestTimeout = 15 * time.Second
 
 // RequestHandler 请求处理函数类型
 type RequestHandler func(req Request) Response
@@ -577,6 +578,13 @@ func (c *Client) SetEventHandler(handler func(Event)) {
 
 // SendRequest 发送请求并等待响应
 func (c *Client) SendRequest(reqType RequestType, data any) (*Response, error) {
+	return c.SendRequestWithTimeout(reqType, data, defaultRequestTimeout)
+}
+
+func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout time.Duration) (*Response, error) {
+	if timeout <= 0 {
+		timeout = defaultRequestTimeout
+	}
 	c.connMutex.RLock()
 	if !c.connected || c.conn == nil {
 		c.connMutex.RUnlock()
@@ -626,7 +634,7 @@ func (c *Client) SendRequest(reqType RequestType, data any) (*Response, error) {
 	select {
 	case resp := <-respCh:
 		return resp, nil
-	case <-time.After(15 * time.Second):
+	case <-time.After(timeout):
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()

@@ -1,6 +1,7 @@
 package coreapp
 
 import (
+	"fmt"
 	"reflect"
 	"runtime/debug"
 	"strings"
@@ -202,6 +203,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		CpuSensor:  cfg.CpuSensor,
 		CpuSensors: cfg.CpuSensors,
 		GpuSensor:  cfg.GpuSensor,
+		DisableGpu: cfg.DisableGpuMonitoring,
 	}
 	initialTemp := a.tempReader.Read(initialSelection)
 	if initialTemp.ControlTemp > 0 {
@@ -209,6 +211,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	}
 	lastTargetRPM := -1
 	lastControlTemp := -1
+	laptopFanPeakRPM := 0
 	lastDeviceGeneration := a.deviceManager.ConnectionGeneration()
 	settingsRefreshGeneration := uint64(0)
 	learningDirty := false
@@ -217,6 +220,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	lastBridgeUpdateTime := initialTemp.UpdateTime
 	staleBridgeUpdateCount := 0
 	bridgeFailureCount := 0
+	invalidControlTempCount := 0
+	safeFallbackActive := false
 	lastBridgeRestart := time.Time{}
 	var smartCfg types.SmartControlConfig
 	smartCfgRevision := cfgRevision - 1
@@ -280,8 +285,28 @@ monitorLoop:
 				CpuSensor:  cfg.CpuSensor,
 				CpuSensors: cfg.CpuSensors,
 				GpuSensor:  cfg.GpuSensor,
+				DisableGpu: cfg.DisableGpuMonitoring,
 			}
 			temp := a.tempReader.Read(selection)
+			// 补充笔记本内置风扇转速（机械革命等 Uniwill/同方准系统），不支持时保持 0。
+			if laptopSpeeds, ok := a.laptopFanReader.Read(); ok {
+				temp.CPUFanRPM = laptopSpeeds.CPUFanRPM
+				temp.GPUFanRPM = laptopSpeeds.GPUFanRPM
+			}
+			laptopFanRPM := max(temp.CPUFanRPM, temp.GPUFanRPM)
+			laptopFanPeakRPM = smartcontrol.DecayLaptopFanPeak(laptopFanPeakRPM, laptopFanRPM)
+			if temp.ControlTemp <= 0 {
+				invalidControlTempCount++
+			} else {
+				if safeFallbackActive {
+					a.logInfo("Temperature source recovered; resuming normal automatic control")
+					if a.ipcServer != nil {
+						a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "Temperature source recovered; normal fan control resumed")
+					}
+				}
+				invalidControlTempCount = 0
+				safeFallbackActive = false
+			}
 			if temp.BridgeOk {
 				bridgeFailureCount = 0
 				staleBridge := false
@@ -339,6 +364,22 @@ monitorLoop:
 			}
 
 			controlReady := a.isDeviceControlReady()
+			if cfg.AutoControl && controlReady && invalidControlTempCount >= 3 && !safeFallbackActive {
+				_, safeRPM := smartcontrol.GetCurveRPMBounds(cfg.FanCurve)
+				if safeRPM <= 0 {
+					safeRPM = 3000
+				}
+				ready, written := a.setAutomaticFanSpeed(safeRPM)
+				if ready && written {
+					safeFallbackActive = true
+					lastTargetRPM = safeRPM
+					message := fmt.Sprintf("Temperature readings are unavailable; fan switched to safe fallback at %d RPM", safeRPM)
+					a.logError("%s", message)
+					if a.ipcServer != nil {
+						a.ipcServer.BroadcastEvent(ipc.EventDeviceError, message)
+					}
+				}
+			}
 			if cfg.AutoControl && temp.ControlTemp > 0 && controlReady {
 				// 采样窗口变化时重置 EMA，避免阶跃。
 				newSampleCount := max(cfg.TempSampleCount, 1)
@@ -431,6 +472,16 @@ monitorLoop:
 				adjustedRPM, avoided := applySpeedAvoidance(targetRPM, curveMinRPM, curveMaxRPM, prevTargetRPM, controlTemp, lastControlTemp, cfg.SpeedAvoidance)
 				if avoided {
 					targetRPM = adjustedRPM
+				}
+
+				// 本机风扇联动缓降：本机散热仍接近近期峰值时抑制散热器快速降速，
+				// 避免“温度骤降→散热器降速→温度回升”的忽高忽低振荡。
+				if smartCfg.LaptopFanGuard {
+					guardedRPM, guarded := smartcontrol.ApplyLaptopFanGuard(targetRPM, prevTargetRPM, laptopFanRPM, laptopFanPeakRPM)
+					if guarded {
+						a.logDebug("本机风扇联动缓降: 本机=%dRPM 峰值=%dRPM 目标 %d→%d RPM", laptopFanRPM, laptopFanPeakRPM, targetRPM, guardedRPM)
+						targetRPM = guardedRPM
+					}
 				}
 
 				fanData := a.deviceManager.GetCurrentFanData()

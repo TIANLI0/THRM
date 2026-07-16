@@ -8,6 +8,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/autostart"
 	"github.com/TIANLI0/THRM/internal/config"
 	"github.com/TIANLI0/THRM/internal/curveprofiles"
+	"github.com/TIANLI0/THRM/internal/device"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/powernotify"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
@@ -122,6 +123,8 @@ func (a *CoreApp) Start() error {
 
 	// 设置设备回调
 	a.deviceManager.SetCallbacks(a.onFanDataUpdate, a.onDeviceDisconnect)
+	// 恢复上次成功连接的传输方式，避免重启后自动重连误触发仅用于 BS1 的 BLE 扫描。
+	a.deviceManager.SeedLastTransport(cfg.LastDeviceTransport)
 
 	// 启动 IPC 服务器
 	a.logInfo("启动 IPC 服务器")
@@ -146,6 +149,16 @@ func (a *CoreApp) Start() error {
 	} else {
 		a.powerNotifyStop = stop
 		a.logInfo("已注册系统睡眠/唤醒通知")
+	}
+	if stop, err := powernotify.RegisterHIDInterfaceArrivalNotifications(
+		device.VendorID,
+		[]uint16{device.ProductIDBS2PRO, device.ProductIDBS3, device.ProductIDBS3PRO, device.ProductIDBS2},
+		a.onSupportedHIDArrival,
+	); err != nil {
+		a.logDebug("注册 HID 接口到达通知失败，将使用周期性重试兜底: %v", err)
+	} else {
+		a.hidArrivalNotifyStop = stop
+		a.logInfo("已注册飞智 HID 设备接口到达通知")
 	}
 
 	// 启动健康监控
@@ -198,6 +211,10 @@ func (a *CoreApp) Stop() {
 	if a.powerNotifyStop != nil {
 		a.safeRun("power-notify-unregister", a.powerNotifyStop)
 		a.powerNotifyStop = nil
+	}
+	if a.hidArrivalNotifyStop != nil {
+		a.safeRun("hid-arrival-notify-unregister", a.hidArrivalNotifyStop)
+		a.hidArrivalNotifyStop = nil
 	}
 	if done := a.stopTemperatureMonitoring(); done != nil {
 		select {

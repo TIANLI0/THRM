@@ -100,6 +100,8 @@ namespace THRM.TempBridge
         public string GpuDevice { get; set; }
         public string CpuSensor { get; set; }
         public string GpuSensor { get; set; }
+        // 停用 GPU 监测：混合显卡笔记本上轮询 GPU 传感器会持续唤醒独显。
+        public bool DisableGpu { get; set; }
 
         public TemperatureSelection()
         {
@@ -107,6 +109,7 @@ namespace THRM.TempBridge
             GpuDevice = "auto";
             CpuSensor = "auto";
             GpuSensor = "auto";
+            DisableGpu = false;
         }
     }
 
@@ -170,6 +173,9 @@ namespace THRM.TempBridge
         private const int MaxReasonableTemperature = 150;
         private const int MemoryTrimIntervalSeconds = 60;
         private static Computer computer;
+        // 是否启用 GPU 硬件监控。停用时 LibreHardwareMonitor 完全不初始化 GPU
+        // 子系统（NVAPI/NVML 等），避免混合显卡笔记本的独显被轮询唤醒。
+        private static bool gpuMonitoringEnabled = true;
         private static bool running = true;
         private static readonly object lockObject = new object();
         private static Mutex singleInstanceMutex;
@@ -531,7 +537,7 @@ namespace THRM.TempBridge
                     computer = new Computer
                     {
                         IsCpuEnabled = true,
-                        IsGpuEnabled = true,
+                        IsGpuEnabled = gpuMonitoringEnabled,
                         IsMemoryEnabled = false,
                         IsMotherboardEnabled = false,
                         IsControllerEnabled = false,
@@ -1228,6 +1234,17 @@ namespace THRM.TempBridge
         {
             lock (lockObject)
             {
+                // GPU 监测开关变化时重建硬件监控实例：只有在 Computer 层面关闭
+                // IsGpuEnabled 才能真正停止 NVAPI/NVML 轮询，避免独显被持续唤醒。
+                bool wantGpu = selection == null || !selection.DisableGpu;
+                if (wantGpu != gpuMonitoringEnabled)
+                {
+                    gpuMonitoringEnabled = wantGpu;
+                    LogInitProgress(string.Format("GPU 监测开关切换为 {0}，重建硬件监控实例", wantGpu ? "启用" : "停用"));
+                    CloseComputerSafely("gpu-monitoring-toggle");
+                    InitializeHardwareMonitor();
+                }
+
 	                var result = GetTemperatureDataUnsafe(selection);
 
                 if (!result.Success || (result.CpuTemp == 0 && result.GpuTemp == 0))

@@ -1,4 +1,28 @@
 {
+  "connectionRecovery": {
+    "title": "接続ガイド",
+    "temperatureTitle": "温度監視の復旧が必要です",
+    "steps": {
+      "connection": "デバイスの電源を確認してください。BS1 は THRM が自動接続します。BS2/BS3 シリーズは、先にシステム設定で Bluetooth 接続してください。",
+      "release": "センサーやデバイス接続を使用している可能性がある他のハードウェアツールを終了してください。",
+      "diagnostics": "再試行しても失敗する場合は、診断パッケージを出力して報告に添付してください。"
+    },
+    "actions": {
+      "retry": "再接続",
+      "temperatureTest": "温度テスト",
+      "exportDiagnostics": "診断パッケージを出力"
+    },
+    "toasts": {
+      "retryStarted": "デバイスの再接続を開始しました",
+      "recoveryFailed": "復旧に失敗しました",
+      "temperatureRecovered": "温度ソースが復旧しました：{{temperature}}°C",
+      "temperatureUnavailable": "有効な温度を取得できません",
+      "temperatureUnavailableDescription": "他のハードウェア監視ツールを終了して再試行してください。安全なファン速度を維持します。",
+      "temperatureTestFailed": "温度テストに失敗しました",
+      "diagnosticsExported": "診断パッケージを出力しました",
+      "diagnosticsExportFailed": "診断パッケージの出力に失敗しました"
+    }
+  },
   "common": {
     "appName": "THRM",
     "metaDescription": "FlyDigi 高密度エアフロー式ノート PC クーラーシリーズ向けのサードパーティ製ドライバー兼制御ツールです。",
@@ -104,7 +128,8 @@
       "good": "良好"
     },
     "tempGauge": {
-      "loading": "読み込み中…"
+      "loading": "読み込み中…",
+      "monitoringDisabled": "監視オフ"
     },
     "fan": {
       "targetSummary": "目標 {{target}} · {{gear}}"
@@ -174,7 +199,8 @@
     "metrics": {
       "cpuTemperature": "CPU 温度",
       "gpuTemperature": "GPU 温度",
-      "fanRpm": "ファン回転数"
+      "fanRpm": "ファン回転数",
+      "laptopFan": "本体ファン回転数"
     },
     "disconnected": {
       "title": "デバイスが接続されていません",
@@ -380,6 +406,9 @@
       },
       "predictiveTitle": "消費電力予測フィードフォワード",
       "predictiveDescription": "CPU/GPU の消費電力の急増と温度上昇トレンドに基づき、実測温度がカーブ点を越える前に先行して回転数を上げます。適応学習とは独立しています。",
+      "laptopGuardTitle": "本体ファン連動スローダウン",
+      "laptopGuardDescription": "本体の CPU/GPU ファンが直近ピークに近い間はクーラーの減速幅を制限し、急な温度低下→急減速→温度再上昇という振動を防ぎます。",
+      "laptopGuardToggleAria": "本体ファン連動スローダウンの切り替え",
       "predictiveToggleAria": "消費電力予測フィードフォワードの切り替え"
     },
     "noiseTest": {
@@ -510,6 +539,8 @@
         "cpu": "CPU",
         "gpu": "GPU",
         "fan": "RPM",
+        "cpuFan": "本体 CPU ファン",
+        "gpuFan": "本体 GPU ファン",
         "cpuPower": "CPU 消費電力",
         "gpuPower": "GPU 消費電力"
       },
@@ -539,26 +570,40 @@
       "title": "カーブプロファイル",
       "currentCurveName": "現在のカーブ",
       "newCurveName": "新しいカーブ",
+      "add": "新規",
+      "manage": "管理",
+      "createTitle": "カーブプロファイルを作成",
+      "createDescription": "現在のカーブを元に新しいプロファイルを作成します。元のプロファイルは変更されません。",
+      "createAction": "作成して切り替え",
+      "newNamePlaceholder": "新しい名前（最大 6 文字）",
+      "manageTitle": "カーブプロファイルを管理",
+      "manageDescription": "現在のプロファイル名の変更、インポート、エクスポートができます。",
+      "renameLabel": "現在のプロファイル名",
       "namePlaceholder": "現在のプロファイル名（最大 6 文字）",
       "saveName": "名前を変更",
       "saveAsNew": "新規プロファイルとして保存",
       "deleteCurrent": "現在のプロファイルを削除",
-      "createTitle": "プロファイルを追加",
-      "createDescription": "現在のキャンバス上のカーブから新しいプロファイルを作成します。名前は最大 6 文字です。",
-      "manageTitle": "プロファイルを管理",
-      "manageDescription": "既存のカーブプロファイルの名前を変更または削除できます。",
       "addAction": "追加",
       "activeBadge": "現在",
-      "deleteLastError": "少なくとも 1 つのプロファイルを残してください"
+      "deleteLastError": "少なくとも 1 つのプロファイルを残してください",
+      "deleteProfileLabel": "{{name}} を削除",
+      "unsavedSwitchTitle": "カーブが保存されていません",
+      "unsavedSwitchDescription": "切り替える前に現在の変更を保存するか破棄してください。",
+      "saveAndSwitch": "保存して切り替え",
+      "discardAndSwitch": "破棄して切り替え",
+      "deleteConfirmTitle": "プロファイルを削除しますか？",
+      "deleteDescription": "「{{name}}」を削除しますか？隣のプロファイルに切り替わります。",
+      "deleteUnsavedDescription": "「{{name}}」には未保存の変更があります。削除すると変更も破棄されます。"
     },
     "importExport": {
       "title": "カーブプロファイルのインポート / エクスポート",
-      "description": "文字列をコピーまたは貼り付けて使用します",
+      "description": "プロファイルコードをコピーまたは貼り付けます",
       "exportTitle": "エクスポート",
-      "generate": "作成",
-      "exportPlaceholder": "「作成」ボタンを押すと文字列が表示されます",
+      "exportHint": "プロファイルコードをコピーして共有できます。未保存のカーブは先に保存されます。",
+      "copyCode": "コードをコピー",
       "importTitle": "適用",
-      "importPlaceholder": "B2C1. で始まる文字列を貼り付けてください"
+      "importPlaceholder": "B2C1. で始まるコードを貼り付けてください",
+      "importAction": "新規としてインポート"
     },
     "warning": {
       "title": "注意",
@@ -580,7 +625,7 @@
       "exportCopiedAgain": "エクスポート文字列をコピーしました",
       "exportFailed": "エクスポートに失敗しました: {{error}}",
       "importMissingCode": "先にエキスポート文字列を貼り付けてください",
-      "importSucceeded": "カーブプロファイルをインポートしました",
+      "importSucceeded": "新しいカーブプロファイルとしてインポートしました",
       "importFailed": "インポートに失敗しました: {{error}}",
       "saveLearningFailed": "学習設定の保存に失敗しました",
       "saveFeatureFailed": "拡張ファン設定の保存に失敗しました",
@@ -632,6 +677,11 @@
       "currentBaselineTemperature": "現在の基準温度 {{temperature}}°C",
       "noCpuTemperatureData": "現在利用可能な CPU 温度データはありません",
       "gpuBaseline": "GPU 基準",
+      "gpuMonitoringToggle": "監視",
+      "gpuMonitoringToggleAria": "GPU 温度監視の切り替え",
+      "gpuMonitoringDisabledToast": "GPU 温度監視を無効にしました",
+      "gpuMonitoringEnabledToast": "GPU 温度監視を再開しました",
+      "gpuMonitoringDisabledHint": "GPU センサーをポーリングしないため（ハイブリッド GPU 構成で dGPU の常時ウェイクを防止）、制御基準は CPU 温度のみを使用します。",
       "gpuDevice": "GPU デバイス",
       "gpuDeviceHintDetected": "自動選択されたデバイス: {{model}}",
       "gpuDeviceHintAuto": "自動選択では可能な限り dGPU を優先します。",
@@ -720,8 +770,8 @@
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
-      "blurTitle": "ウィンドウのぼかし効果",
-      "blurDescription": "アクリル/マイカの半透明効果。既定は Windows 11 でオン、Windows 10 でオフ。変更後は再起動で反映されます。",
+      "blurTitle": "ウィンドウ素材",
+      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。",
       "suspendFanOffTitle": "スリープ時に停止",
       "suspendFanOffDescription": "システムがスリープ/休止状態になると、ファンを 0 RPM にし、ギアライトと RGB をオフにします。"
     },
@@ -741,6 +791,16 @@
         "uninstallWarning": "PawnIO アンインストールステップから通知が返されました: {{warning}}",
         "bridgeWarning": "温度モニタリングの初期化に失敗しました: {{warning}}",
         "reinstallFailed": "PawnIO の再インストールに失敗しました: {{error}}"
+      }
+    },
+    "diagnostics": {
+      "title": "診断パッケージをエクスポート",
+      "description": "デバッグ情報・現在の設定・最近のログを ZIP にまとめて、問題報告に利用できます。",
+      "button": "エクスポート",
+      "toasts": {
+        "exported": "診断パッケージをエクスポートしました: {{path}}",
+        "cancelled": "エクスポートをキャンセルしました",
+        "failed": "診断パッケージのエクスポートに失敗しました: {{error}}"
       }
     },
     "customSpeedDialog": {
@@ -847,7 +907,9 @@
       },
       "windowBlur": {
         "auto": "自動（システムに従う）",
-        "on": "オン",
+        "acrylic": "アクリル",
+        "mica": "マイカ",
+        "tabbed": "マイカ Alt",
         "off": "オフ"
       }
     }

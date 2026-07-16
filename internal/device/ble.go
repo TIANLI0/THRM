@@ -14,7 +14,7 @@ import (
 
 // BLEManager BS1 蓝牙低功耗设备管理器
 type BLEManager struct {
-	adapter    *bluetooth.Adapter
+	adapter    bleAdapter
 	device     bluetooth.Device
 	writeChar  bluetooth.DeviceCharacteristic
 	notifyChar bluetooth.DeviceCharacteristic
@@ -34,14 +34,27 @@ type BLEManager struct {
 	debugFrames  []types.DeviceDebugFrame
 	debugCapture atomic.Bool
 	queryMutex   sync.Mutex
+	scanTimeout  time.Duration
+}
+
+const defaultBLEScanTimeout = 10 * time.Second
+
+// tinygo's Scan blocks until StopScan is called. Keeping this small interface
+// makes that lifecycle testable without requiring Bluetooth hardware.
+type bleAdapter interface {
+	Enable() error
+	Scan(callback func(*bluetooth.Adapter, bluetooth.ScanResult)) error
+	StopScan() error
+	Connect(address bluetooth.Address, params bluetooth.ConnectionParams) (bluetooth.Device, error)
 }
 
 // NewBLEManager 创建 BLE 设备管理器
 func NewBLEManager(logger types.Logger) *BLEManager {
 	return &BLEManager{
-		adapter:  bluetooth.DefaultAdapter,
-		logger:   logger,
-		stopChan: make(chan struct{}),
+		adapter:     bluetooth.DefaultAdapter,
+		logger:      logger,
+		stopChan:    make(chan struct{}),
+		scanTimeout: defaultBLEScanTimeout,
 	}
 }
 
@@ -75,33 +88,51 @@ func (b *BLEManager) Connect() (bool, map[string]string) {
 	var targetAddress bluetooth.Address
 	var targetName string
 	found := make(chan bool, 1)
+	timedOut := atomic.Bool{}
+	scanTimeout := b.scanTimeout
+	if scanTimeout <= 0 {
+		scanTimeout = defaultBLEScanTimeout
+	}
+	timeout := time.AfterFunc(scanTimeout, func() {
+		timedOut.Store(true)
+		if err := b.adapter.StopScan(); err != nil {
+			b.logError("failed to stop timed-out BLE scan: %v", err)
+		}
+	})
 
-	err := b.adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
+	err := b.adapter.Scan(func(_ *bluetooth.Adapter, result bluetooth.ScanResult) {
 		name := result.LocalName()
 		if strings.Contains(name, "BS1") || strings.Contains(name, "Flydigi") {
 			b.logInfo("发现 BLE 设备: %s (%s)", name, result.Address.String())
 			if strings.Contains(name, "BS1") {
 				targetAddress = result.Address
 				targetName = name
-				adapter.StopScan()
 				select {
 				case found <- true:
 				default:
 				}
+				if stopErr := b.adapter.StopScan(); stopErr != nil {
+					b.logError("找到 BS1 后停止 BLE 扫描失败: %v", stopErr)
+				}
 			}
 		}
 	})
+	timeout.Stop()
 	if err != nil {
+		if timedOut.Load() {
+			b.logError("BLE 扫描超时，未找到 BS1 设备")
+			return false, nil
+		}
 		b.logError("BLE 扫描失败: %v", err)
 		return false, nil
 	}
 
-	// 等待扫描结果（最多 10 秒）
+	// Scan only returns after StopScan. The callback or timeout has therefore
+	// already decided whether a target was found; never wait a second time here.
 	select {
 	case <-found:
 		b.logInfo("已找到 BS1 设备: %s (%s)", targetName, targetAddress.String())
-	case <-time.After(10 * time.Second):
-		b.adapter.StopScan()
+	default:
 		b.logError("扫描超时，未找到 BS1 设备")
 		return false, nil
 	}
