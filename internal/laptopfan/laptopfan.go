@@ -1,10 +1,15 @@
 // Package laptopfan 读取笔记本内置 CPU/GPU 风扇转速。
 //
-// 目前支持 Uniwill/同方准系统（机械革命等品牌）：这类机型的 ACPI 固件在
-// root\WMI 下暴露 AcpiTest_MULong 类（GUID ABBC0F6F-8EA1-11D1-00A0-C90629100000），
-// 其 GetSetULong 方法可读写 EC RAM。风扇转速寄存器为 16 位大端：
-//   0x0464 → 风扇1（CPU），0x046C → 风扇2（GPU）
-// 寄存器布局与 Linux 侧 qc71_laptop / tuxedo-drivers 一致。
+// 支持的机型（首次读取时按顺序探测，命中后锁定该后端）：
+//   - Uniwill/同方准系统（机械革命等品牌）：root\WMI 的 AcpiTest_MULong 类
+//     （GUID ABBC0F6F-8EA1-11D1-00A0-C90629100000），GetSetULong 方法读写 EC RAM。
+//     风扇转速寄存器为 16 位大端：0x0464 → 风扇1（CPU），0x046C → 风扇2（GPU），
+//     寄存器布局与 Linux 侧 qc71_laptop / tuxedo-drivers 一致。
+//   - 华硕（ROG/TUF 等）：root\WMI 的 AsusAtkWmi_WMNB 类，DSTS 方法查询设备
+//     0x00110013（CPU 风扇）/ 0x00110014（GPU 风扇），低 16 位 × 100 = RPM，
+//     与 Linux asus-wmi 驱动一致。
+//   - 联想拯救者（Legion）：root\WMI 的 LENOVO_FAN_METHOD 类，
+//     Fan_GetCurrentFanSpeed(FanID) 直接返回 RPM，FanID 0=CPU、1=GPU。
 package laptopfan
 
 import "github.com/TIANLI0/THRM/internal/types"
