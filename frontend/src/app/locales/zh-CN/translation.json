@@ -534,6 +534,8 @@
       "emptyEnabled": "后台记录已开启，等待更多温度与风扇样本。",
       "emptyDisabled": "后台记录当前已关闭，可在本页开启。",
       "recentTrend": "最近趋势",
+      "resetZoom": "重置缩放",
+      "zoomHint": "在图表上拖拽可框选时间范围",
       "powerTrend": "功耗趋势",
       "waitingMoreSamples": "已记录 1 条样本，等待更多数据后展示趋势图。",
       "series": {
