@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RotateCw,
@@ -839,16 +839,54 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     };
   }, [locale, t, temperatureHistory]);
   const historyChartData = useMemo(() => detailHistoryPoints.map((point) => ({ ...point })), [detailHistoryPoints]);
+  // 趋势图缩放区间（时间戳范围）；null 表示未缩放（跟随全部数据）。
+  const [historyZoomDomain, setHistoryZoomDomain] = useState<[number, number] | null>(null);
+  // 正在拖拽框选的临时区间，用于渲染半透明选区。
+  const [historyZoomSelect, setHistoryZoomSelect] = useState<{ start: number; end: number } | null>(null);
+  // 最近趋势 / 功耗趋势共用同一份裁切数据，天然保持缩放与指针联动。
+  const zoomedHistoryChartData = useMemo(() => {
+    if (!historyZoomDomain) return historyChartData;
+    const [from, to] = historyZoomDomain;
+    const sliced = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to);
+    return sliced.length >= 2 ? sliced : historyChartData;
+  }, [historyChartData, historyZoomDomain]);
+  const handleHistoryZoomMouseDown = useCallback((state: { activeLabel?: string | number } | null) => {
+    if (state?.activeLabel == null) return;
+    const ts = Number(state.activeLabel);
+    setHistoryZoomSelect({ start: ts, end: ts });
+  }, []);
+  const handleHistoryZoomMouseMove = useCallback((state: { activeLabel?: string | number } | null) => {
+    if (state?.activeLabel == null) return;
+    const ts = Number(state.activeLabel);
+    setHistoryZoomSelect((prev) => (prev ? { ...prev, end: ts } : prev));
+  }, []);
+  const handleHistoryZoomMouseUp = useCallback(() => {
+    setHistoryZoomSelect((prev) => {
+      if (prev) {
+        const from = Math.min(prev.start, prev.end);
+        const to = Math.max(prev.start, prev.end);
+        // 选区过窄（不足两个采样点）视为误触，忽略。
+        if (historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to).length >= 2) {
+          setHistoryZoomDomain([from, to]);
+        }
+      }
+      return null;
+    });
+  }, [historyChartData]);
+  const resetHistoryZoom = useCallback(() => {
+    setHistoryZoomSelect(null);
+    setHistoryZoomDomain(null);
+  }, []);
   const visibleTimelineEvents = useMemo(() => {
-    const first = detailHistoryPoints[0]?.timestamp ?? 0;
-    const last = detailHistoryPoints[detailHistoryPoints.length - 1]?.timestamp ?? Number.MAX_SAFE_INTEGER;
+    const first = zoomedHistoryChartData[0]?.timestamp ?? 0;
+    const last = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? Number.MAX_SAFE_INTEGER;
     return timelineEvents.filter((event) => event.timestamp >= first && event.timestamp <= last).slice(-12);
-  }, [detailHistoryPoints, timelineEvents]);
+  }, [zoomedHistoryChartData, timelineEvents]);
   // 为聚集在一起的时间线标记分配垂直行号，避免各条参考线的文字标签叠在同一处；
   // 同时按标记在时间轴的位置决定文字朝向，防止靠右的标记文字溢出图表。
   const timelineEventLayout = useMemo(() => {
-    const first = detailHistoryPoints[0]?.timestamp ?? 0;
-    const last = detailHistoryPoints[detailHistoryPoints.length - 1]?.timestamp ?? first;
+    const first = zoomedHistoryChartData[0]?.timestamp ?? 0;
+    const last = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? first;
     const range = Math.max(1, last - first);
     const minGap = range * 0.07; // 时间间隔小于可见跨度 7% 的标记视为“重叠”，需错行显示
     const maxRows = 4;
@@ -863,7 +901,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       rowLastTs[row] = event.timestamp;
       return { event, row, anchorEnd: (event.timestamp - first) / range > 0.55 };
     });
-  }, [detailHistoryPoints, visibleTimelineEvents]);
+  }, [zoomedHistoryChartData, visibleTimelineEvents]);
 
   const historySeriesMeta = useMemo(() => ([
     { key: 'cpu' as const, label: t('fanCurve.history.series.cpu'), color: '#2f6df6' },
@@ -2277,7 +2315,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
               <div className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
+                    {historyZoomDomain ? (
+                      <button
+                        type="button"
+                        onClick={resetHistoryZoom}
+                        className="cursor-pointer rounded-full border border-border/70 bg-card px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {t('fanCurve.history.resetZoom')}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground/60">{t('fanCurve.history.zoomHint')}</span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {historySeriesMeta.map((series) => (
                       <button
@@ -2301,9 +2352,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 {historyChartData.length < 2 ? (
                   <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">{t('fanCurve.history.waitingMoreSamples')}</div>
                 ) : (
-                  <div className="h-72">
+                  <div className="h-72 select-none">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={historyChartData} margin={{ top: 12, right: 16, left: 4, bottom: 8 }}>
+                      <LineChart
+                        data={zoomedHistoryChartData}
+                        syncId="historyTrend"
+                        margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
+                        onMouseDown={handleHistoryZoomMouseDown}
+                        onMouseMove={handleHistoryZoomMouseMove}
+                        onMouseUp={handleHistoryZoomMouseUp}
+                        onMouseLeave={handleHistoryZoomMouseUp}
+                        onDoubleClick={resetHistoryZoom}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                         <XAxis
                           dataKey="timestamp"
@@ -2371,6 +2431,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke="#10b981" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {hasLaptopFanHistory && historySeriesVisibility.cpuFan && <Line yAxisId="fan" type="monotone" dataKey="cpuFanRpm" stroke="#0ea5e9" strokeWidth={1.8} strokeDasharray="6 3" dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                         {hasLaptopFanHistory && historySeriesVisibility.gpuFan && <Line yAxisId="fan" type="monotone" dataKey="gpuFanRpm" stroke="#84cc16" strokeWidth={1.8} strokeDasharray="6 3" dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end && (
+                          <ReferenceArea
+                            yAxisId="temp"
+                            x1={Math.min(historyZoomSelect.start, historyZoomSelect.end)}
+                            x2={Math.max(historyZoomSelect.start, historyZoomSelect.end)}
+                            fill="var(--chart-axis)"
+                            fillOpacity={0.15}
+                            strokeOpacity={0}
+                          />
+                        )}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
@@ -2379,9 +2449,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 {historyPowerMax > 0 && (historySeriesVisibility.cpuPower || historySeriesVisibility.gpuPower) && (
                   <div className="border-t border-border/60 pt-3">
                     <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
-                    <div className="h-48">
+                    <div className="h-48 select-none">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={historyChartData} margin={{ top: 8, right: 16, left: 4, bottom: 8 }}>
+                        <LineChart
+                          data={zoomedHistoryChartData}
+                          syncId="historyTrend"
+                          margin={{ top: 8, right: 16, left: 4, bottom: 8 }}
+                          onMouseDown={handleHistoryZoomMouseDown}
+                          onMouseMove={handleHistoryZoomMouseMove}
+                          onMouseUp={handleHistoryZoomMouseUp}
+                          onMouseLeave={handleHistoryZoomMouseUp}
+                          onDoubleClick={resetHistoryZoom}
+                        >
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
                           <XAxis
                             dataKey="timestamp"
@@ -2419,6 +2498,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           />
                           {historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPower" stroke="#8b5cf6" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
                           {historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPower" stroke="#ec4899" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                          {historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end && (
+                            <ReferenceArea
+                              yAxisId="power"
+                              x1={Math.min(historyZoomSelect.start, historyZoomSelect.end)}
+                              x2={Math.max(historyZoomSelect.start, historyZoomSelect.end)}
+                              fill="var(--chart-axis)"
+                              fillOpacity={0.15}
+                              strokeOpacity={0}
+                            />
+                          )}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>

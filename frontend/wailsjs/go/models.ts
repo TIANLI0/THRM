@@ -430,6 +430,7 @@ export namespace types {
 	    customSpeedEnabled: boolean;
 	    customSpeedRPM: number;
 	    ignoreDeviceOnReconnect: boolean;
+	    lastDeviceTransport: string;
 	    speedAvoidance: SpeedAvoidanceConfig;
 	    timeCurveSchedule: TimeCurveScheduleConfig;
 	    smartControl: SmartControlConfig;
@@ -476,6 +477,7 @@ export namespace types {
 	        this.customSpeedEnabled = source["customSpeedEnabled"];
 	        this.customSpeedRPM = source["customSpeedRPM"];
 	        this.ignoreDeviceOnReconnect = source["ignoreDeviceOnReconnect"];
+	        this.lastDeviceTransport = source["lastDeviceTransport"];
 	        this.speedAvoidance = this.convertValues(source["speedAvoidance"], SpeedAvoidanceConfig);
 	        this.timeCurveSchedule = this.convertValues(source["timeCurveSchedule"], TimeCurveScheduleConfig);
 	        this.smartControl = this.convertValues(source["smartControl"], SmartControlConfig);

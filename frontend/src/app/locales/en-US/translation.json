@@ -534,6 +534,8 @@
       "emptyEnabled": "Background recording is enabled. Waiting for more temperature and fan samples.",
       "emptyDisabled": "Background recording is currently disabled. You can enable it on this page.",
       "recentTrend": "Recent trend",
+      "resetZoom": "Reset zoom",
+      "zoomHint": "Drag on the chart to select a time range",
       "powerTrend": "Power trend",
       "waitingMoreSamples": "1 sample recorded. Waiting for more data before drawing the trend chart.",
       "series": {
