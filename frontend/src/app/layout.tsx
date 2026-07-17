@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Manrope, Noto_Sans_SC } from "next/font/google";
+// 本地字体：仅打包体积很小的拉丁字体，避免构建时联网请求 Google 字体失败。
+// 中文（CJK）字体不打包——体积高达数十 MB，改用系统自带中文字体（见 globals.css 的 --font-ui-cjk）。
+import "@fontsource-variable/manrope/index.css";
+import "@fontsource-variable/geist-mono/index.css";
 import "./globals.css";
 import SystemThemeSync from "./components/SystemThemeSync";
 import { Toaster } from "@/components/ui/sonner";
@@ -7,24 +10,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BRAND } from "./lib/brand";
 import { AppI18nProvider } from "./lib/i18n";
 import { getThemeBootstrapScript } from "./lib/theme-bootstrap";
-
-const uiSans = Manrope({
-  variable: "--font-ui-sans",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const uiCjk = Noto_Sans_SC({
-  variable: "--font-ui-cjk",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: BRAND.name,
@@ -46,9 +31,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
         />
       </head>
-      <body
-        className={`${uiSans.variable} ${uiCjk.variable} ${geistMono.variable}`}
-      >
+      <body>
         <AppI18nProvider>
           <SystemThemeSync />
           <TooltipProvider delayDuration={180}>

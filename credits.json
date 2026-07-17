@@ -37,6 +37,12 @@
       "name": "valhir",
       "url": "https://github.com/valhir",
       "avatar": "https://avatars.githubusercontent.com/u/46245068?v=4"
+    },
+    {
+      "login": "Eureka-o",
+      "name": "Eureka-o",
+      "url": "https://github.com/Eureka-o",
+      "avatar": "https://avatars.githubusercontent.com/u/218721479?v=4"
     }
   ],
   "sponsors": [
@@ -63,6 +69,7 @@
     { "name": "*ド", "amount": 1.88 },
     { "name": "**延", "amount": 1.66 },
     { "name": "A*s", "amount": 1.00, "note": "支持一下吧" },
-    { "name": "H*l", "amount": 1.00 }
+    { "name": "H*l", "amount": 1.00 },
+    { "name": "O*o", "amount": 5.00 }
   ]
 }

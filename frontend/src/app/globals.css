@@ -71,6 +71,10 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-destructive: var(--destructive);
+  /* 拉丁字体本地打包（见 layout.tsx）；CJK 用系统自带字体以减小安装包体积 */
+  --font-ui-sans: "Manrope Variable";
+  --font-ui-cjk: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC";
+  --font-geist-mono: "Geist Mono Variable";
   --font-sans: var(--font-ui-sans), var(--font-ui-cjk);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
