@@ -200,7 +200,8 @@
       "cpuTemperature": "CPU 温度",
       "gpuTemperature": "GPU 温度",
       "fanRpm": "风扇转速",
-      "laptopFan": "本机风扇转速"
+      "laptopFan": "本机风扇转速",
+      "laptopFanTooltip": "这是笔记本内置风扇的转速"
     },
     "disconnected": {
       "title": "设备未连接",
@@ -260,6 +261,9 @@
     "version": {
       "current": "当前 {{version}}",
       "latest": "最新 {{version}}",
+      "copyTooltip": "点击复制版本号",
+      "copied": "已复制：{{version}}",
+      "copyFailed": "复制失败",
       "checkingShort": "检查中…",
       "checkingButton": "检查中",
       "checkUpdate": "检查更新",

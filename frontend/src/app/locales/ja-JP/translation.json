@@ -200,7 +200,8 @@
       "cpuTemperature": "CPU 温度",
       "gpuTemperature": "GPU 温度",
       "fanRpm": "ファン回転数",
-      "laptopFan": "本体ファン回転数"
+      "laptopFan": "本体ファン回転数",
+      "laptopFanTooltip": "ノートPC内蔵ファンの回転数です"
     },
     "disconnected": {
       "title": "デバイスが接続されていません",
@@ -259,6 +260,9 @@
     "version": {
       "current": "現在 {{version}}",
       "latest": "最新 {{version}}",
+      "copyTooltip": "クリックしてバージョンをコピー",
+      "copied": "コピーしました：{{version}}",
+      "copyFailed": "コピーに失敗しました",
       "checkingShort": "確認中…",
       "checkingButton": "確認中",
       "checkUpdate": "アップデートを確認",

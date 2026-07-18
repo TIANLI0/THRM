@@ -200,7 +200,8 @@
       "cpuTemperature": "CPU temperature",
       "gpuTemperature": "GPU temperature",
       "fanRpm": "Fan RPM",
-      "laptopFan": "Laptop fan speed"
+      "laptopFan": "Laptop fan speed",
+      "laptopFanTooltip": "This is the laptop's built-in fan speed"
     },
     "disconnected": {
       "title": "Device not connected",
@@ -260,6 +261,9 @@
     "version": {
       "current": "Current {{version}}",
       "latest": "Latest {{version}}",
+      "copyTooltip": "Click to copy the version",
+      "copied": "Copied: {{version}}",
+      "copyFailed": "Copy failed",
       "checkingShort": "Checking...",
       "checkingButton": "Checking",
       "checkUpdate": "Check for updates",

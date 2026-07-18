@@ -242,13 +242,16 @@ const TempGaugeDisplay = memo(function TempGaugeDisplay({
             <span className="text-xs font-medium text-muted-foreground/70">°C</span>
           </div>
           {laptopFanRpm > 0 ? (
-            <span
-              className="mt-1 inline-flex items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground"
-              title={t('deviceStatus.metrics.laptopFan')}
-            >
-              <Fan className="h-3 w-3" />
-              {laptopFanRpm} RPM
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="mt-1 inline-flex cursor-help items-center text-[11px] leading-none tabular-nums text-muted-foreground">
+                  {laptopFanRpm} RPM
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('deviceStatus.metrics.laptopFanTooltip')}
+              </TooltipContent>
+            </Tooltip>
           ) : (
             <span className="mt-1 text-[11px] leading-none text-muted-foreground">
               {t('deviceStatus.tempGauge.monitoringDisabled')}
@@ -289,13 +292,16 @@ const TempGaugeDisplay = memo(function TempGaugeDisplay({
         </div>
         {/* 支持读取本机风扇时，用转速替换状态文字（同一行位，高度不变）；不支持时保持状态文字 */}
         {laptopFanRpm > 0 ? (
-          <span
-            className="mt-1 inline-flex items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground"
-            title={t('deviceStatus.metrics.laptopFan')}
-          >
-            <Fan className="h-3 w-3" />
-            {laptopFanRpm} RPM
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="mt-1 inline-flex cursor-help items-center text-[11px] leading-none tabular-nums text-muted-foreground">
+                {laptopFanRpm} RPM
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('deviceStatus.metrics.laptopFanTooltip')}
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <span className="mt-1 text-[11px] leading-none text-muted-foreground">{t(status.labelKey)}</span>
         )}
