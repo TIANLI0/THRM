@@ -7,7 +7,7 @@
     "note": "备注 / 留言（可省略）",
     "amount": "赞助金额，数字（可省略，省略时不显示金额）"
   },
-  "updatedAt": "2026-07-12",
+  "updatedAt": "2026-07-18",
   "contributors": [
     {
       "login": "TIANLI0",
@@ -43,6 +43,12 @@
       "name": "Eureka-o",
       "url": "https://github.com/Eureka-o",
       "avatar": "https://avatars.githubusercontent.com/u/218721479?v=4"
+    },
+    {
+      "login": "XKaguya",
+      "name": "XKaguya",
+      "url": "https://github.com/XKaguya",
+      "avatar": "https://avatars.githubusercontent.com/u/96401952?v=4"
     }
   ],
   "sponsors": [
