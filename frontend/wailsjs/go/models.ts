@@ -415,6 +415,7 @@ export namespace types {
 	    tempUpdateRate: number;
 	    tempSampleCount: number;
 	    tempSource: string;
+	    temperatureHistoryRetentionHours: number;
 	    disableGpuMonitoring: boolean;
 	    gpuDevice: string;
 	    cpuSensor: string;
@@ -462,6 +463,7 @@ export namespace types {
 	        this.tempUpdateRate = source["tempUpdateRate"];
 	        this.tempSampleCount = source["tempSampleCount"];
 	        this.tempSource = source["tempSource"];
+	        this.temperatureHistoryRetentionHours = source["temperatureHistoryRetentionHours"];
 	        this.disableGpuMonitoring = source["disableGpuMonitoring"];
 	        this.gpuDevice = source["gpuDevice"];
 	        this.cpuSensor = source["cpuSensor"];
@@ -983,6 +985,7 @@ export namespace types {
 	export class TemperatureHistoryPayload {
 	    enabled: boolean;
 	    sampleIntervalSeconds: number;
+	    retentionHours: number;
 	    points: TemperatureHistoryPoint[];
 	
 	    static createFrom(source: any = {}) {
@@ -993,6 +996,7 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
 	        this.sampleIntervalSeconds = source["sampleIntervalSeconds"];
+	        this.retentionHours = source["retentionHours"];
 	        this.points = this.convertValues(source["points"], TemperatureHistoryPoint);
 	    }
 	

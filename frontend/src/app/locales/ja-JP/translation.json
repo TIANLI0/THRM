@@ -531,7 +531,7 @@
     },
     "history": {
       "detailsTitle": "温度とファン履歴の詳細",
-      "detailsDescription": "カーブタブでは直近 1 時間の温度、消費電力、ファン履歴を保持し、現在のカーブと負荷変化を比較できます。",
+      "detailsDescription": "カーブタブでは設定可能な期間（既定 1 時間）の温度、消費電力、ファン履歴を保持し、現在のカーブと負荷変化を比較できます。",
       "saving": "保存中",
       "backgroundRecording": "バックグラウンド記録",
       "emptyEnabled": "バックグラウンド記録は有効です。さらなる温度とファンのサンプルを待っています。",
@@ -541,6 +541,18 @@
       "zoomHint": "グラフ上をドラッグして時間範囲を選択",
       "powerTrend": "消費電力の推移",
       "waitingMoreSamples": "サンプルを 1 件記録しました。推移グラフを表示するにはさらなるデータが必要です。",
+      "retention": {
+        "label": "保持",
+        "hours": "{{count}} 時間"
+      },
+      "timeline": {
+        "deviceConnected": "デバイス接続",
+        "deviceDisconnected": "デバイス切断",
+        "smartControlOn": "スマート制御 オン",
+        "smartControlOff": "スマート制御 オフ",
+        "curveSwitched": "ファンカーブ切替",
+        "resumeFromSleep": "スリープから復帰"
+      },
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",

@@ -17,6 +17,8 @@ import (
 const (
 	DefaultHistoryCapacity              = 720
 	DefaultHistorySampleInterval        = 5 * time.Second
+	DefaultHistoryRetentionHours        = 1
+	MaxHistoryRetentionHours            = 24
 	DefaultHistoryRelativePath          = "telemetry/history.bin"
 	historyBinaryMagic                  = "THST"
 	historyBinaryVersionLegacy   uint16 = 1
@@ -83,6 +85,58 @@ func (r *HistoryRecorder) IsEnabled() bool {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	return r.enabled
+}
+
+// pointsPerHourLocked 返回按当前采样间隔一小时可容纳的样本数。
+func (r *HistoryRecorder) pointsPerHourLocked() int {
+	if r.sampleInterval <= 0 {
+		return DefaultHistoryCapacity
+	}
+	per := int(time.Hour / r.sampleInterval)
+	if per <= 0 {
+		return DefaultHistoryCapacity
+	}
+	return per
+}
+
+// RetentionHours 返回当前后台保留时长(小时)。
+func (r *HistoryRecorder) RetentionHours() int {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	hours := r.capacity / r.pointsPerHourLocked()
+	if hours < 1 {
+		hours = 1
+	}
+	return hours
+}
+
+// SetRetentionHours 调整后台保留时长；扩缩环形缓冲区并保留最新样本后落盘。
+func (r *HistoryRecorder) SetRetentionHours(hours int) error {
+	if hours < 1 {
+		hours = 1
+	}
+	if hours > MaxHistoryRetentionHours {
+		hours = MaxHistoryRetentionHours
+	}
+
+	r.mutex.Lock()
+	newCapacity := r.pointsPerHourLocked() * hours
+	if newCapacity <= 0 || newCapacity == r.capacity {
+		r.mutex.Unlock()
+		return nil
+	}
+	ordered := r.snapshotPointsLocked()
+	r.capacity = newCapacity
+	r.points = make([]types.TemperatureHistoryPoint, newCapacity)
+	r.next = 0
+	r.filled = false
+	r.applyLoadedPointsLocked(ordered)
+	payload, err := r.serializeLocked()
+	r.mutex.Unlock()
+	if err != nil {
+		return err
+	}
+	return r.writeFile(payload)
 }
 
 func (r *HistoryRecorder) Flush() error {
@@ -171,9 +225,14 @@ func (r *HistoryRecorder) Snapshot() types.TemperatureHistoryPayload {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
+	retentionHours := r.capacity / r.pointsPerHourLocked()
+	if retentionHours < 1 {
+		retentionHours = 1
+	}
 	return types.TemperatureHistoryPayload{
 		Enabled:               r.enabled,
 		SampleIntervalSeconds: int(r.sampleInterval / time.Second),
+		RetentionHours:        retentionHours,
 		Points:                r.snapshotPointsLocked(),
 	}
 }

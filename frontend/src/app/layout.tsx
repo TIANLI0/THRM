@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-// 本地字体：仅打包体积很小的拉丁字体，避免构建时联网请求 Google 字体失败。
-// 中文（CJK）字体不打包——体积高达数十 MB，改用系统自带中文字体（见 globals.css 的 --font-ui-cjk）。
 import "@fontsource-variable/manrope/index.css";
 import "@fontsource-variable/geist-mono/index.css";
 import "./globals.css";

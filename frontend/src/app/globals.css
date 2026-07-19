@@ -3,6 +3,28 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: local("HarmonyOS Sans SC"), url("/fonts/HarmonyOSSansSC-Regular.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+  src: local("HarmonyOS Sans SC Medium"), url("/fonts/HarmonyOSSansSC-Medium.subset.woff2") format("woff2");
+}
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  src: local("HarmonyOS Sans SC Bold"), url("/fonts/HarmonyOSSansSC-Bold.subset.woff2") format("woff2");
+}
+
 :root {
   --background: #f6f8fc;
   --foreground: #111827;
@@ -30,7 +52,7 @@
   --chart-primary-glow: rgba(47, 109, 246, 0.36);
   --chart-point-shadow: rgba(0, 0, 0, 0.1);
   --chart-temperature-indicator: #ef4444;
-  --chart-tooltip-bg: rgba(255, 255, 255, 0.95);
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.72);
   --chart-tooltip-border: transparent;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
   --chart-tooltip-text: #111827;
@@ -71,9 +93,9 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-destructive: var(--destructive);
-  /* 拉丁字体本地打包（见 layout.tsx）；CJK 用系统自带字体以减小安装包体积 */
+  /* 拉丁字体本地打包（见 layout.tsx）；CJK 打包 HarmonyOS Sans SC 子集（见顶部 @font-face），缺字回退系统字体 */
   --font-ui-sans: "Manrope Variable";
-  --font-ui-cjk: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC";
+  --font-ui-cjk: "HarmonyOS Sans SC", "HarmonyOS Sans", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC";
   --font-geist-mono: "Geist Mono Variable";
   --font-sans: var(--font-ui-sans), var(--font-ui-cjk);
   --font-mono: var(--font-geist-mono);
@@ -131,7 +153,7 @@
   --chart-primary-glow: rgba(255, 75, 38, 0.42);
   --chart-point-shadow: rgba(0, 0, 0, 0.45);
   --chart-temperature-indicator: #ff7048;
-  --chart-tooltip-bg: rgba(17, 22, 29, 0.96);
+  --chart-tooltip-bg: rgba(17, 22, 29, 0.72);
   --chart-tooltip-border: #303845;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
   --chart-tooltip-text: #e5e7eb;
@@ -283,8 +305,9 @@ body {
 body {
   overflow: hidden;
   /* 西文优先 Manrope，中文使用内置 CJK 字体，日文直接走系统字体回退 */
-  font-family: var(--font-sans), "PingFang SC", "Hiragino Sans GB",
-    "Hiragino Sans", "Yu Gothic UI", "HarmonyOS Sans SC", "Source Han Sans SC", "Noto Sans CJK SC",
+  font-family: var(--font-sans), "HarmonyOS Sans SC", "HarmonyOS Sans",
+    "PingFang SC", "Hiragino Sans GB",
+    "Hiragino Sans", "Yu Gothic UI", "Source Han Sans SC", "Noto Sans CJK SC",
     "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI Variable",
     "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, Helvetica,
     sans-serif;

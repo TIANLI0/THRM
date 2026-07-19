@@ -43,6 +43,18 @@ func (a *App) SetTemperatureHistoryEnabled(enabled bool) error {
 	return nil
 }
 
+// SetTemperatureHistoryRetentionHours 设置后台历史保留时长(小时)。
+func (a *App) SetTemperatureHistoryRetentionHours(hours int) error {
+	resp, err := a.sendRequest(ipc.ReqSetTemperatureHistoryRetentionHours, ipc.SetIntParams{Value: hours})
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	return nil
+}
+
 // TestTemperatureReading 测试温度读取
 func (a *App) TestTemperatureReading() TemperatureData {
 	resp, err := a.sendRequest(ipc.ReqTestTemperatureReading, nil)

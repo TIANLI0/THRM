@@ -18,6 +18,16 @@ export const CORE_HISTORY_RETENTION_MS = 60 * 60 * 1000;
 export const SESSION_HISTORY_RETENTION_MS = 5 * 60 * 1000;
 export const HISTORY_SAMPLE_INTERVAL_MS = 5 * 1000;
 export const HISTORY_LIMIT = CORE_HISTORY_LIMIT;
+export const DEFAULT_HISTORY_RETENTION_HOURS = 1;
+export const MAX_HISTORY_RETENTION_HOURS = 24;
+export const HISTORY_RETENTION_HOUR_OPTIONS = [1, 2, 3, 6, 12, 24] as const;
+
+export const clampHistoryRetentionHours = (hours: number | null | undefined): number => {
+  const numeric = Math.round(Number(hours || 0));
+  if (!Number.isFinite(numeric) || numeric < 1) return DEFAULT_HISTORY_RETENTION_HOURS;
+  if (numeric > MAX_HISTORY_RETENTION_HOURS) return MAX_HISTORY_RETENTION_HOURS;
+  return numeric;
+};
 
 export const normalizeHistoryTimestamp = (timestamp: number | null | undefined) => {
   const numeric = Number(timestamp || 0);
@@ -92,18 +102,25 @@ export const appendHistoryPoint = (
   const normalized = normalizeHistoryPoint(point);
   if (!normalized) return points;
 
-  const next = [...points];
-  const last = next[next.length - 1];
+  const retentionMs = options?.retentionMs ?? CORE_HISTORY_RETENTION_MS;
+  const limit = options?.limit ?? HISTORY_LIMIT;
+  const last = points[points.length - 1];
 
-  if (last && last.timestamp === normalized.timestamp) {
-    next[next.length - 1] = normalized;
-  } else if (last && normalized.timestamp < last.timestamp) {
-    return normalizeHistoryPoints([...next, normalized]);
-  } else {
-    next.push(normalized);
+  // 乱序追加是异常路径，才需要全量归一化 + 排序。
+  if (last && normalized.timestamp < last.timestamp) {
+    return trimHistoryPoints([...points, normalized], retentionMs, limit);
   }
 
-  return trimHistoryPoints(next, options?.retentionMs ?? CORE_HISTORY_RETENTION_MS, options?.limit ?? HISTORY_LIMIT);
+  // 快路径：数组本身已按时间有序且逐点归一化过，直接追加/替换末尾，再从头部裁剪过期点。
+  const next = last && last.timestamp === normalized.timestamp
+    ? [...points.slice(0, -1), normalized]
+    : [...points, normalized];
+
+  const cutoffTimestamp = Math.max(0, normalized.timestamp - retentionMs);
+  let start = 0;
+  while (start < next.length && next[start].timestamp < cutoffTimestamp) start++;
+  if (next.length - start > limit) start = next.length - limit;
+  return start > 0 ? next.slice(start) : next;
 };
 
 export const appendSampledHistoryPoint = (
@@ -121,6 +138,21 @@ export const appendSampledHistoryPoint = (
   }
 
   return appendHistoryPoint(points, normalized, options);
+};
+
+// 趋势图渲染前的等距抽稀：长时间窗口（24h ≈ 1.7 万点）远超图表像素宽度，
+// 直接绘制既慢又卡。不做平均，保留原始采样值；始终保留最后一个点。
+export const downsampleHistoryPoints = (
+  points: TemperatureHistoryPoint[],
+  maxPoints: number,
+): TemperatureHistoryPoint[] => {
+  if (maxPoints <= 0 || points.length <= maxPoints) return points;
+  const stride = Math.ceil(points.length / maxPoints);
+  const out: TemperatureHistoryPoint[] = [];
+  for (let i = 0; i < points.length; i += stride) out.push(points[i]);
+  const last = points[points.length - 1];
+  if (out[out.length - 1] !== last) out.push(last);
+  return out;
 };
 
 export const createLiveHistoryPoint = (

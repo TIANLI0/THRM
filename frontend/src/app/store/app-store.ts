@@ -42,7 +42,8 @@ const isCoreServiceFailureDetail = (detail?: string) => {
 
 type ActiveTab = 'status' | 'curve' | 'control' | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
-export interface TimelineEvent { timestamp: number; type: 'mode' | 'disconnect' | 'resume' | 'profile'; label: string }
+// labelKey 为 i18n 键（在 FanCurve 时间线渲染时翻译）；不再存储已本地化的字面量，保证跟随语言切换。
+export interface TimelineEvent { timestamp: number; type: 'mode' | 'disconnect' | 'resume' | 'profile'; labelKey: string }
 
 interface AppStore {
   isConnected: boolean;
@@ -277,7 +278,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           coreServiceError: null,
           error: null,
         });
-        addTimelineEvent({ timestamp: Date.now(), type: 'mode', label: '设备已连接' });
+        addTimelineEvent({ timestamp: Date.now(), type: 'mode', labelKey: 'fanCurve.history.timeline.deviceConnected' });
       })
     );
 
@@ -285,7 +286,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       deviceService.onDeviceDisconnected(() => {
         console.log('设备已断开');
         set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, fanData: null });
-        addTimelineEvent({ timestamp: Date.now(), type: 'disconnect', label: '设备断开' });
+        addTimelineEvent({ timestamp: Date.now(), type: 'disconnect', labelKey: 'fanCurve.history.timeline.deviceDisconnected' });
       })
     );
 
@@ -321,12 +322,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const previous = get().config;
         set({ config: updatedConfig });
         if (previous && previous.autoControl !== updatedConfig.autoControl) {
-          addTimelineEvent({ timestamp: Date.now(), type: 'mode', label: updatedConfig.autoControl ? '切换为智能控温' : '退出智能控温' });
+          addTimelineEvent({ timestamp: Date.now(), type: 'mode', labelKey: updatedConfig.autoControl ? 'fanCurve.history.timeline.smartControlOn' : 'fanCurve.history.timeline.smartControlOff' });
         }
         const previousProfile = (previous as any)?.activeFanCurveProfileId;
         const nextProfile = (updatedConfig as any)?.activeFanCurveProfileId;
         if (previousProfile && nextProfile && previousProfile !== nextProfile) {
-          addTimelineEvent({ timestamp: Date.now(), type: 'profile', label: '切换风扇曲线' });
+          addTimelineEvent({ timestamp: Date.now(), type: 'profile', labelKey: 'fanCurve.history.timeline.curveSwitched' });
         }
       })
     );
@@ -334,7 +335,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     unsubscribers.push(apiService.onHeartbeat((timestamp) => {
       const now = Number(timestamp || Date.now());
       if (lastHeartbeat > 0 && now - lastHeartbeat > 20_000) {
-        addTimelineEvent({ timestamp: now, type: 'resume', label: '系统睡眠唤醒' });
+        addTimelineEvent({ timestamp: now, type: 'resume', labelKey: 'fanCurve.history.timeline.resumeFromSleep' });
       }
       lastHeartbeat = now;
     }));

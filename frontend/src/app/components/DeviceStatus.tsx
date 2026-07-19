@@ -22,7 +22,7 @@ import {
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { downsampleHistoryPoints, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import { getManualGearLabel, getReportedMaxRpm } from '../lib/manualGearPresets';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
@@ -483,12 +483,14 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
     const minY = Math.max(0, Math.floor((minTemp - 6) / 5) * 5);
     const maxY = Math.min(110, Math.ceil((maxTemp + 6) / 5) * 5);
     const rangeY = Math.max(10, maxY - minY);
-    const minTs = points[0]?.timestamp ?? 0;
-    const maxTs = points[points.length - 1]?.timestamp ?? minTs;
+    // 迷你图宽度约 500px，超过 600 点后多余的路径段只增加渲染开销、不增加信息量。
+    const drawPoints = downsampleHistoryPoints(points, 600);
+    const minTs = drawPoints[0]?.timestamp ?? 0;
+    const maxTs = drawPoints[drawPoints.length - 1]?.timestamp ?? minTs;
     const rangeTs = Math.max(1, maxTs - minTs);
     const xFor = (timestamp: number, index: number) => {
-      if (points.length <= 1) return pad.left + plotWidth / 2;
-      if (rangeTs <= 1 && points.length > 1) return pad.left + (index / Math.max(1, points.length - 1)) * plotWidth;
+      if (drawPoints.length <= 1) return pad.left + plotWidth / 2;
+      if (rangeTs <= 1 && drawPoints.length > 1) return pad.left + (index / Math.max(1, drawPoints.length - 1)) * plotWidth;
       return pad.left + ((timestamp - minTs) / rangeTs) * plotWidth;
     };
     const yForTemp = (temp: number) => pad.top + plotHeight - ((temp - minY) / rangeY) * plotHeight;
@@ -496,7 +498,7 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
     const buildPath = (selector: (point: TemperatureHistoryPoint) => number, projectY: (value: number) => number) => {
       let path = '';
       let started = false;
-      points.forEach((point, index) => {
+      drawPoints.forEach((point, index) => {
         const value = selector(point);
         if (value <= 0) {
           started = false;

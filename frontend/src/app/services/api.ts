@@ -21,6 +21,7 @@ import {
   GetTemperature,
   GetTemperatureHistory,
   SetTemperatureHistoryEnabled,
+  SetTemperatureHistoryRetentionHours,
   GetCurrentFanData,
   TestTemperatureReading,
   GetDebugInfo,
@@ -213,6 +214,10 @@ class ApiService {
 
   async setTemperatureHistoryEnabled(enabled: boolean): Promise<void> {
     return await SetTemperatureHistoryEnabled(enabled);
+  }
+
+  async setTemperatureHistoryRetentionHours(hours: number): Promise<void> {
+    return await SetTemperatureHistoryRetentionHours(hours);
   }
 
   async getCurrentFanData(): Promise<types.FanData | null> {

@@ -532,7 +532,7 @@
     },
     "history": {
       "detailsTitle": "温度与风扇历史详情",
-      "detailsDescription": "曲线页保留最近 1 小时的温度、功耗与风扇历史，便于对照当前曲线与负载变化。",
+      "detailsDescription": "曲线页保留可配置时长（默认 1 小时）的温度、功耗与风扇历史，便于对照当前曲线与负载变化。",
       "saving": "保存中",
       "backgroundRecording": "后台记录",
       "emptyEnabled": "后台记录已开启，等待更多温度与风扇样本。",
@@ -542,6 +542,18 @@
       "zoomHint": "在图表上拖拽可框选时间范围",
       "powerTrend": "功耗趋势",
       "waitingMoreSamples": "已记录 1 条样本，等待更多数据后展示趋势图。",
+      "retention": {
+        "label": "保留",
+        "hours": "{{count}} 小时"
+      },
+      "timeline": {
+        "deviceConnected": "设备已连接",
+        "deviceDisconnected": "设备断开",
+        "smartControlOn": "切换为智能控温",
+        "smartControlOff": "退出智能控温",
+        "curveSwitched": "切换风扇曲线",
+        "resumeFromSleep": "系统睡眠唤醒"
+      },
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",

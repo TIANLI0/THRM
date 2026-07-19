@@ -532,7 +532,7 @@
     },
     "history": {
       "detailsTitle": "Temperature and fan history details",
-      "detailsDescription": "The curve page keeps a 1-hour history overview for temperature, power, and fan trends.",
+      "detailsDescription": "The curve page keeps a configurable history window (1 hour by default) for temperature, power, and fan trends.",
       "saving": "Saving",
       "backgroundRecording": "Background recording",
       "emptyEnabled": "Background recording is enabled. Waiting for more temperature and fan samples.",
@@ -542,6 +542,18 @@
       "zoomHint": "Drag on the chart to select a time range",
       "powerTrend": "Power trend",
       "waitingMoreSamples": "1 sample recorded. Waiting for more data before drawing the trend chart.",
+      "retention": {
+        "label": "Keep",
+        "hours": "{{count}} h"
+      },
+      "timeline": {
+        "deviceConnected": "Device connected",
+        "deviceDisconnected": "Device disconnected",
+        "smartControlOn": "Smart cooling on",
+        "smartControlOff": "Smart cooling off",
+        "curveSwitched": "Fan curve switched",
+        "resumeFromSleep": "Resumed from sleep"
+      },
       "series": {
         "cpu": "CPU",
         "gpu": "GPU",

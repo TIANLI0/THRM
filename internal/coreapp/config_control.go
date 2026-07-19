@@ -11,6 +11,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/curveprofiles"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
+	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -106,6 +107,24 @@ func (a *CoreApp) SetTemperatureHistoryEnabled(enabled bool) error {
 		return err
 	}
 	return nil
+}
+
+// SetTemperatureHistoryRetentionHours 调整温度历史后台保留时长(小时)并持久化到配置。
+func (a *CoreApp) SetTemperatureHistoryRetentionHours(hours int) error {
+	if hours < 1 {
+		hours = temperature.DefaultHistoryRetentionHours
+	}
+	if hours > temperature.MaxHistoryRetentionHours {
+		hours = temperature.MaxHistoryRetentionHours
+	}
+	if err := a.tempHistory.SetRetentionHours(hours); err != nil {
+		return err
+	}
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	cfg := a.configManager.Get()
+	cfg.TemperatureHistoryRetentionHours = hours
+	return a.configManager.Update(cfg)
 }
 
 // SetFanCurve 设置风扇曲线

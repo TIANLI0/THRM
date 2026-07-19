@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea } from 'recharts';
+import { LineChart, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RotateCw,
@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { useLocale } from '../lib/i18n';
-import { type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { HISTORY_RETENTION_HOUR_OPTIONS, downsampleHistoryPoints, type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
@@ -315,8 +315,12 @@ function formatHistorySeriesValue(key: HistorySeriesKey, value: number) {
   return `${Math.round(value)} °C`;
 }
 
-// 温度/风扇趋势图与功耗图共用同一个 tooltip：无论悬停哪张图，都同时展示温度、转速与功耗，
-// 保证「跟踪最近趋势时也能看到功耗信息，反之亦然」。仅展示当前已开启且有数据的曲线。
+type HistoryNumericField = 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuFanRpm' | 'gpuFanRpm' | 'cpuPower' | 'gpuPower';
+// 趋势图渲染前抽稀到的上限点数（详见 downsampleHistoryPoints）。
+const HISTORY_RAW_CAP = 1500;
+
+// 每张趋势图使用各自的 tooltip：温度/风扇图只列温度与转速，功耗图只列功耗，避免互相堆叠遮挡。
+// 仅展示当前已开启且有数据的曲线。
 function HistoryTrendTooltip(props: {
   active?: boolean;
   label?: string | number;
@@ -324,13 +328,15 @@ function HistoryTrendTooltip(props: {
   locale: string;
   meta: HistorySeriesMetaItem[];
   visibility: Record<HistorySeriesKey, boolean>;
+  keys: HistorySeriesKey[];
 }) {
-  const { active, label, payload, locale, meta, visibility } = props;
+  const { active, label, payload, locale, meta, visibility, keys } = props;
   const point = payload?.[0]?.payload;
   if (!active || !point) return null;
 
+  const allow = new Set(keys);
   const rows = meta
-    .filter((series) => visibility[series.key])
+    .filter((series) => allow.has(series.key) && visibility[series.key])
     .map((series) => ({ series, value: Number(point[HISTORY_SERIES_FIELD[series.key]] ?? 0) }))
     .filter((row) => row.value > 0);
   if (rows.length === 0) return null;
@@ -340,10 +346,12 @@ function HistoryTrendTooltip(props: {
       style={{
         backgroundColor: 'var(--chart-tooltip-bg)',
         border: '1px solid var(--chart-tooltip-border)',
-        borderRadius: 8,
+        borderRadius: 10,
         boxShadow: 'var(--chart-tooltip-shadow)',
         padding: '8px 12px',
         color: 'var(--chart-tooltip-text)',
+        backdropFilter: 'blur(16px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(16px) saturate(180%)',
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{formatHistoryDateTime(Number(label), locale)}</div>
@@ -527,6 +535,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     enabled: temperatureHistoryEnabled,
     saving: temperatureHistorySaving,
     setEnabled: setTemperatureHistoryEnabled,
+    retentionHours: historyRetentionHours,
+    setRetentionHours: setHistoryRetentionHours,
   } = useTemperatureHistory();
 
   const activeProfile = useMemo(() => curveProfiles.find((p) => p.id === activeProfileId) ?? null, [curveProfiles, activeProfileId]);
@@ -778,7 +788,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       }));
   }, [config.fanCurve, currentLearningBias, localCurve, smartControl.learnedOffsets]);
 
-  const detailHistoryPoints = useMemo(() => temperatureHistory.slice(-720), [temperatureHistory]);
+  // 保留时长可配置（最多 24h），全窗口用于域计算与汇总；实际渲染点数由下方降采样控制。
+  const detailHistoryPoints = temperatureHistory;
 
   const historyTempDomain = useMemo<[number, number]>(() => {
     const values = detailHistoryPoints.flatMap((point) => [point.cpuTemp, point.gpuTemp]).filter((value) => value > 0);
@@ -791,11 +802,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [detailHistoryPoints]);
 
   const historyFanMax = useMemo(() => {
-    return Math.max(
-      4000,
-      ...detailHistoryPoints.flatMap((point) => [point.fanRpm, point.cpuFanRpm, point.gpuFanRpm]).filter((value) => value > 0),
+    const peak = Math.max(
       0,
+      ...detailHistoryPoints.flatMap((point) => [point.fanRpm, point.cpuFanRpm, point.gpuFanRpm]).filter((value) => value > 0),
     );
+    // 上取整到 500 的整数倍，让右轴刻度落在整齐数值（如 4500）而非原始峰值 4114。
+    return Math.max(4000, Math.ceil((peak + 200) / 500) * 500);
   }, [detailHistoryPoints]);
 
   // 笔记本内置风扇转速仅部分机型（Uniwill/同方准系统）可读；无任何有效样本时整组曲线与图例隐藏。
@@ -838,7 +850,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       fanAverage: average(fanValues),
     };
   }, [locale, t, temperatureHistory]);
-  const historyChartData = useMemo(() => detailHistoryPoints.map((point) => ({ ...point })), [detailHistoryPoints]);
+  const historyChartData = detailHistoryPoints;
   // 趋势图缩放区间（时间戳范围）；null 表示未缩放（跟随全部数据）。
   const [historyZoomDomain, setHistoryZoomDomain] = useState<[number, number] | null>(null);
   // 正在拖拽框选的临时区间，用于渲染半透明选区。
@@ -850,6 +862,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const sliced = historyChartData.filter((point) => point.timestamp >= from && point.timestamp <= to);
     return sliced.length >= 2 ? sliced : historyChartData;
   }, [historyChartData, historyZoomDomain]);
+  // 渲染用数据：对可见窗口等距抽稀到上限点数。两图共用同一份，保持缩放与指针联动。
+  const historyDisplayData = useMemo(() => downsampleHistoryPoints(zoomedHistoryChartData, HISTORY_RAW_CAP), [zoomedHistoryChartData]);
   const handleHistoryZoomMouseDown = useCallback((state: { activeLabel?: string | number } | null) => {
     if (state?.activeLabel == null) return;
     const ts = Number(state.activeLabel);
@@ -921,6 +935,43 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       [series]: !prev[series],
     }));
   }, []);
+
+  // 各趋势图的曲线定义（数据键、所属 Y 轴、颜色、线宽、虚线）。本机内置风扇用更细的虚线弱化，突出主曲线。
+  type HistoryLineSpec = { key: HistorySeriesKey; dataKey: HistoryNumericField; axis: string; color: string; width: number; dash?: string };
+  const tempChartSeries = useMemo<HistoryLineSpec[]>(() => ([
+    { key: 'cpu', dataKey: 'cpuTemp', axis: 'temp', color: '#2f6df6', width: 2.2 },
+    { key: 'gpu', dataKey: 'gpuTemp', axis: 'temp', color: '#f97316', width: 2.2 },
+    { key: 'fan', dataKey: 'fanRpm', axis: 'fan', color: '#10b981', width: 2 },
+    ...(hasLaptopFanHistory ? [
+      { key: 'cpuFan' as const, dataKey: 'cpuFanRpm' as const, axis: 'fan', color: '#0ea5e9', width: 1.4, dash: '5 4' },
+      { key: 'gpuFan' as const, dataKey: 'gpuFanRpm' as const, axis: 'fan', color: '#84cc16', width: 1.4, dash: '5 4' },
+    ] : []),
+  ]), [hasLaptopFanHistory]);
+  const powerChartSeries = useMemo<HistoryLineSpec[]>(() => ([
+    { key: 'cpuPower', dataKey: 'cpuPower', axis: 'power', color: '#8b5cf6', width: 2.2 },
+    { key: 'gpuPower', dataKey: 'gpuPower', axis: 'power', color: '#ec4899', width: 2.2 },
+  ]), []);
+  const tempChartKeys = useMemo<HistorySeriesKey[]>(() => tempChartSeries.map((s) => s.key), [tempChartSeries]);
+  const powerChartKeys = useMemo<HistorySeriesKey[]>(() => powerChartSeries.map((s) => s.key), [powerChartSeries]);
+
+  const renderHistoryLines = useCallback((series: HistoryLineSpec[]) => series.flatMap((spec) => {
+    if (!historySeriesVisibility[spec.key]) return [];
+    return [
+      <Line
+        key={spec.key}
+        yAxisId={spec.axis}
+        type="monotone"
+        dataKey={spec.dataKey}
+        stroke={spec.color}
+        strokeWidth={spec.width}
+        strokeDasharray={spec.dash}
+        dot={false}
+        activeDot={false}
+        isAnimationActive={false}
+        connectNulls
+      />,
+    ];
+  }), [historySeriesVisibility]);
 
   /* ── Init ── */
 
@@ -2315,7 +2366,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
               <div className="rounded-xl border border-border/70 bg-background/35 p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.history.recentTrend')}</div>
                     {historyZoomDomain ? (
                       <button
@@ -2328,6 +2379,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     ) : (
                       <span className="text-[11px] text-muted-foreground/60">{t('fanCurve.history.zoomHint')}</span>
                     )}
+                    <span className="mx-0.5 h-3 w-px bg-border/70" />
+                    <span className="text-[11px] text-muted-foreground">{t('fanCurve.history.retention.label')}</span>
+                    <Select
+                      value={historyRetentionHours}
+                      onChange={(value) => { void setHistoryRetentionHours(Number(value)); }}
+                      disabled={temperatureHistorySaving}
+                      size="sm"
+                      className="min-w-23"
+                      triggerClassName="h-7 rounded-full px-2.5 text-[11px]"
+                      options={HISTORY_RETENTION_HOUR_OPTIONS.map((hours) => ({
+                        value: hours,
+                        label: t('fanCurve.history.retention.hours', { count: hours }),
+                      }))}
+                    />
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {historySeriesMeta.map((series) => (
@@ -2354,8 +2419,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                 ) : (
                   <div className="h-72 select-none">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={zoomedHistoryChartData}
+                      <ComposedChart
+                        data={historyDisplayData}
                         syncId="historyTrend"
                         margin={{ top: 12, right: 16, left: 4, bottom: 8 }}
                         onMouseDown={handleHistoryZoomMouseDown}
@@ -2382,7 +2447,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           tickLine={false}
                           axisLine={{ stroke: 'var(--chart-axis)' }}
                           tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                          width={44}
+                          width={48}
+                          unit="°C"
                         />
                         <YAxis
                           yAxisId="fan"
@@ -2395,7 +2461,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           width={52}
                         />
                         <RechartsTooltip
-                          content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} />}
+                          content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} keys={tempChartKeys} />}
                         />
                         {timelineEventLayout.map(({ event, row, anchorEnd }, index) => {
                           const markerColor = event.type === 'disconnect' ? '#ef4444' : event.type === 'resume' ? '#8b5cf6' : '#0ea5e9';
@@ -2419,18 +2485,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                                     fontWeight={500}
                                     fill={markerColor}
                                   >
-                                    {event.label}
+                                    {t(event.labelKey)}
                                   </text>
                                 );
                               }}
                             />
                           );
                         })}
-                        {historySeriesVisibility.cpu && <Line yAxisId="temp" type="monotone" dataKey="cpuTemp" stroke="#2f6df6" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historySeriesVisibility.gpu && <Line yAxisId="temp" type="monotone" dataKey="gpuTemp" stroke="#f97316" strokeWidth={2.3} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {historySeriesVisibility.fan && <Line yAxisId="fan" type="monotone" dataKey="fanRpm" stroke="#10b981" strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {hasLaptopFanHistory && historySeriesVisibility.cpuFan && <Line yAxisId="fan" type="monotone" dataKey="cpuFanRpm" stroke="#0ea5e9" strokeWidth={1.8} strokeDasharray="6 3" dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                        {hasLaptopFanHistory && historySeriesVisibility.gpuFan && <Line yAxisId="fan" type="monotone" dataKey="gpuFanRpm" stroke="#84cc16" strokeWidth={1.8} strokeDasharray="6 3" dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                        {renderHistoryLines(tempChartSeries)}
                         {historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end && (
                           <ReferenceArea
                             yAxisId="temp"
@@ -2441,7 +2503,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             strokeOpacity={0}
                           />
                         )}
-                      </LineChart>
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 )}
@@ -2451,8 +2513,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                     <div className="mb-2 text-xs font-medium text-muted-foreground">{t('fanCurve.history.powerTrend')}</div>
                     <div className="h-48 select-none">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          data={zoomedHistoryChartData}
+                        <ComposedChart
+                          data={historyDisplayData}
                           syncId="historyTrend"
                           margin={{ top: 8, right: 16, left: 4, bottom: 8 }}
                           onMouseDown={handleHistoryZoomMouseDown}
@@ -2479,7 +2541,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             tickLine={false}
                             axisLine={{ stroke: 'var(--chart-axis)' }}
                             tick={{ fill: 'var(--chart-tick)', fontSize: 11 }}
-                            width={44}
+                            width={48}
                             unit=" W"
                           />
                           <YAxis
@@ -2494,10 +2556,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                             unit=" W"
                           />
                           <RechartsTooltip
-                            content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} />}
+                            content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} keys={powerChartKeys} />}
                           />
-                          {historySeriesVisibility.cpuPower && <Line yAxisId="power" type="monotone" dataKey="cpuPower" stroke="#8b5cf6" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
-                          {historySeriesVisibility.gpuPower && <Line yAxisId="power" type="monotone" dataKey="gpuPower" stroke="#ec4899" strokeWidth={2.2} dot={false} activeDot={false} isAnimationActive={false} connectNulls />}
+                          {renderHistoryLines(powerChartSeries)}
                           {historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end && (
                             <ReferenceArea
                               yAxisId="power"
@@ -2508,7 +2569,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                               strokeOpacity={0}
                             />
                           )}
-                        </LineChart>
+                        </ComposedChart>
                       </ResponsiveContainer>
                     </div>
                   </div>

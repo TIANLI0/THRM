@@ -81,14 +81,15 @@ const (
 	ReqSetLightStrip     RequestType = "SetLightStrip"
 
 	// 温度相关
-	ReqGetTemperature               RequestType = "GetTemperature"
-	ReqGetTemperatureHistory        RequestType = "GetTemperatureHistory"
-	ReqSetTemperatureHistoryEnabled RequestType = "SetTemperatureHistoryEnabled"
-	ReqTestTemperatureReading       RequestType = "TestTemperatureReading"
-	ReqTestBridgeProgram            RequestType = "TestBridgeProgram"
-	ReqGetBridgeProgramStatus       RequestType = "GetBridgeProgramStatus"
-	ReqRestartPawnIO                RequestType = "RestartPawnIO"
-	ReqReinstallPawnIO              RequestType = "ReinstallPawnIO"
+	ReqGetTemperature                      RequestType = "GetTemperature"
+	ReqGetTemperatureHistory               RequestType = "GetTemperatureHistory"
+	ReqSetTemperatureHistoryEnabled        RequestType = "SetTemperatureHistoryEnabled"
+	ReqSetTemperatureHistoryRetentionHours RequestType = "SetTemperatureHistoryRetentionHours"
+	ReqTestTemperatureReading              RequestType = "TestTemperatureReading"
+	ReqTestBridgeProgram                   RequestType = "TestBridgeProgram"
+	ReqGetBridgeProgramStatus              RequestType = "GetBridgeProgramStatus"
+	ReqRestartPawnIO                       RequestType = "RestartPawnIO"
+	ReqReinstallPawnIO                     RequestType = "ReinstallPawnIO"
 
 	// 自启动相关
 	ReqSetWindowsAutoStart    RequestType = "SetWindowsAutoStart"

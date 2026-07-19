@@ -221,6 +221,16 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.successResponse(true)
 
+	case ipc.ReqSetTemperatureHistoryRetentionHours:
+		var params ipc.SetIntParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error())
+		}
+		if err := a.SetTemperatureHistoryRetentionHours(params.Value); err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.successResponse(true)
+
 	case ipc.ReqTestTemperatureReading:
 		cfg := a.configManager.Get()
 		temp := a.tempReader.Read(types.TemperatureSelection{
