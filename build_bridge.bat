@@ -7,8 +7,10 @@ set "PROJECT=%ROOT%bridge\TempBridge\TempBridge.csproj"
 set "OUTDIR=%ROOT%build\bin\bridge"
 set "BUILDROOT=%ROOT%build\bin"
 set "TEMPROOT=%ROOT%temp"
-set "LHM_URL=https://github.com/LibreHardwareMonitor/LibreHardwareMonitor.git"
-set "LHM_BRANCH=master"
+rem THRM fork of LibreHardwareMonitor. Its default branch main = upstream master
+rem + PR #2396 (Fire Range / Zen 5 X3D CPU power & topology). See temp\LibreHardwareMonitor.
+set "LHM_URL=https://github.com/TIANLI0/LibreHardwareMonitor.git"
+set "LHM_BRANCH=main"
 set "LHM_REPO=%TEMPROOT%\LibreHardwareMonitor"
 if defined LIBRE_HARDWARE_MONITOR_REPO set "LHM_REPO=%LIBRE_HARDWARE_MONITOR_REPO%"
 set "LHM_PROJECT=%LHM_REPO%\LibreHardwareMonitorLib\LibreHardwareMonitorLib.csproj"
@@ -31,10 +33,14 @@ if not exist "%LHM_REPO%\.git" (
 	git clone --depth 1 --branch %LHM_BRANCH% "%LHM_URL%" "%LHM_REPO%"
 	if errorlevel 1 goto :error
 ) else (
-	echo Updating LibreHardwareMonitor in %LHM_REPO%...
-	git -C "%LHM_REPO%" checkout %LHM_BRANCH%
+	rem Force the existing checkout onto %LHM_URL%@%LHM_BRANCH% even if it was
+	rem previously pointed at upstream. -B + FETCH_HEAD discards any local divergence.
+	echo Updating LibreHardwareMonitor in %LHM_REPO% from %LHM_URL% branch %LHM_BRANCH%...
+	git -C "%LHM_REPO%" remote set-url origin "%LHM_URL%"
 	if errorlevel 1 goto :error
-	git -C "%LHM_REPO%" pull --ff-only origin %LHM_BRANCH%
+	git -C "%LHM_REPO%" fetch --depth 1 origin %LHM_BRANCH%
+	if errorlevel 1 goto :error
+	git -C "%LHM_REPO%" checkout -B %LHM_BRANCH% FETCH_HEAD
 	if errorlevel 1 goto :error
 )
 

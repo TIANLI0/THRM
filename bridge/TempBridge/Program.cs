@@ -1026,8 +1026,8 @@ namespace THRM.TempBridge
 
             int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core", "Windows" });
             int gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, new[] { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" });
-            double cpuPower = SelectPower(cpuPowerSensors, new[] { "Package", "CPU Package", "PPT", "Power" });
-            double gpuPower = SelectPower(gpuPowerSensors, new[] { "GPU Power", "Board Power", "Total Graphics Power", "Power" });
+            double cpuPower = SelectPower(cpuPowerSensors, new[] { "CPU Package", "Package", "Package Power", "CPU PPT", "PPT" }, allowFallbackToFirst: false);
+            double gpuPower = SelectPower(gpuPowerSensors, new[] { "GPU Power", "Board Power", "Total Graphics Power", "Power" }, allowFallbackToFirst: true);
 
             result.CpuTemp = cpuTemp;
             result.GpuTemp = gpuTemp;
@@ -1381,22 +1381,46 @@ namespace THRM.TempBridge
                 return sensors[0].Value;
             }
 
-        static double SelectPower(System.Collections.Generic.IReadOnlyList<PowerSensor> sensors, string[] preferredSensorNames)
+        static double SelectPower(System.Collections.Generic.IReadOnlyList<PowerSensor> sensors, string[] preferredSensorNames, bool allowFallbackToFirst)
         {
             if (sensors == null || sensors.Count == 0)
             {
                 return 0;
             }
 
-            foreach (var sensor in sensors)
+            // 按关键字优先级逐个匹配（而不是“命中任一关键字的第一个传感器”），
+            // 保证权威的包级传感器优先于泛化名称；同时跳过 "*Limit"（那是功耗上限
+            // 常量，例如 PPT Limit，并非实时读数）。
+            if (preferredSensorNames != null)
             {
-                if (ContainsAnyKeyword(sensor.Name, preferredSensorNames))
+                foreach (string keyword in preferredSensorNames)
                 {
-                    return sensor.Value;
+                    if (string.IsNullOrEmpty(keyword))
+                    {
+                        continue;
+                    }
+
+                    foreach (var sensor in sensors)
+                    {
+                        if (sensor == null || string.IsNullOrEmpty(sensor.Name))
+                        {
+                            continue;
+                        }
+
+                        if (sensor.Name.IndexOf("Limit", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            continue;
+                        }
+
+                        if (sensor.Name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return sensor.Value;
+                        }
+                    }
                 }
             }
 
-            return sensors[0].Value;
+            return allowFallbackToFirst ? sensors[0].Value : 0;
         }
 
         static GpuCandidate SelectGpuCandidate(System.Collections.Generic.IReadOnlyList<GpuCandidate> candidates, string selectedDeviceKey, string selectedSensorKey)
