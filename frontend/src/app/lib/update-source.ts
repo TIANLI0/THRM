@@ -13,6 +13,17 @@ export const UPDATE_SOURCE_IDS: readonly UpdateSourceId[] = ['gitcode', 'github'
 const STORAGE_KEY = 'thrm.update.source';
 
 const INSTALLER_ASSET_NAME = 'THRM-amd64-installer.exe';
+const CHECKSUMS_ASSET_NAME = 'SHA256SUMS';
+
+/**
+ * GitCode 镜像只同步 Windows 安装包与校验清单——跨境上传实测约 15 KiB/s，
+ * 同步整批产物要半小时以上。因此非 Windows 平台上镜像没有任何可用产物，
+ * 只能走 GitHub 源。
+ */
+export function isMirrorSupportedPlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /windows/i.test(navigator.userAgent);
+}
 
 /** 各更新源统一后的发布信息，UI 只消费这一份结构。 */
 export type NormalizedRelease = {
@@ -20,6 +31,8 @@ export type NormalizedRelease = {
   pageUrl: string;
   body: string;
   prerelease: boolean;
+  /** 安装包的资产名，用于在校验清单里查表；没有安装包时为空串。 */
+  installerName: string;
   /** 可直接交给后端下载安装的安装包地址；没有安装包时为空串。 */
   installerUrl: string;
 };
@@ -76,7 +89,7 @@ function findGithubInstallerUrl(assets: ReleaseAsset[] | undefined): string {
 function gitcodeInstallerUrl(tag: string, assets: ReleaseAsset[] | undefined): string {
   const name = findAssetName(assets);
   if (!name || !tag) return '';
-  return `${BRAND.gitcodeApiBaseUrl}/releases/${encodeURIComponent(tag)}/attach_files/${encodeURIComponent(name)}/download`;
+  return gitcodeAttachmentUrl(tag, name);
 }
 
 async function fetchJson(url: string, headers: Record<string, string>): Promise<unknown> {
@@ -104,6 +117,7 @@ async function fetchGithubRelease(channel: ReleaseChannel): Promise<NormalizedRe
     pageUrl: release.html_url || BRAND.latestReleaseUrl,
     body: typeof release.body === 'string' ? release.body.trim() : '',
     prerelease: !!release.prerelease,
+    installerName: findAssetName(release.assets),
     installerUrl: findGithubInstallerUrl(release.assets),
   };
 }
@@ -140,8 +154,65 @@ async function fetchGitcodeRelease(channel: ReleaseChannel): Promise<NormalizedR
     pageUrl: BRAND.gitcodeReleasesUrl,
     body: typeof release.body === 'string' ? release.body.trim() : '',
     prerelease: isGitcodePrerelease(release),
+    installerName: findAssetName(release.assets),
     installerUrl: gitcodeInstallerUrl(tag, release.assets),
   };
+}
+
+function gitcodeAttachmentUrl(tag: string, name: string): string {
+  return `${BRAND.gitcodeApiBaseUrl}/releases/${encodeURIComponent(tag)}/attach_files/${encodeURIComponent(name)}/download`;
+}
+
+/** 解析 `<hex>  <name>` 形式的校验清单；GNU sha256sum 二进制模式会在名字前多一个 *。 */
+function parseChecksums(text: string): Map<string, string> {
+  const table = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.trim().match(/^([0-9a-f]{64})\s+\*?(.+)$/i);
+    if (match) {
+      table.set(match[2].trim(), match[1].toLowerCase());
+    }
+  }
+  return table;
+}
+
+async function fetchChecksums(url: string): Promise<Map<string, string> | null> {
+  try {
+    const response = await fetch(url, { cache: 'no-cache' });
+    if (!response.ok) return null;
+    const table = parseChecksums(await response.text());
+    return table.size > 0 ? table : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 取安装包的预期 SHA-256。拿不到返回空串，调用方据此中止自动更新——
+ * 后端会拒绝无校验值的安装请求。
+ *
+ * 优先从 GitHub 取清单：它与镜像是两条独立的链路和信任源，这样即便镜像被
+ * 篡改也能被发现。GitHub 取不到时退回镜像自带的那份，此时只能防传输损坏，
+ * 防不住"镜像本身连文件带清单一起被换掉"——但这好过完全不校验。
+ */
+export async function fetchInstallerChecksum(
+  source: UpdateSourceId,
+  release: NormalizedRelease,
+): Promise<string> {
+  if (!release.tag || !release.installerName) return '';
+
+  const candidates = [
+    `${BRAND.repositoryUrl}/releases/download/${encodeURIComponent(release.tag)}/${CHECKSUMS_ASSET_NAME}`,
+  ];
+  if (source === 'gitcode') {
+    candidates.push(gitcodeAttachmentUrl(release.tag, CHECKSUMS_ASSET_NAME));
+  }
+
+  for (const url of candidates) {
+    const table = await fetchChecksums(url);
+    const digest = table?.get(release.installerName);
+    if (digest) return digest;
+  }
+  return '';
 }
 
 /**
@@ -166,12 +237,16 @@ function readStoredSource(): UpdateSourceId {
 }
 
 interface UpdateSourceStore {
+  /** 用户在设置里选的偏好。非 Windows 上不生效，见 mirrorSupported。 */
   source: UpdateSourceId;
+  /** 镜像是否对当前平台有意义。false 时一律走 GitHub。 */
+  mirrorSupported: boolean;
   setSource: (source: UpdateSourceId) => void;
 }
 
 export const useUpdateSourceStore = create<UpdateSourceStore>((set) => ({
   source: readStoredSource(),
+  mirrorSupported: isMirrorSupportedPlatform(),
   setSource: (source) => {
     try {
       window.localStorage.setItem(STORAGE_KEY, source);
@@ -181,3 +256,13 @@ export const useUpdateSourceStore = create<UpdateSourceStore>((set) => ({
     set({ source });
   },
 }));
+
+/**
+ * 实际生效的更新源。非 Windows 上镜像没有可用产物，无视用户偏好回落到 GitHub，
+ * 否则 Linux 用户点"打开发布页"会进到一个只有 exe 的镜像仓库。
+ */
+export function useEffectiveUpdateSource(): UpdateSourceId {
+  return useUpdateSourceStore((state) =>
+    state.mirrorSupported ? state.source : 'github',
+  );
+}

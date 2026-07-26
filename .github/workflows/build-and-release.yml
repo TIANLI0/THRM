@@ -437,6 +437,30 @@ jobs:
           name: release-linux
           path: dist/linux
 
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 更新器会以 UAC 提权直接运行下载来的安装包，因此下载后必须先核对哈希。
+          # 清单按文件名而非路径列出，客户端拿资产名直接查表；进目录再算是为了
+          # 让输出里根本不出现路径，省掉一次和 sha256sum 输出格式较劲的字符串处理。
+          : > SHA256SUMS
+          while IFS= read -r file; do
+            ( cd "$(dirname "$file")" && sha256sum "$(basename "$file")" )
+          done < <(find dist/windows dist/linux -type f | sort) >> SHA256SUMS
+
+          sort -k2 -o SHA256SUMS SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-checksums
+          path: SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Prepare release notes context
         id: release_context
         shell: pwsh
@@ -797,6 +821,7 @@ jobs:
           files: |
             dist/windows/*
             dist/linux/*
+            SHA256SUMS
 
   # 把同一批产物同步到 GitCode 国内镜像仓库。该仓库只承载 Release 文件，不同步任何代码。
   sync-gitcode-release:
@@ -816,11 +841,11 @@ jobs:
           name: release-windows
           path: dist/windows
 
-      - name: Download Linux release assets
+      - name: Download checksums
         uses: actions/download-artifact@v4
         with:
-          name: release-linux
-          path: dist/linux
+          name: release-checksums
+          path: dist/checksums
 
       - name: Download release notes
         uses: actions/download-artifact@v4
@@ -886,11 +911,20 @@ jobs:
             fi
           }
 
-          mapfile -t FILES < <(find dist/windows dist/linux -type f | sort)
-          if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "No release assets were found to sync."
-            exit 1
-          fi
+          # 镜像只承载「应用内更新器需要的东西」：Windows 安装包 + 校验清单。
+          #
+          # 实测这条跨境链路单连接约 15 KiB/s，并发也压不下去；全量 97MB 要 30~50
+          # 分钟，远超发版可接受的时延。完整产物（portable 包、deb、tar.gz）仍然
+          # 只在 GitHub Release 上，非 Windows 平台因此只能走 GitHub 源。
+          FILES=()
+          for candidate in dist/windows/THRM-amd64-installer.exe dist/checksums/SHA256SUMS; do
+            if [ -f "$candidate" ]; then
+              FILES+=("$candidate")
+            else
+              echo "Expected asset is missing: $candidate"
+              exit 1
+            fi
+          done
 
           existing=''
           code=$(api_call GET "/releases/tags/${TAG_ENC}")

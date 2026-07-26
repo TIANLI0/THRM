@@ -271,6 +271,7 @@
       "prereleaseBadge": "Pre-release",
       "noPrereleaseFound": "現在利用できるプレリリースはありません。",
       "noReleaseFound": "選択中の更新ソースにはまだリリースがありません。設定でソースを切り替えられます。",
+      "checksumUnavailable": "公式のチェックサムを取得できなかったため自動更新を中止しました。リリースページから手動でダウンロードしてください。",
       "openReleasePage": "リリースページ",
       "updatable": "アップデートがあります",
       "checkFailed": "アップデートの確認に失敗しました。しばらくしてから再試行してください。",
@@ -762,6 +763,7 @@
       "languageDescription": "アプリの表示言語を切り替え、選択した言語は自動で保存されます。",
       "updateSourceTitle": "更新ソース",
       "updateSourceDescription": "更新確認とインストーラーの取得元を選びます。GitCode はリリースファイルのみを配信する中国国内のミラーです。",
+      "updateSourceUnsupported": "ミラーには Windows インストーラーしかないため、この環境では常に GitHub ソースを使います。",
       "hotkeys": {
         "title": "グローバルショートカット",
         "description": "右側の入力欄をクリックして、設定したいキーの組み合わせを押してください、フォーカスが外れると自動で保存されます。Backspace/Delete キーまたはバツボタンで空欄にして無効化できます。",

@@ -272,6 +272,7 @@
       "prereleaseBadge": "Pre-release",
       "noPrereleaseFound": "No pre-release build is available right now.",
       "noReleaseFound": "The selected update source has no release yet. You can switch sources in Settings.",
+      "checksumUnavailable": "The official checksum could not be retrieved, so the automatic update was stopped. Please download from the release page manually.",
       "openReleasePage": "Open release page",
       "updatable": "Update available",
       "checkFailed": "Failed to check updates. Please try again later.",
@@ -763,6 +764,7 @@
       "languageDescription": "Change the app language instantly and remember the choice automatically.",
       "updateSourceTitle": "Update source",
       "updateSourceDescription": "Choose where update checks and installer downloads come from. GitCode is a China mirror that carries the release files only.",
+      "updateSourceUnsupported": "The mirror only carries the Windows installer, so this platform always uses the GitHub source.",
       "hotkeys": {
         "title": "Global hotkeys",
         "description": "Click a field on the right and press a key combination. It saves automatically on blur. Press Backspace/Delete or use the clear button to leave it empty and disable the hotkey.",

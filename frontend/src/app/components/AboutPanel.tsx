@@ -30,9 +30,11 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import {
+  fetchInstallerChecksum,
   fetchLatestRelease,
   releasesPageUrl,
-  useUpdateSourceStore,
+  useEffectiveUpdateSource,
+  type NormalizedRelease,
   type ReleaseChannel,
 } from '../lib/update-source';
 import { apiService } from '../services/api';
@@ -197,10 +199,13 @@ function VersionValue({ value, canCopy, onCopy, copyLabel }: VersionValueProps) 
 
 export default function AboutPanel() {
   const { t } = useTranslation();
-  const updateSource = useUpdateSourceStore((state) => state.source);
+  const updateSource = useEffectiveUpdateSource();
   const [appVersion, setAppVersion] = useState('');
   const [releaseChannel, setReleaseChannel] =
     useState<ReleaseChannel>('stable');
+  const [latestRelease, setLatestRelease] = useState<NormalizedRelease | null>(
+    null,
+  );
   const [latestReleaseTag, setLatestReleaseTag] = useState('');
   const [latestReleaseUrl, setLatestReleaseUrl] = useState<string>(
     releasesPageUrl(updateSource),
@@ -259,6 +264,7 @@ export default function AboutPanel() {
       const fallbackPageUrl = releasesPageUrl(updateSource);
 
       const resetReleaseState = () => {
+        setLatestRelease(null);
         setLatestReleaseTag('');
         setLatestReleaseUrl(fallbackPageUrl);
         setLatestReleaseBody('');
@@ -278,6 +284,7 @@ export default function AboutPanel() {
           return;
         }
 
+        setLatestRelease(release);
         setLatestReleaseTag(release.tag);
         setLatestReleaseUrl(release.pageUrl || fallbackPageUrl);
         setLatestReleaseBody(release.body);
@@ -368,15 +375,26 @@ export default function AboutPanel() {
   }, []);
 
   const startDownloadInstall = useCallback(async () => {
-    if (!installerUrl) {
+    if (!installerUrl || !latestRelease) {
       return;
     }
     setUpdateStage('downloading');
     setUpdatePercent(0);
     setUpdateError('');
     try {
+      // 安装包稍后会带 UAC 提权静默执行，必须先拿到官方校验值。
+      // 拿不到就不装——后端同样会拒绝，这里提前给出可读的提示。
+      const expectedSHA256 = await fetchInstallerChecksum(
+        updateSource,
+        latestRelease,
+      );
+      if (!expectedSHA256) {
+        throw new Error(t('aboutPanel.version.checksumUnavailable'));
+      }
+
       await apiService.downloadAndInstallUpdate(
         installerUrl,
+        expectedSHA256,
         t('aboutPanel.version.updaterWindowTitle'),
         t('aboutPanel.version.updaterWindowBody'),
         t('aboutPanel.version.updaterWindowRestarting'),
@@ -387,7 +405,7 @@ export default function AboutPanel() {
       setUpdateError(message);
       toast.error(t('aboutPanel.version.installFailed', { error: message }));
     }
-  }, [installerUrl, t]);
+  }, [installerUrl, latestRelease, t, updateSource]);
 
   const clearSponsorHoverTimer = useCallback(() => {
     if (sponsorHoverTimerRef.current !== null) {

@@ -272,6 +272,7 @@
       "prereleaseBadge": "Pre-release",
       "noPrereleaseFound": "当前未找到可用的预发布版本。",
       "noReleaseFound": "当前更新源上还没有可用的发布版本，可在设置中切换更新源。",
+      "checksumUnavailable": "无法获取官方校验值，已终止自动更新，请前往发布页手动下载。",
       "openReleasePage": "打开发布页",
       "updatable": "可更新",
       "checkFailed": "检查更新失败，请稍后重试",
@@ -763,6 +764,7 @@
       "languageDescription": "切换应用显示语言，立即生效并自动记住。",
       "updateSourceTitle": "更新源",
       "updateSourceDescription": "选择检查更新与下载安装包的来源。GitCode 为国内镜像，仅同步发布文件；网络受限时更快更稳。",
+      "updateSourceUnsupported": "镜像只同步 Windows 安装包，当前系统上只能使用 GitHub 源。",
       "hotkeys": {
         "title": "全局快捷键",
         "description": "点击右侧输入框后直接按组合键，失焦自动保存；按 Backspace/Delete 或清除按钮可留空禁用该快捷键。",

@@ -436,6 +436,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const { locale, setLocale } = useLocale();
   const updateSource = useUpdateSourceStore((state) => state.source);
   const setUpdateSource = useUpdateSourceStore((state) => state.setSource);
+  const mirrorSupported = useUpdateSourceStore((state) => state.mirrorSupported);
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [debugInfoLoading, setDebugInfoLoading] = useState(false);
@@ -1669,13 +1670,18 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           <SettingRow
             icon={<CloudDownload className="h-4 w-4" />}
             title={t('controlPanel.system.updateSourceTitle')}
-            description={t('controlPanel.system.updateSourceDescription')}
+            description={
+              mirrorSupported
+                ? t('controlPanel.system.updateSourceDescription')
+                : t('controlPanel.system.updateSourceUnsupported')
+            }
           >
             <div className="w-36">
               <Select
-                value={updateSource}
+                value={mirrorSupported ? updateSource : 'github'}
                 onChange={(value: string | number) => setUpdateSource(String(value) as UpdateSourceId)}
                 options={updateSourceOptions}
+                disabled={!mirrorSupported}
                 size="sm"
               />
             </div>
