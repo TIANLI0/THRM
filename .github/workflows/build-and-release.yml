@@ -1006,7 +1006,14 @@ jobs:
               continue
             fi
 
-            read -r upload_code upload_speed upload_secs < "gitcode-upload/${idx}.result"
+            # read 在读到不带换行的末行时返回非零（curl -w 的输出正是如此）。
+            # 不吞掉这个返回值，set -e 会在这里静默终止整个脚本，连带杀掉仍在后台
+            # 传输的 curl——上一次就是这样只传上去两个附件却没有任何错误输出。
+            upload_code=''
+            upload_speed=0
+            upload_secs=0
+            read -r upload_code upload_speed upload_secs < "gitcode-upload/${idx}.result" || true
+
             case "$upload_code" in
               200|201|204)
                 printf 'Uploaded %s in %ss at %s KiB/s.\n' \
