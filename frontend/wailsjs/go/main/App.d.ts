@@ -13,7 +13,7 @@ export function DeleteFanCurveProfile(arg1:string):Promise<void>;
 
 export function DisconnectDevice():Promise<void>;
 
-export function DownloadAndInstallUpdate(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+export function DownloadAndInstallUpdate(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<void>;
 
 export function ExportDiagnosticPackage():Promise<string>;
 

@@ -74,14 +74,17 @@ class ApiService {
 
   // 下载并全自动静默安装应用更新（Windows），期间弹出 CMD 状态窗口展示更新动态。
   // 下载进度通过 update-download-progress 事件推送；三个文案参数为状态窗口的本地化文字。
+  // expectedSHA256 来自随 Release 发布的 SHA256SUMS，后端校验不过就拒绝安装。
   async downloadAndInstallUpdate(
     downloadURL: string,
+    expectedSHA256: string,
     windowTitle: string,
     windowBody: string,
     windowRestarting: string,
   ): Promise<void> {
     return await (window as any).go?.main?.App?.DownloadAndInstallUpdate(
       downloadURL,
+      expectedSHA256,
       windowTitle,
       windowBody,
       windowRestarting,

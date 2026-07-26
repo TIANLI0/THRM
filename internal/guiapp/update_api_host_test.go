@@ -1,6 +1,38 @@
 package guiapp
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
+	"testing"
+)
+
+func TestNormalizeSHA256(t *testing.T) {
+	sum := sha256.Sum256([]byte("thrm"))
+	valid := hex.EncodeToString(sum[:])
+
+	got, ok := normalizeSHA256("  " + strings.ToUpper(valid) + "\n")
+	if !ok {
+		t.Fatal("normalizeSHA256 rejected a valid digest with surrounding whitespace and uppercase")
+	}
+	if got != valid {
+		t.Fatalf("normalizeSHA256 = %q, want %q", got, valid)
+	}
+
+	// 拿不到摘要时必须判为无效：更新器会据此拒绝安装，而不是无校验放行。
+	rejected := []string{
+		"",
+		"   ",
+		valid[:63],
+		valid + "0",
+		strings.Repeat("z", 64),
+	}
+	for _, candidate := range rejected {
+		if _, ok := normalizeSHA256(candidate); ok {
+			t.Errorf("normalizeSHA256(%q) accepted an invalid digest", candidate)
+		}
+	}
+}
 
 func TestUpdateDownloadHostAllowed(t *testing.T) {
 	allowed := []string{
