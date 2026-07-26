@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Flame,
   Clock3,
+  CloudDownload,
   BarChart3,
   Spline,
   Sparkles,
@@ -31,6 +32,7 @@ import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type ThemeMeta } from '../types/app';
 import { type AppLocale, useLocale } from '../lib/i18n';
+import { useUpdateSourceStore, type UpdateSourceId } from '../lib/update-source';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
 import { ToggleSwitch, Button, Select, MultiSelect, Slider } from './ui/index';
@@ -432,6 +434,8 @@ function SelectionField({
 export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported, deviceModel }: ControlPanelProps) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
+  const updateSource = useUpdateSourceStore((state) => state.source);
+  const setUpdateSource = useUpdateSourceStore((state) => state.setSource);
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [debugInfoLoading, setDebugInfoLoading] = useState(false);
@@ -562,6 +566,13 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       { value: 'zh-CN', label: t('common.languages.zh-CN') },
       { value: 'en-US', label: t('common.languages.en-US') },
       { value: 'ja-JP', label: t('common.languages.ja-JP') },
+    ]),
+    [locale, t],
+  );
+  const updateSourceOptions = useMemo(
+    () => ([
+      { value: 'gitcode', label: t('controlPanel.options.updateSource.gitcode') },
+      { value: 'github', label: t('controlPanel.options.updateSource.github') },
     ]),
     [locale, t],
   );
@@ -1650,6 +1661,21 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                 value={locale}
                 onChange={(value: string | number) => setLocale(String(value) as AppLocale)}
                 options={languageOptions}
+                size="sm"
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            icon={<CloudDownload className="h-4 w-4" />}
+            title={t('controlPanel.system.updateSourceTitle')}
+            description={t('controlPanel.system.updateSourceDescription')}
+          >
+            <div className="w-36">
+              <Select
+                value={updateSource}
+                onChange={(value: string | number) => setUpdateSource(String(value) as UpdateSourceId)}
+                options={updateSourceOptions}
                 size="sm"
               />
             </div>

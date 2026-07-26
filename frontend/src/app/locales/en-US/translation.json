@@ -271,6 +271,7 @@
       "channelPrerelease": "Pre-release",
       "prereleaseBadge": "Pre-release",
       "noPrereleaseFound": "No pre-release build is available right now.",
+      "noReleaseFound": "The selected update source has no release yet. You can switch sources in Settings.",
       "openReleasePage": "Open release page",
       "updatable": "Update available",
       "checkFailed": "Failed to check updates. Please try again later.",
@@ -760,6 +761,8 @@
       "themeOpenFolder": "Open themes folder",
       "languageTitle": "Language",
       "languageDescription": "Change the app language instantly and remember the choice automatically.",
+      "updateSourceTitle": "Update source",
+      "updateSourceDescription": "Choose where update checks and installer downloads come from. GitCode is a China mirror that carries the release files only.",
       "hotkeys": {
         "title": "Global hotkeys",
         "description": "Click a field on the right and press a key combination. It saves automatically on blur. Press Backspace/Delete or use the clear button to leave it empty and disable the hotkey.",
@@ -930,6 +933,10 @@
         "mica": "Mica",
         "tabbed": "Mica Alt",
         "off": "Off"
+      },
+      "updateSource": {
+        "gitcode": "GitCode (China)",
+        "github": "GitHub"
       }
     }
   }

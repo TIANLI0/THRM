@@ -29,40 +29,15 @@ import {
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
+import {
+  fetchLatestRelease,
+  releasesPageUrl,
+  useUpdateSourceStore,
+  type ReleaseChannel,
+} from '../lib/update-source';
 import { apiService } from '../services/api';
 import { SiGithub } from 'react-icons/si';
 import { Badge, Button, ScrollArea } from './ui/index';
-
-type ReleaseChannel = 'stable' | 'prerelease';
-
-type GithubReleaseAsset = {
-  name?: string;
-  browser_download_url?: string;
-};
-
-type GithubRelease = {
-  tag_name?: string;
-  html_url?: string;
-  body?: string;
-  prerelease?: boolean;
-  draft?: boolean;
-  assets?: GithubReleaseAsset[];
-};
-
-const INSTALLER_ASSET_NAME = 'THRM-amd64-installer.exe';
-
-function findInstallerAsset(assets: GithubReleaseAsset[] | undefined): string {
-  if (!Array.isArray(assets)) return '';
-  const exact = assets.find((asset) => asset?.name === INSTALLER_ASSET_NAME);
-  if (exact?.browser_download_url) return exact.browser_download_url;
-  const fuzzy = assets.find(
-    (asset) =>
-      typeof asset?.name === 'string' &&
-      /installer\.exe$/i.test(asset.name) &&
-      !!asset.browser_download_url,
-  );
-  return fuzzy?.browser_download_url || '';
-}
 
 type UpdateStage = 'idle' | 'downloading' | 'installing' | 'done' | 'error';
 
@@ -222,12 +197,13 @@ function VersionValue({ value, canCopy, onCopy, copyLabel }: VersionValueProps) 
 
 export default function AboutPanel() {
   const { t } = useTranslation();
+  const updateSource = useUpdateSourceStore((state) => state.source);
   const [appVersion, setAppVersion] = useState('');
   const [releaseChannel, setReleaseChannel] =
     useState<ReleaseChannel>('stable');
   const [latestReleaseTag, setLatestReleaseTag] = useState('');
   const [latestReleaseUrl, setLatestReleaseUrl] = useState<string>(
-    BRAND.latestReleaseUrl,
+    releasesPageUrl(updateSource),
   );
   const [latestReleaseBody, setLatestReleaseBody] = useState('');
   const [, setLatestReleaseIsPrerelease] = useState(false);
@@ -280,57 +256,41 @@ export default function AboutPanel() {
       setReleaseError('');
       setInstallerUrl('');
 
-      const headers = { Accept: 'application/vnd.github+json' };
+      const fallbackPageUrl = releasesPageUrl(updateSource);
 
-      try {
-        let targetRelease: GithubRelease | null = null;
-
-        if (channel === 'prerelease') {
-          const response = await fetch(`${BRAND.releasesApiUrl}?per_page=30`, {
-            headers,
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-          const releases = (await response.json()) as GithubRelease[];
-          targetRelease =
-            (Array.isArray(releases) ? releases : []).find(
-              (item) => !item?.draft && !!item?.prerelease,
-            ) || null;
-
-          if (!targetRelease) {
-            setLatestReleaseTag('');
-            setLatestReleaseUrl(BRAND.latestReleaseUrl);
-            setLatestReleaseBody('');
-            setLatestReleaseIsPrerelease(false);
-            setReleaseError(t('aboutPanel.version.noPrereleaseFound'));
-            return;
-          }
-        } else {
-          const response = await fetch(BRAND.latestReleaseApiUrl, { headers });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          targetRelease = (await response.json()) as GithubRelease;
-        }
-
-        setLatestReleaseTag(targetRelease?.tag_name || '');
-        setLatestReleaseUrl(targetRelease?.html_url || BRAND.latestReleaseUrl);
-        setLatestReleaseBody(
-          typeof targetRelease?.body === 'string'
-            ? targetRelease.body.trim()
-            : '',
-        );
-        setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
-        setInstallerUrl(findInstallerAsset(targetRelease?.assets));
-      } catch {
+      const resetReleaseState = () => {
         setLatestReleaseTag('');
-        setLatestReleaseUrl(BRAND.latestReleaseUrl);
+        setLatestReleaseUrl(fallbackPageUrl);
         setLatestReleaseBody('');
         setLatestReleaseIsPrerelease(false);
+      };
+
+      try {
+        const release = await fetchLatestRelease(updateSource, channel);
+
+        if (!release) {
+          resetReleaseState();
+          setReleaseError(
+            channel === 'prerelease'
+              ? t('aboutPanel.version.noPrereleaseFound')
+              : t('aboutPanel.version.noReleaseFound'),
+          );
+          return;
+        }
+
+        setLatestReleaseTag(release.tag);
+        setLatestReleaseUrl(release.pageUrl || fallbackPageUrl);
+        setLatestReleaseBody(release.body);
+        setLatestReleaseIsPrerelease(release.prerelease);
+        setInstallerUrl(release.installerUrl);
+      } catch {
+        resetReleaseState();
         setReleaseError(t('aboutPanel.version.checkFailed'));
       } finally {
         setReleaseLoading(false);
       }
     },
-    [releaseChannel, t],
+    [releaseChannel, t, updateSource],
   );
 
   useEffect(() => {
@@ -843,7 +803,7 @@ export default function AboutPanel() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
+                  openUrl(latestReleaseUrl || releasesPageUrl(updateSource))
                 }
                 icon={<ExternalLink className="h-4 w-4" />}
               >
@@ -879,7 +839,7 @@ export default function AboutPanel() {
               variant="outline"
               size="sm"
               onClick={() =>
-                openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
+                openUrl(latestReleaseUrl || releasesPageUrl(updateSource))
               }
               icon={<ExternalLink className="h-3.5 w-3.5" />}
             >
@@ -1485,7 +1445,7 @@ export default function AboutPanel() {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
+                        openUrl(latestReleaseUrl || releasesPageUrl(updateSource))
                       }
                       icon={<ExternalLink className="h-3.5 w-3.5" />}
                     >

@@ -30,6 +30,25 @@ type updateProgress struct {
 	Message  string `json:"message"`  // 附带信息(错误时为错误文本)
 }
 
+// updateDownloadAllowedHosts 是安装包下载地址允许的域名（含其子域）。
+// GitCode 是国内 Release 镜像，其附件下载接口会 302 到华为云 OBS，
+// 因此这里只校验首跳域名，重定向后的对象存储域名由 GitCode 侧决定。
+var updateDownloadAllowedHosts = []string{
+	"github.com",
+	"githubusercontent.com",
+	"gitcode.com",
+}
+
+func updateDownloadHostAllowed(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, allowed := range updateDownloadAllowedHosts {
+		if host == allowed || strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) emitUpdateProgress(p updateProgress) {
 	if a.ctx == nil {
 		return
@@ -58,9 +77,7 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: e.Error()})
 		return e
 	}
-	host := strings.ToLower(parsed.Host)
-	if host != "github.com" && !strings.HasSuffix(host, ".github.com") &&
-		!strings.HasSuffix(host, "githubusercontent.com") && host != "objects.githubusercontent.com" {
+	if !updateDownloadHostAllowed(parsed.Hostname()) {
 		e := fmt.Errorf("下载地址不在允许的来源内: %s", parsed.Host)
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: e.Error()})
 		return e
