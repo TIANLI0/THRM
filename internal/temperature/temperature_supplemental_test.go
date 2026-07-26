@@ -2,6 +2,7 @@ package temperature
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,58 +40,69 @@ func TestBridgeFallbackPath(t *testing.T) {
 	t.Logf("CPU temp: %d, GPU temp: %d", result.CPUTemp, result.GPUTemp)
 }
 
-// TestNvidiaTempParse verifies nvidia-smi output parsing
-func TestNvidiaTempParse(t *testing.T) {
-	oldExec := execHelperCommand
-	defer func() { execHelperCommand = oldExec }()
-
+// TestNvidiaTempAndPowerParse 验证合并查询的输出解析。
+// GPU 温度与功耗现在由一次 nvidia-smi --query-gpu=temperature.gpu,power.draw 取回，
+// 降级路径因此从两个进程降到一个。
+func TestNvidiaTempAndPowerParse(t *testing.T) {
 	tests := []struct {
-		name     string
-		output   string
-		hasError bool
-		wantTemp int
+		name      string
+		output    string
+		wantTemp  int
+		wantPower float64
 	}{
-		{
-			name:     "single GPU",
-			output:   "71\n",
-			hasError: false,
-			wantTemp: 71,
-		},
-		{
-			name:     "with trailing newline",
-			output:   "65\n\n",
-			hasError: false,
-			wantTemp: 65,
-		},
-		{
-			name:     "multiple GPUs - first only",
-			output:   "65\n72\n",
-			hasError: false,
-			wantTemp: 65,
-		},
-		{
-			name:     "garbage output",
-			output:   "N/A\n",
-			hasError: false,
-			wantTemp: 0,
-		},
+		{name: "temp and power", output: "71, 123.45\n", wantTemp: 71, wantPower: 123.45},
+		{name: "trailing newlines", output: "65, 30.0\n\n", wantTemp: 65, wantPower: 30},
+		{name: "multiple GPUs - first only", output: "65, 30.0\n72, 40.0\n", wantTemp: 65, wantPower: 30},
+		{name: "power not available", output: "65, [N/A]\n", wantTemp: 65, wantPower: 0},
+		{name: "garbage output", output: "N/A\n", wantTemp: 0, wantPower: 0},
+		{name: "empty output", output: "\n", wantTemp: 0, wantPower: 0},
+		{name: "out of range temp", output: "999, 10.0\n", wantTemp: 0, wantPower: 10},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			execHelperCommand = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
-				if tt.hasError {
-					return nil, context.DeadlineExceeded
-				}
-				return []byte(tt.output), nil
+			gotTemp, gotPower := parseNvidiaTempAndPower(tt.output)
+			if gotTemp != tt.wantTemp {
+				t.Errorf("temp = %d, want %d", gotTemp, tt.wantTemp)
 			}
-
-			r := NewReader(nil, testLogger{})
-			got := r.readNvidiaGPUTemp()
-			if got != tt.wantTemp {
-				t.Errorf("readNvidiaGPUTemp() = %d, want %d", got, tt.wantTemp)
+			if gotPower != tt.wantPower {
+				t.Errorf("power = %.2f, want %.2f", gotPower, tt.wantPower)
 			}
 		})
+	}
+}
+
+// TestGPUTempAndPowerSingleCommand 验证合并后只发一次 nvidia-smi 查询命令。
+func TestGPUTempAndPowerSingleCommand(t *testing.T) {
+	oldExec := execHelperCommand
+	defer func() { execHelperCommand = oldExec }()
+
+	queries := 0
+	execHelperCommand = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		if timeout != helperCommandTimeout {
+			t.Fatalf("unexpected timeout: %v", timeout)
+		}
+		if name != "nvidia-smi" {
+			t.Fatalf("unexpected command: %s", name)
+		}
+		for _, arg := range args {
+			if strings.HasPrefix(arg, "--query-gpu=") {
+				queries++
+				if arg != "--query-gpu=temperature.gpu,power.draw" {
+					t.Fatalf("unexpected query: %s", arg)
+				}
+			}
+		}
+		return []byte("71, 123.45\n"), nil
+	}
+
+	r := NewReader(nil, testLogger{})
+	temp, power := r.readGPUTempAndPower()
+	if temp != 71 || power != 123.45 {
+		t.Fatalf("readGPUTempAndPower() = (%d, %.2f), want (71, 123.45)", temp, power)
+	}
+	if queries != 1 {
+		t.Fatalf("nvidia-smi 查询次数 = %d, want 1", queries)
 	}
 }
 
@@ -107,28 +119,9 @@ func TestNvidiaTempTimeout(t *testing.T) {
 	}
 
 	r := NewReader(nil, testLogger{})
-	got := r.readNvidiaGPUTemp()
-	if got != 0 {
-		t.Errorf("readNvidiaGPUTemp() timeout = %d, want 0", got)
-	}
-}
-
-func TestReadNvidiaGPUPower(t *testing.T) {
-	oldExec := execHelperCommand
-	defer func() { execHelperCommand = oldExec }()
-
-	execHelperCommand = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
-		if timeout != helperCommandTimeout {
-			t.Fatalf("unexpected timeout: %v", timeout)
-		}
-		if name != "nvidia-smi" {
-			t.Fatalf("unexpected command: %s", name)
-		}
-		return []byte("123.45\n"), nil
-	}
-
-	if got := NewReader(nil, testLogger{}).readNvidiaGPUPower(); got != 123.45 {
-		t.Fatalf("readNvidiaGPUPower() = %.2f, want 123.45", got)
+	temp, power := r.readGPUTempAndPower()
+	if temp != 0 || power != 0 {
+		t.Errorf("readGPUTempAndPower() timeout = (%d, %.2f), want (0, 0)", temp, power)
 	}
 }
 

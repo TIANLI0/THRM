@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+// platformCPUTempIsExpensive 报告平台 CPU 温度读取是否需要创建外部进程。
+// Windows 走 wmic，单次最坏耗时接近 helperCommandTimeout，必须纳入降级节流。
+const platformCPUTempIsExpensive = true
+
 func (r *Reader) readPlatformCPUTemp() int {
 	output, err := execHelperCommand(helperCommandTimeout, "wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature", "/value")
 	if err != nil {

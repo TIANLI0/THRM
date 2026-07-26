@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// platformCPUTempIsExpensive 报告平台 CPU 温度读取是否需要创建外部进程。
+// Linux 直接读 sysfs，开销可忽略，不应被降级节流缓存——在没有桥接的平台上
+// 这就是主读取路径，缓存会让控温依据变旧。
+const platformCPUTempIsExpensive = false
+
 func (r *Reader) readPlatformCPUTemp() int {
 	if temp := readLinuxCPUTempFromHwmon(); temp > 0 {
 		return temp

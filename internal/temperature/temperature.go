@@ -32,6 +32,9 @@ type Reader struct {
 	cacheMutex      sync.RWMutex
 	cachedGPUVendor string
 	cachedVendorAt  time.Time
+
+	// 桥接不可用时的降级读取节流状态，见 fallback.go。
+	fallback fallbackState
 }
 
 // NewReader 创建新的温度读取器
@@ -57,17 +60,23 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		if selection.DisableGpu {
 			stripGpuReadings(&temp, selection.TempSource)
 		}
+		// 桥接正在后台完成启动握手：这是过渡态，既不该走开销高昂的降级读取，
+		// 也不该被上层当成故障触发自愈重启。原样上报让上层识别。
+		if !bridgeTemp.Success && bridge.IsStarting(bridgeTemp.Error) {
+			temp.BridgeOk = false
+			temp.BridgeMsg = bridgeTemp.Error
+			return temp
+		}
 		if bridgeTemp.Success {
 			if bridgeTemp.CpuTemp == 0 && (selection.DisableGpu || bridgeTemp.GpuTemp == 0) {
 				temp.BridgeOk = false
 				temp.BridgeMsg = "桥接程序返回空温度（CPU/GPU 均为 0），已尝试备用读取；可重新初始化温度监控或检查 PawnIO/其它硬件监控工具。"
 				r.logger.Warn("桥接程序返回空温度数据，使用备用方法")
 
-				temp.CPUTemp = r.readCPUTemperature()
-				if !selection.DisableGpu {
-					temp.GPUTemp = r.readGPUTemperature()
-					temp.GPUPower = r.readGPUPower()
-				}
+				fallback := r.readFallback(selection.DisableGpu)
+				temp.CPUTemp = fallback.cpuTemp
+				temp.GPUTemp = fallback.gpuTemp
+				temp.GPUPower = fallback.gpuPower
 				temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 				temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 				return temp
@@ -91,14 +100,12 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 	// 桥接程序为 Windows 专用（LibreHardwareMonitor/PawnIO）。在不支持的平台（如 Linux）
 	// 上，内置传感器读取才是正常路径，不应作为错误提示，因此保持 BridgeOk 默认的 true。
 
-	// 读取CPU温度
-	temp.CPUTemp = r.readCPUTemperature()
-
-	// 读取GPU温度（停用 GPU 监测时完全跳过，避免 nvidia-smi 等轮询唤醒独显）
-	if !selection.DisableGpu {
-		temp.GPUTemp = r.readGPUTemperature()
-		temp.GPUPower = r.readGPUPower()
-	}
+	// 读取内置传感器（停用 GPU 监测时完全跳过 GPU，避免 nvidia-smi 等轮询唤醒独显）。
+	// readFallback 内部带刷新节流与失败退避，桥接长期不可用时不会每个采样周期都起进程。
+	fallback := r.readFallback(selection.DisableGpu)
+	temp.CPUTemp = fallback.cpuTemp
+	temp.GPUTemp = fallback.gpuTemp
+	temp.GPUPower = fallback.gpuPower
 
 	// 计算最高温度
 	temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
@@ -209,27 +216,30 @@ func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {
 	}
 }
 
-// readCPUTemperature 读取CPU温度
-func (r *Reader) readCPUTemperature() int {
+// readSensorCPUTemp 通过 gopsutil 读取 CPU 温度。纯进程内操作，开销可忽略，
+// 因此不参与降级路径的节流缓存。读不到返回 0。
+func (r *Reader) readSensorCPUTemp() int {
 	sensorTemps, err := sensors.SensorsTemperatures()
-	if err == nil {
-		for _, sensor := range sensorTemps {
-			// 查找ACPI ThermalZone TZ00_0或类似的CPU温度传感器
-			if strings.Contains(strings.ToLower(sensor.SensorKey), "tz00") ||
-				strings.Contains(strings.ToLower(sensor.SensorKey), "cpu") ||
-				strings.Contains(strings.ToLower(sensor.SensorKey), "core") {
-				return int(sensor.Temperature)
-			}
+	if err != nil {
+		return 0
+	}
+	for _, sensor := range sensorTemps {
+		// 查找ACPI ThermalZone TZ00_0或类似的CPU温度传感器
+		if strings.Contains(strings.ToLower(sensor.SensorKey), "tz00") ||
+			strings.Contains(strings.ToLower(sensor.SensorKey), "cpu") ||
+			strings.Contains(strings.ToLower(sensor.SensorKey), "core") {
+			return int(sensor.Temperature)
 		}
 	}
-
-	return r.readPlatformCPUTemp()
+	return 0
 }
 
-// readGPUTemperature 读取GPU温度
-func (r *Reader) readGPUTemperature() int {
-	vendor := r.detectGPUVendor()
-	return r.readGPUTempByVendor(vendor)
+// readCPUTemperature 读取CPU温度：先试廉价的进程内传感器，再退到平台实现。
+func (r *Reader) readCPUTemperature() int {
+	if temp := r.readSensorCPUTemp(); temp > 0 {
+		return temp
+	}
+	return r.readPlatformCPUTemp()
 }
 
 // readWindowsCPUTemp 通过WMI读取Windows CPU温度
@@ -290,74 +300,6 @@ func (r *Reader) detectGPUVendor() string {
 	r.cacheMutex.Unlock()
 
 	return vendor
-}
-
-// readGPUTempByVendor 根据厂商读取GPU温度
-func (r *Reader) readGPUTempByVendor(vendor string) int {
-	switch vendor {
-	case "nvidia":
-		return r.readNvidiaGPUTemp()
-	case "amd":
-		return 0
-	default:
-		return 0
-	}
-}
-
-// readGPUPower is a best-effort fallback when the hardware bridge is not
-// available. CPU package power has no portable system API, so it is supplied
-// by LibreHardwareMonitor through TempBridge when that path is active.
-func (r *Reader) readGPUPower() float64 {
-	switch r.detectGPUVendor() {
-	case "nvidia":
-		return r.readNvidiaGPUPower()
-	default:
-		return 0
-	}
-}
-
-func (r *Reader) readNvidiaGPUPower() float64 {
-	output, err := execHelperCommand(helperCommandTimeout, "nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits")
-	if err != nil {
-		return 0
-	}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 {
-		return 0
-	}
-	fields := strings.Fields(lines[0])
-	if len(fields) == 0 {
-		return 0
-	}
-	watts, err := strconv.ParseFloat(fields[0], 64)
-	if err != nil || watts <= 0 || watts > 2000 {
-		return 0
-	}
-	return watts
-}
-
-// readNvidiaGPUTemp 安全读取NVIDIA GPU温度
-func (r *Reader) readNvidiaGPUTemp() int {
-	output, err := execHelperCommand(helperCommandTimeout, "nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits")
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			r.logger.Debug("读取NVIDIA GPU温度超时: %v", err)
-		} else {
-			r.logger.Debug("读取NVIDIA GPU温度失败: %v", err)
-		}
-		return 0
-	}
-
-	tempStr := strings.TrimSpace(string(output))
-	lines := strings.Split(tempStr, "\n")
-
-	if len(lines) > 0 && lines[0] != "" {
-		if temp, err := strconv.Atoi(lines[0]); err == nil {
-			return temp
-		}
-	}
-
-	return 0
 }
 
 // CalculateTargetRPM 根据温度计算目标转速
