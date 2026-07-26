@@ -59,7 +59,12 @@ const (
 	maxConsecutiveReadErrors          = 20
 	maxConsecutiveRealtimeWriteErrors = 3
 	hidReadPollInterval               = 100 * time.Millisecond
-	hidReadErrorRetryDelay            = 500 * time.Millisecond
+	// hidIdleReadPollInterval 是后台空闲（无 GUI 连接且未开启智能控温）时的轮询间隔。
+	// HID 句柄设为非阻塞后，读循环靠"空转即休眠"来避免占满 CPU，这意味着常驻
+	// 10 次/秒的唤醒。空闲时没人消费实时转速（托盘 5 秒才刷新一次），
+	// 放慢到 2 次/秒可显著降低后台唤醒频率与笔电待机功耗。
+	hidIdleReadPollInterval = 500 * time.Millisecond
+	hidReadErrorRetryDelay  = 500 * time.Millisecond
 )
 
 func modelNameForProductID(productID uint16) string {
@@ -89,6 +94,7 @@ type Manager struct {
 	currentFanData   atomic.Pointer[types.FanData]
 	connectionGen    atomic.Uint64
 	debugCapture     atomic.Bool
+	idlePolling      atomic.Bool
 	lastCommandedRPM int
 	hasCommandedRPM  bool
 	realtimeMode     bool
@@ -487,6 +493,34 @@ func (m *Manager) GetCurrentFanData() *types.FanData {
 	return m.currentFanData.Load()
 }
 
+// SetIdlePolling 切换 HID 读循环的空闲轮询模式。
+// 由核心在"无 GUI 连接且未开启智能控温"时开启，此时没人消费实时转速数据。
+func (m *Manager) SetIdlePolling(idle bool) {
+	m.idlePolling.Store(idle)
+}
+
+// readPollInterval 返回当前的空转休眠间隔。
+func (m *Manager) readPollInterval() time.Duration {
+	if m.idlePolling.Load() {
+		return hidIdleReadPollInterval
+	}
+	return hidReadPollInterval
+}
+
+// waitPollInterval 在读到空数据后休眠一个轮询间隔。返回 false 表示收到停止信号。
+// 用 select 而非 time.Sleep：休眠期间也必须能立即响应断开，否则空闲模式下
+// 拉长的间隔会让断连/重连流程多等半秒。
+func (m *Manager) waitPollInterval(stop <-chan struct{}) bool {
+	timer := time.NewTimer(m.readPollInterval())
+	defer timer.Stop()
+	select {
+	case <-stop:
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 // monitorDeviceData 监控设备数据
 //
 // 该协程是 HID 句柄的唯一拥有者：无论因停止信号还是读错误退出，都由它负责关闭句柄
@@ -532,7 +566,9 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 		if err != nil {
 			if err == hid.ErrTimeout {
 				consecutiveErrors = 0
-				time.Sleep(hidReadPollInterval)
+				if !m.waitPollInterval(stop) {
+					return
+				}
 				continue
 			}
 
@@ -556,7 +592,9 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 
 		consecutiveErrors = 0
 		if n == 0 {
-			time.Sleep(hidReadPollInterval)
+			if !m.waitPollInterval(stop) {
+				return
+			}
 			continue
 		}
 

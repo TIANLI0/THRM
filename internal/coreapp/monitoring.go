@@ -279,6 +279,8 @@ monitorLoop:
 			// 仅服务托盘提示与历史记录，降低采样频率可显著减少桥接传感器扫描带来的后台 CPU 占用。
 			hasClients = a.ipcServer != nil && a.ipcServer.HasClients()
 			updateInterval = effectiveTemperatureMonitorInterval(cfg.TempUpdateRate, hasClients, cfg.AutoControl)
+			// 同一个"空闲"判据也用于放慢 HID 读循环的空转轮询。
+			a.deviceManager.SetIdlePolling(!hasClients && !cfg.AutoControl)
 			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
 			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
 				lastMemRelease = now
