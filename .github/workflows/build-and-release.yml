@@ -959,16 +959,19 @@ jobs:
               ;;
           esac
 
-          # 重跑同一 tag（例如同一天的 nightly）时先清掉同名旧附件，否则会留下重复文件。
+          # 每次同步都会重传完整的目标集合，所以先把镜像上已有的附件全部清掉。
+          #
+          # 不能只按"本次要传的文件名"匹配：同步范围调整后（例如从全量产物收窄到
+          # 只传安装包），旧范围留下的附件就再也匹配不上，会一直挂在发行版上误导用户。
+          # 源码归档由 GitCode 自动生成、id 为 null，不在删除之列。
           if [ -n "$existing" ]; then
-            for file in "${FILES[@]}"; do
-              name=$(basename "$file")
-              while IFS= read -r attach_id; do
-                [ -n "$attach_id" ] || continue
-                delete_code=$(api_call DELETE "/releases/${TAG_ENC}/attach_files/${attach_id}")
-                echo "Removed stale attachment ${name} (id=${attach_id}): HTTP ${delete_code}"
-              done < <(printf '%s' "$existing" | jq -r --arg n "$name" '.assets[]? | select(.name == $n) | .id | select(. != null) | tostring')
-            done
+            while IFS= read -r stale; do
+              [ -n "$stale" ] || continue
+              attach_id="${stale%% *}"
+              attach_name="${stale#* }"
+              delete_code=$(api_call DELETE "/releases/${TAG_ENC}/attach_files/${attach_id}")
+              echo "Removed existing attachment ${attach_name} (id=${attach_id}): HTTP ${delete_code}"
+            done < <(printf '%s' "$existing" | jq -r '.assets[]? | select(.id != null) | "\(.id) \(.name)"')
           fi
 
           # 上传并发执行。跨境到华为云 OBS 的单条 TCP 吞吐很低，串行传完整批产物
