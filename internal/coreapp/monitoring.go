@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/temperature"
@@ -40,6 +41,12 @@ func trackBridgeTemperatureStaleness(temp types.TemperatureData, lastUpdate int6
 
 func shouldRestartTemperatureBridge(temp types.TemperatureData) bool {
 	if temp.BridgeOk {
+		return false
+	}
+
+	// 桥接启动握手改为后台执行，启动窗口内读取必然失败。这是过渡态而非故障，
+	// 若据此触发自愈就会反复杀掉正在启动的进程，形成永不收敛的重启风暴。
+	if bridge.IsStarting(temp.BridgeMsg) {
 		return false
 	}
 
@@ -296,7 +303,11 @@ monitorLoop:
 			laptopFanRPM := max(temp.CPUFanRPM, temp.GPUFanRPM)
 			laptopFanPeakRPM = smartcontrol.DecayLaptopFanPeak(laptopFanPeakRPM, laptopFanRPM)
 			if temp.ControlTemp <= 0 {
-				invalidControlTempCount++
+				// 桥接正在后台启动时读不到温度属于预期过渡态，不能计入"传感器失效"，
+				// 否则每次启动/自愈窗口都会把风扇推到安全兜底转速。
+				if !bridge.IsStarting(temp.BridgeMsg) {
+					invalidControlTempCount++
+				}
 			} else {
 				if safeFallbackActive {
 					a.logInfo("Temperature source recovered; resuming normal automatic control")

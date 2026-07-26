@@ -3,6 +3,7 @@ package bridge
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
@@ -35,6 +37,19 @@ type Manager struct {
 	lastError string
 	mutex     sync.Mutex
 	logger    types.Logger
+
+	// 启动握手最长 bridgeStartupTimeout，绝不能在 mutex 之下进行：温控循环每个
+	// 周期都要通过 GetTemperature 拿这把锁，一旦启动持锁，控制循环就会停摆几十秒，
+	// 连 stop 信号都无法响应，挂起清理也会被同一把锁拖过宽限期。
+	// 因此启动改为后台执行：starting 保证同时只有一次启动，startDone 供需要
+	// 等待结果的调用方（用户主动触发的操作）使用，热路径则立即拿到 ErrStarting。
+	starting  atomic.Bool
+	startMu   sync.Mutex
+	startDone chan struct{}
+
+	// 最近一次真实读取结果，供 GetStatus 作为诊断数据复用，避免状态查询自己发命令。
+	lastTemp   types.BridgeTemperatureData
+	lastTempAt int64
 }
 
 const (
@@ -75,31 +90,141 @@ func (m *Manager) setState(state string, err error) {
 	}
 }
 
+// ErrStarting 表示桥接进程正在后台完成启动握手，本次调用没有可用的通信通道。
+// 这是一个过渡态而非故障，调用方应跳过本轮而不是据此触发自愈重启。
+var ErrStarting = errors.New(StartingMessage)
+
+// StartingMessage 是 ErrStarting 的文案。上层（温度监控）需要据此识别过渡态，
+// 避免把"正在启动"误判成桥接故障而触发重启风暴或风扇安全兜底。
+const StartingMessage = "桥接程序正在启动中"
+
+// IsStarting 判断一条桥接错误信息是否只是"正在启动"的过渡态。
+func IsStarting(message string) bool {
+	return strings.Contains(message, StartingMessage)
+}
+
+// EnsureRunning 确保桥接可用。若需要启动，启动在后台进行并立即返回 ErrStarting，
+// 调用方（温控循环等热路径）因此永远不会被子进程启动握手阻塞。
 func (m *Manager) EnsureRunning() error {
+	if m.healthy() {
+		return nil
+	}
+	m.beginStartAsync()
+	return ErrStarting
+}
+
+// EnsureRunningWait 供用户主动触发的操作使用：需要一个真正可用的桥接，
+// 因此等待后台启动完成（最长 timeout）。
+func (m *Manager) EnsureRunningWait(timeout time.Duration) error {
+	if m.healthy() {
+		return nil
+	}
+
+	done := m.beginStartAsync()
+	if done == nil {
+		if m.healthy() {
+			return nil
+		}
+		return ErrStarting
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		return fmt.Errorf("等待桥接程序启动超时 (timeout=%s)", timeout)
+	}
+
+	if m.healthy() {
+		return nil
+	}
+	m.mutex.Lock()
+	lastError := m.lastError
+	m.mutex.Unlock()
+	if lastError != "" {
+		return fmt.Errorf("启动桥接程序失败: %s", lastError)
+	}
+	return fmt.Errorf("启动桥接程序失败")
+}
+
+// healthy 判断当前是否已有可用的通信通道与存活的进程。
+func (m *Manager) healthy() bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if m.stdin != nil && m.lineCh != nil {
-		if isProcessRunning(m.cmd) {
-			m.setState(BridgeStateRunning, nil)
-			return nil
-		}
-
-		err := fmt.Errorf("bridge process exited unexpectedly")
-		m.logger.Error("检测到桥接进程已意外退出，准备重新启动")
-		m.setState(BridgeStateDegraded, err)
-		m.teardownProcessUnsafe(false)
+	if m.stdin == nil || m.lineCh == nil {
+		return false
+	}
+	if isProcessRunning(m.cmd) {
+		m.setState(BridgeStateRunning, nil)
+		return true
 	}
 
-	return m.startStdio()
+	err := fmt.Errorf("bridge process exited unexpectedly")
+	m.logger.Error("检测到桥接进程已意外退出，准备重新启动")
+	m.setState(BridgeStateDegraded, err)
+	m.teardownProcessUnsafe(false)
+	return false
 }
 
-func (m *Manager) startStdio() error {
+// beginStartAsync 启动后台启动流程。返回可等待本次启动结束的通道；
+// 若已有启动在进行中则返回那一次的通道，不会重复拉起进程。
+func (m *Manager) beginStartAsync() <-chan struct{} {
+	m.startMu.Lock()
+	if m.starting.Load() {
+		done := m.startDone
+		m.startMu.Unlock()
+		return done
+	}
+
+	done := make(chan struct{})
+	m.startDone = done
+	m.starting.Store(true)
+	m.startMu.Unlock()
+
+	m.mutex.Lock()
 	m.setState(BridgeStateStarting, nil)
+	m.mutex.Unlock()
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.mutex.Lock()
+				m.setState(BridgeStateFailed, fmt.Errorf("启动桥接程序时发生 panic: %v", r))
+				m.mutex.Unlock()
+			}
+			m.startMu.Lock()
+			m.starting.Store(false)
+			m.startMu.Unlock()
+			close(done)
+		}()
+
+		if err := m.startStdio(); err != nil {
+			m.logger.Error("桥接程序后台启动失败: %v", err)
+		}
+	}()
+
+	return done
+}
+
+// IsStarting 报告是否有启动握手正在进行。
+func (m *Manager) IsStarting() bool {
+	return m.starting.Load()
+}
+
+// startStdio 执行真正的启动握手。全过程不持有 m.mutex（仅在发布结果时短暂加锁），
+// 因此不会阻塞温控循环等热路径。由 beginStartAsync 保证同时只有一次执行。
+func (m *Manager) startStdio() error {
+	setFailed := func(err error) {
+		m.mutex.Lock()
+		m.setState(BridgeStateFailed, err)
+		m.mutex.Unlock()
+	}
 
 	exeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("获取程序目录失败: %v", err)
 	}
 
@@ -107,7 +232,7 @@ func (m *Manager) startStdio() error {
 	bridgePath := appmeta.FirstExistingPath(possiblePaths)
 	if bridgePath == "" {
 		err := fmt.Errorf("%s 不存在，已尝试以下路径: %v", appmeta.BridgeExecutableName, possiblePaths)
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return err
 	}
 
@@ -118,25 +243,25 @@ func (m *Manager) startStdio() error {
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("创建 stdin 管道失败: %v", err)
 	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("创建 stdout 管道失败: %v", err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("创建 stderr 管道失败: %v", err)
 	}
 
 	startAt := time.Now()
 	if err := cmd.Start(); err != nil {
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return fmt.Errorf("启动桥接程序失败: %v", err)
 	}
 
@@ -150,10 +275,22 @@ func (m *Manager) startStdio() error {
 		// 异步回收进程，避免句柄/僵尸进程泄漏；Wait 会同时关闭残留管道。
 		go func() { _ = cmd.Wait() }()
 		go drainLines(lineCh)
-		m.setState(BridgeStateFailed, err)
+		setFailed(err)
 		return err
 	}
 
+	// 握手成功后才发布通信句柄。若期间发生了 Stop（stopping/stopped），
+	// 不能把新进程挂上去，否则会留下一个无人回收的桥接进程。
+	m.mutex.Lock()
+	if m.state == BridgeStateStopping || m.state == BridgeStateStopped {
+		m.mutex.Unlock()
+		m.logger.Info("桥接启动完成时已收到停止请求，回收刚启动的进程")
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		go func() { _ = cmd.Wait() }()
+		go drainLines(lineCh)
+		return fmt.Errorf("桥接程序已请求停止")
+	}
 	m.cmd = cmd
 	m.stdin = stdin
 	m.stdout = stdout
@@ -162,6 +299,7 @@ func (m *Manager) startStdio() error {
 	m.transport = "stdio"
 	m.ownsCmd = true
 	m.setState(BridgeStateRunning, nil)
+	m.mutex.Unlock()
 	m.logger.Info("桥接程序启动成功（耗时 %s），通信方式: stdio", time.Since(startAt).Round(time.Millisecond))
 	return nil
 }
@@ -466,6 +604,14 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 	}
 
 	if err := m.EnsureRunning(); err != nil {
+		// 启动是异步的：过渡态原样上报 ErrStarting 的文案，让上层识别为"正在启动"
+		// 而不是故障，否则会在启动窗口内触发重启风暴与风扇安全兜底。
+		if errors.Is(err, ErrStarting) {
+			return types.BridgeTemperatureData{
+				Success: false,
+				Error:   StartingMessage,
+			}
+		}
 		return types.BridgeTemperatureData{
 			Success: false,
 			Error:   fmt.Sprintf("启动桥接程序失败: %v", err),
@@ -474,10 +620,10 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 
 	response, err := m.SendCommand("GetTemperature", string(selectionPayload))
 	if err != nil {
-		return types.BridgeTemperatureData{
+		return m.recordLastTemp(types.BridgeTemperatureData{
 			Success: false,
 			Error:   fmt.Sprintf("桥接程序通信失败: %v", err),
-		}
+		})
 	}
 
 	if !response.Success {
@@ -487,24 +633,39 @@ func (m *Manager) GetTemperature(selection types.TemperatureSelection) types.Bri
 			if strings.TrimSpace(response.Error) != "" {
 				result.Error = response.Error
 			}
-			return result
+			return m.recordLastTemp(result)
 		}
-		return types.BridgeTemperatureData{
+		return m.recordLastTemp(types.BridgeTemperatureData{
 			Success: false,
 			Error:   response.Error,
-		}
+		})
 	}
 
 	if response.Data == nil {
-		return types.BridgeTemperatureData{
+		return m.recordLastTemp(types.BridgeTemperatureData{
 			Success: false,
 			Error:   "桥接程序返回空数据",
-		}
+		})
 	}
 
-	return *response.Data
+	return m.recordLastTemp(*response.Data)
 }
 
+// recordLastTemp 缓存最近一次真实读取结果，供 GetStatus 复用。
+func (m *Manager) recordLastTemp(data types.BridgeTemperatureData) types.BridgeTemperatureData {
+	m.mutex.Lock()
+	m.lastTemp = data
+	m.lastTempAt = time.Now().UnixMilli()
+	m.mutex.Unlock()
+	return data
+}
+
+// GetStatus 报告桥接运行状态。
+//
+// 该方法只读缓存，绝不主动向桥接发命令：前端恰好是在检测到 bridgeOk == false
+// 时才来查状态的，此时一次真实的 GetTemperature 必然走满 10 秒超时，还会顺带触发
+// 一次重启——而 IPC 服务端按连接串行处理请求，这 10 秒会把同一条连接上后续所有
+// 请求（心跳、温度查询）一起拖超时，最终表现为 GUI 误报"核心服务不可用"。
 func (m *Manager) GetStatus() map[string]any {
 	m.mutex.Lock()
 	state := m.state
@@ -512,7 +673,13 @@ func (m *Manager) GetStatus() map[string]any {
 	pipeName := m.pipeName
 	transport := m.transport
 	lastError := m.lastError
+	lastTemp := m.lastTemp
+	lastTempAt := m.lastTempAt
 	m.mutex.Unlock()
+
+	if m.starting.Load() {
+		state = BridgeStateStarting
+	}
 
 	exeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
 	if err != nil {
@@ -538,31 +705,26 @@ func (m *Manager) GetStatus() map[string]any {
 		}
 	}
 
-	testResult := m.GetTemperature(types.GetDefaultTemperatureSelection())
-
-	m.mutex.Lock()
-	state = m.state
-	ownsCmd = m.ownsCmd
-	pipeName = m.pipeName
-	transport = m.transport
-	lastError = m.lastError
-	m.mutex.Unlock()
-
-	return map[string]any{
+	status := map[string]any{
 		"exists":      true,
 		"path":        bridgePath,
-		"working":     testResult.Success,
+		"working":     state == BridgeStateRunning || state == BridgeStateAttached,
 		"state":       state,
 		"ownsProcess": ownsCmd,
 		"pipeName":    pipeName,
 		"transport":   transport,
 		"lastError":   lastError,
-		"testData":    testResult,
 	}
+	// 上一次真实读取的结果作为诊断数据，避免为了填充状态面板而额外发一次命令。
+	if lastTempAt > 0 {
+		status["testData"] = lastTemp
+		status["testDataAt"] = lastTempAt
+	}
+	return status
 }
 
 func (m *Manager) RestartPawnIO() (types.BridgeTemperatureData, error) {
-	if err := m.EnsureRunning(); err != nil {
+	if err := m.EnsureRunningWait(bridgeStartupTimeout); err != nil {
 		return types.BridgeTemperatureData{
 			Success: false,
 			Error:   fmt.Sprintf("启动桥接程序失败: %v", err),
