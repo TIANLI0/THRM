@@ -3,6 +3,7 @@ package guiapp
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
@@ -20,6 +21,10 @@ type App struct {
 	ipcHealthMutex sync.Mutex
 	ipcTimeouts    uint32
 	lastIPCTimeout time.Time
+
+	// shuttingDown 让 IPC 看护协程在退出流程中停手。
+	// 否则 QuitAll 让核心退出后，看护协程会把它当成"核心掉线"重新拉起来。
+	shuttingDown atomic.Bool
 
 	// 缓存的状态
 	isConnected bool

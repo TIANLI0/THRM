@@ -28,6 +28,8 @@ func (a *App) HideWindow() {
 func (a *App) QuitApp() {
 	guiLogger.Info("GUI 请求退出")
 
+	// 先让看护协程停手，否则它会把随后关闭的连接当成"核心掉线"而尝试重连。
+	a.shuttingDown.Store(true)
 	a.captureWindowState()
 
 	if a.ipcClient != nil {
@@ -43,6 +45,9 @@ func (a *App) QuitApp() {
 func (a *App) QuitAll() {
 	guiLogger.Info("GUI 请求完全退出（包括核心服务）")
 
+	// 必须在通知核心退出之前置位：否则核心退出与本进程退出之间的窗口里，
+	// 看护协程会把核心当成掉线并把它重新拉起来。
+	a.shuttingDown.Store(true)
 	a.captureWindowState()
 
 	a.sendRequest(ipc.ReqQuitApp, nil)

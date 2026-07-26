@@ -28,6 +28,11 @@ func (a *App) Startup(ctx context.Context) {
 
 	guiLogger.Infof("=== %s GUI 启动 ===", appmeta.AppName)
 
+	// 看护协程负责在核心重启/连接失效后自动重连并让前端重新同步状态，
+	// 这样"连接是否还活着"不再依赖前端恰好有请求在飞。
+	// 必须在下面的早退分支之前启动：核心此刻不可用恰恰是最需要它的场景。
+	a.startIPCWatchdog()
+
 	if !EnsureCoreServiceRunning() {
 		guiLogger.Error("核心服务不可用，GUI 将进入受限状态")
 		a.emitCoreServiceError("启动或探测核心服务失败")

@@ -354,6 +354,11 @@ class ApiService {
   onCoreServiceOK(callback: () => void): () => void {
     return EventsOn('core-service-ok', callback);
   }
+
+  // core-resynced 由 GUI 侧的 IPC 看护协程在重连成功后发出，提示前端重取核心状态。
+  onCoreResynced(callback: () => void): () => void {
+    return EventsOn('core-resynced', callback);
+  }
 }
 
 export const apiService = new ApiService();

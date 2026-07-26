@@ -71,12 +71,16 @@ interface AppStore {
   appendSessionHistoryPoint: (data: types.TemperatureData | null) => void;
 
   initializeApp: () => Promise<void>;
+  resyncCore: () => Promise<void>;
   connectDevice: () => Promise<void>;
   disconnectDevice: () => Promise<void>;
   updateConfig: (config: types.AppConfig) => Promise<void>;
 
   startEventListeners: () => () => void;
 }
+
+// resyncCore 的重入哨兵，见该方法注释。
+let resyncInFlight = false;
 
 export const useAppStore = create<AppStore>((set, get) => ({
   isConnected: false,
@@ -169,6 +173,46 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
+  // resyncCore 在 IPC 连接恢复后重新拉取核心状态。
+  //
+  // 必须有这一步：core-service-error 会把 isConnected/deviceModel/deviceSettings 清空，
+  // 而这些字段只能由 device-connected 事件恢复——设备其实从未断开，该事件不会再来。
+  // 缺少主动重取时，一次 IPC 抖动就会让界面永久停在"设备未连接"，只能重启 GUI。
+  // 与 initializeApp 的区别是不触碰 isLoading，避免恢复时闪一下加载态。
+  //
+  // 重取过程本身会发请求，而每个成功的请求都会再触发一次 core-service-ok，
+  // 因此需要 resyncInFlight 兜住重入，避免一次恢复引发多轮重复拉取。
+  resyncCore: async () => {
+    if (resyncInFlight) return;
+    resyncInFlight = true;
+    try {
+      const [appConfig, deviceStatus, debugInfo] = await Promise.all([
+        configService.getConfig(),
+        deviceService.getStatus() as Promise<DeviceStatusPayload>,
+        apiService.getDebugInfo().catch(() => null),
+      ]);
+      const coreServiceError = deviceStatus.error ? getCoreServiceErrorMessage(deviceStatus.error) : null;
+
+      set({
+        config: appConfig,
+        isConnected: deviceStatus.connected || false,
+        deviceProductId: deviceStatus.productId || null,
+        deviceModel: deviceStatus.model || null,
+        deviceSettings: deviceStatus.deviceSettings || null,
+        fanData: deviceStatus.currentData || null,
+        legionFnQSupported: debugInfo?.legionFnQSupported === true,
+        coreServiceError,
+        error: coreServiceError,
+      });
+
+      get().handleTemperaturePayload(deviceStatus.temperature || null);
+    } catch (error) {
+      console.error('核心状态重同步失败:', error);
+    } finally {
+      resyncInFlight = false;
+    }
+  },
+
   connectDevice: async () => {
     try {
       const success = await deviceService.connect();
@@ -258,10 +302,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       apiService.onCoreServiceOK(() => {
+        // 该事件在每次请求成功时都会到达，只有"从错误态恢复"这一次跳变需要重同步。
+        const recovering = get().coreServiceError !== null;
         set((state) => ({
           coreServiceError: null,
           error: state.coreServiceError && state.error === state.coreServiceError ? null : state.error,
         }));
+        if (recovering) {
+          void get().resyncCore();
+        }
+      })
+    );
+
+    // 核心侧 IPC 看护协程重连成功后主动推送，用于覆盖"GUI 空闲期间核心重启"
+    // 这类没有任何请求在飞、因而不会触发 core-service-ok 跳变的场景。
+    unsubscribers.push(
+      apiService.onCoreResynced(() => {
+        void get().resyncCore();
       })
     );
 

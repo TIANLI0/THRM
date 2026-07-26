@@ -677,6 +677,7 @@ func (a *CoreApp) startHealthMonitoring() {
 					continue
 				}
 
+				a.emitHeartbeat()
 				a.performHealthCheck()
 			case <-stop:
 				a.logInfo("健康监控系统已停止")
@@ -709,6 +710,18 @@ func (a *CoreApp) stopHealthMonitoring(timeout time.Duration) {
 	case <-time.After(timeout):
 		a.logError("等待健康监控停止超时")
 	}
+}
+
+// emitHeartbeat 周期性向 GUI 广播心跳。
+//
+// 除了让前端知道核心还活着，这个周期性写入还承担着"探活"职责：写协程带写超时，
+// 对端进程假死时这次心跳会写超时失败，从而把该客户端摘除。没有任何周期性写入时，
+// 一个假死但未退出的 GUI 会永远留在客户端表里，核心也就永远无法回到空闲低频模式。
+func (a *CoreApp) emitHeartbeat() {
+	if a.ipcServer == nil || !a.ipcServer.HasClients() {
+		return
+	}
+	a.ipcServer.BroadcastEvent(ipc.EventHeartbeat, time.Now().UnixMilli())
 }
 
 // performHealthCheck 执行健康检查

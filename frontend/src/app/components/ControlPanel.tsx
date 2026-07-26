@@ -931,15 +931,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     }
   }, [activeCurveProfileId, loadCurveProfiles, onConfigChange, t]);
 
-  useEffect(() => {
-    const i = window.setInterval(() => {
-      if (document.hidden) {
-        return;
-      }
-      apiService.updateGuiResponseTime().catch(() => {});
-    }, 60000);
-    return () => window.clearInterval(i);
-  }, []);
+  // GUI 存活上报统一由 useAppBootstrap 负责，此处不再重复发送。
   useEffect(() => { loadCurveProfiles(); }, [loadCurveProfiles]);
   useEffect(() => { setLightStripConfig(normalizeLightStripConfig(config)); }, [config]);
   useEffect(() => {
