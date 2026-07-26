@@ -2,10 +2,7 @@ package guiapp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 	"net/http"
 	"net/url"
@@ -33,37 +30,6 @@ type updateProgress struct {
 	Message  string `json:"message"`  // 附带信息(错误时为错误文本)
 }
 
-// updateDownloadAllowedHosts 是安装包下载地址允许的域名（含其子域）。
-// GitCode 是国内 Release 镜像，其附件下载接口会 302 到华为云 OBS，
-// 因此这里只校验首跳域名，重定向后的对象存储域名由 GitCode 侧决定。
-var updateDownloadAllowedHosts = []string{
-	"github.com",
-	"githubusercontent.com",
-	"gitcode.com",
-}
-
-func updateDownloadHostAllowed(host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	for _, allowed := range updateDownloadAllowedHosts {
-		if host == allowed || strings.HasSuffix(host, "."+allowed) {
-			return true
-		}
-	}
-	return false
-}
-
-// normalizeSHA256 校验并规范化十六进制摘要。空值或格式不对一律视为"没有摘要"。
-func normalizeSHA256(value string) (string, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	if len(normalized) != sha256.Size*2 {
-		return "", false
-	}
-	if _, err := hex.DecodeString(normalized); err != nil {
-		return "", false
-	}
-	return normalized, true
-}
-
 func (a *App) emitUpdateProgress(p updateProgress) {
 	if a.ctx == nil {
 		return
@@ -75,12 +41,7 @@ func (a *App) emitUpdateProgress(p updateProgress) {
 // 状态窗口展示更新动态，安装完成后自动重启。用户无需在安装向导中做任何确认（仅保留
 // 系统级 UAC 授权）。windowTitle/windowBody/windowRestarting 为状态窗口的本地化文案，
 // 由前端按当前界面语言传入；为空时回退到中文默认文案。
-//
-// expectedSHA256 是随 Release 发布的 SHA256SUMS 中该安装包的摘要，必须提供且必须匹配。
-// 这个包接下来会带 UAC 提权静默执行，校验是整条更新链路上唯一的完整性保证——尤其是
-// 走国内镜像时下载路径不再是 GitHub 自己。拿不到摘要就宁可让用户去发布页手动下载，
-// 否则攻击者只要让摘要请求失败就能绕过校验。
-func (a *App) DownloadAndInstallUpdate(downloadURL, expectedSHA256, windowTitle, windowBody, windowRestarting string) error {
+func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, windowRestarting string) error {
 	if strings.TrimSpace(windowTitle) == "" {
 		windowTitle = "THRM 正在更新"
 	}
@@ -97,33 +58,19 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, expectedSHA256, windowTitle,
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: e.Error()})
 		return e
 	}
-	if !updateDownloadHostAllowed(parsed.Hostname()) {
+	host := strings.ToLower(parsed.Host)
+	if host != "github.com" && !strings.HasSuffix(host, ".github.com") &&
+		!strings.HasSuffix(host, "githubusercontent.com") && host != "objects.githubusercontent.com" {
 		e := fmt.Errorf("下载地址不在允许的来源内: %s", parsed.Host)
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: e.Error()})
 		return e
 	}
 
-	wantDigest, ok := normalizeSHA256(expectedSHA256)
-	if !ok {
-		e := fmt.Errorf("缺少安装包校验值，已终止自动更新，请前往发布页手动下载")
-		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: e.Error()})
-		return e
-	}
-
-	installerPath, gotDigest, err := a.downloadUpdateInstaller(parsed.String())
+	installerPath, err := a.downloadUpdateInstaller(parsed.String())
 	if err != nil {
 		guiLogger.Errorf("下载更新安装包失败: %v", err)
 		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: err.Error()})
 		return err
-	}
-
-	if gotDigest != wantDigest {
-		// 校验不过的安装包立刻删掉，避免它留在临时目录里被别的路径误用。
-		_ = os.Remove(installerPath)
-		guiLogger.Errorf("安装包校验失败: 期望 %s，实际 %s", wantDigest, gotDigest)
-		e := fmt.Errorf("安装包校验失败，可能已损坏或被篡改，已终止自动更新")
-		a.emitUpdateProgress(updateProgress{Percent: -1, Stage: "error", Message: e.Error()})
-		return e
 	}
 
 	a.emitUpdateProgress(updateProgress{Percent: 100, Stage: "installing", Message: ""})
@@ -152,12 +99,10 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, expectedSHA256, windowTitle,
 	return nil
 }
 
-// downloadUpdateInstaller 下载安装包，返回落盘路径与内容的 SHA-256 十六进制摘要。
-// 摘要在写盘的同时算出，不需要为校验再读一遍文件。
-func (a *App) downloadUpdateInstaller(downloadURL string) (string, string, error) {
+func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	dir := filepath.Join(os.TempDir(), "THRM-update")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", "", fmt.Errorf("创建临时目录失败: %w", err)
+		return "", fmt.Errorf("创建临时目录失败: %w", err)
 	}
 	target := filepath.Join(dir, updateInstallerName)
 
@@ -169,31 +114,27 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, string, error
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("构造下载请求失败: %w", err)
+		return "", fmt.Errorf("构造下载请求失败: %w", err)
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("下载失败: %w", err)
+		return "", fmt.Errorf("下载失败: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("下载失败: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("下载失败: HTTP %d", resp.StatusCode)
 	}
 
 	out, err := os.Create(target)
 	if err != nil {
-		return "", "", fmt.Errorf("创建安装包文件失败: %w", err)
+		return "", fmt.Errorf("创建安装包文件失败: %w", err)
 	}
 	defer out.Close()
 
 	total := resp.ContentLength
 	a.emitUpdateProgress(updateProgress{Percent: 0, Total: max64(total, 0), Stage: "downloading"})
-
-	// 边写盘边算摘要：省掉校验时再整读一遍文件。
-	var digest hash.Hash = sha256.New()
-	sink := io.MultiWriter(out, digest)
 
 	buf := make([]byte, 64*1024)
 	var received int64
@@ -201,8 +142,8 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, string, error
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
-			if _, writeErr := sink.Write(buf[:n]); writeErr != nil {
-				return "", "", fmt.Errorf("写入安装包失败: %w", writeErr)
+			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
+				return "", fmt.Errorf("写入安装包失败: %w", writeErr)
 			}
 			received += int64(n)
 			percent := -1
@@ -218,14 +159,14 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, string, error
 			break
 		}
 		if readErr != nil {
-			return "", "", fmt.Errorf("下载中断: %w", readErr)
+			return "", fmt.Errorf("下载中断: %w", readErr)
 		}
 	}
 
 	if err := out.Sync(); err != nil {
-		return "", "", fmt.Errorf("刷新安装包到磁盘失败: %w", err)
+		return "", fmt.Errorf("刷新安装包到磁盘失败: %w", err)
 	}
-	return target, hex.EncodeToString(digest.Sum(nil)), nil
+	return target, nil
 }
 
 func max64(a, b int64) int64 {

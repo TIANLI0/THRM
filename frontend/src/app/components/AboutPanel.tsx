@@ -29,17 +29,40 @@ import {
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
-import {
-  fetchInstallerChecksum,
-  fetchLatestRelease,
-  releasesPageUrl,
-  useEffectiveUpdateSource,
-  type NormalizedRelease,
-  type ReleaseChannel,
-} from '../lib/update-source';
 import { apiService } from '../services/api';
 import { SiGithub } from 'react-icons/si';
 import { Badge, Button, ScrollArea } from './ui/index';
+
+type ReleaseChannel = 'stable' | 'prerelease';
+
+type GithubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
+
+type GithubRelease = {
+  tag_name?: string;
+  html_url?: string;
+  body?: string;
+  prerelease?: boolean;
+  draft?: boolean;
+  assets?: GithubReleaseAsset[];
+};
+
+const INSTALLER_ASSET_NAME = 'THRM-amd64-installer.exe';
+
+function findInstallerAsset(assets: GithubReleaseAsset[] | undefined): string {
+  if (!Array.isArray(assets)) return '';
+  const exact = assets.find((asset) => asset?.name === INSTALLER_ASSET_NAME);
+  if (exact?.browser_download_url) return exact.browser_download_url;
+  const fuzzy = assets.find(
+    (asset) =>
+      typeof asset?.name === 'string' &&
+      /installer\.exe$/i.test(asset.name) &&
+      !!asset.browser_download_url,
+  );
+  return fuzzy?.browser_download_url || '';
+}
 
 type UpdateStage = 'idle' | 'downloading' | 'installing' | 'done' | 'error';
 
@@ -199,16 +222,12 @@ function VersionValue({ value, canCopy, onCopy, copyLabel }: VersionValueProps) 
 
 export default function AboutPanel() {
   const { t } = useTranslation();
-  const updateSource = useEffectiveUpdateSource();
   const [appVersion, setAppVersion] = useState('');
   const [releaseChannel, setReleaseChannel] =
     useState<ReleaseChannel>('stable');
-  const [latestRelease, setLatestRelease] = useState<NormalizedRelease | null>(
-    null,
-  );
   const [latestReleaseTag, setLatestReleaseTag] = useState('');
   const [latestReleaseUrl, setLatestReleaseUrl] = useState<string>(
-    releasesPageUrl(updateSource),
+    BRAND.latestReleaseUrl,
   );
   const [latestReleaseBody, setLatestReleaseBody] = useState('');
   const [, setLatestReleaseIsPrerelease] = useState(false);
@@ -261,43 +280,57 @@ export default function AboutPanel() {
       setReleaseError('');
       setInstallerUrl('');
 
-      const fallbackPageUrl = releasesPageUrl(updateSource);
-
-      const resetReleaseState = () => {
-        setLatestRelease(null);
-        setLatestReleaseTag('');
-        setLatestReleaseUrl(fallbackPageUrl);
-        setLatestReleaseBody('');
-        setLatestReleaseIsPrerelease(false);
-      };
+      const headers = { Accept: 'application/vnd.github+json' };
 
       try {
-        const release = await fetchLatestRelease(updateSource, channel);
+        let targetRelease: GithubRelease | null = null;
 
-        if (!release) {
-          resetReleaseState();
-          setReleaseError(
-            channel === 'prerelease'
-              ? t('aboutPanel.version.noPrereleaseFound')
-              : t('aboutPanel.version.noReleaseFound'),
-          );
-          return;
+        if (channel === 'prerelease') {
+          const response = await fetch(`${BRAND.releasesApiUrl}?per_page=30`, {
+            headers,
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+          const releases = (await response.json()) as GithubRelease[];
+          targetRelease =
+            (Array.isArray(releases) ? releases : []).find(
+              (item) => !item?.draft && !!item?.prerelease,
+            ) || null;
+
+          if (!targetRelease) {
+            setLatestReleaseTag('');
+            setLatestReleaseUrl(BRAND.latestReleaseUrl);
+            setLatestReleaseBody('');
+            setLatestReleaseIsPrerelease(false);
+            setReleaseError(t('aboutPanel.version.noPrereleaseFound'));
+            return;
+          }
+        } else {
+          const response = await fetch(BRAND.latestReleaseApiUrl, { headers });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          targetRelease = (await response.json()) as GithubRelease;
         }
 
-        setLatestRelease(release);
-        setLatestReleaseTag(release.tag);
-        setLatestReleaseUrl(release.pageUrl || fallbackPageUrl);
-        setLatestReleaseBody(release.body);
-        setLatestReleaseIsPrerelease(release.prerelease);
-        setInstallerUrl(release.installerUrl);
+        setLatestReleaseTag(targetRelease?.tag_name || '');
+        setLatestReleaseUrl(targetRelease?.html_url || BRAND.latestReleaseUrl);
+        setLatestReleaseBody(
+          typeof targetRelease?.body === 'string'
+            ? targetRelease.body.trim()
+            : '',
+        );
+        setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
+        setInstallerUrl(findInstallerAsset(targetRelease?.assets));
       } catch {
-        resetReleaseState();
+        setLatestReleaseTag('');
+        setLatestReleaseUrl(BRAND.latestReleaseUrl);
+        setLatestReleaseBody('');
+        setLatestReleaseIsPrerelease(false);
         setReleaseError(t('aboutPanel.version.checkFailed'));
       } finally {
         setReleaseLoading(false);
       }
     },
-    [releaseChannel, t, updateSource],
+    [releaseChannel, t],
   );
 
   useEffect(() => {
@@ -375,26 +408,15 @@ export default function AboutPanel() {
   }, []);
 
   const startDownloadInstall = useCallback(async () => {
-    if (!installerUrl || !latestRelease) {
+    if (!installerUrl) {
       return;
     }
     setUpdateStage('downloading');
     setUpdatePercent(0);
     setUpdateError('');
     try {
-      // 安装包稍后会带 UAC 提权静默执行，必须先拿到官方校验值。
-      // 拿不到就不装——后端同样会拒绝，这里提前给出可读的提示。
-      const expectedSHA256 = await fetchInstallerChecksum(
-        updateSource,
-        latestRelease,
-      );
-      if (!expectedSHA256) {
-        throw new Error(t('aboutPanel.version.checksumUnavailable'));
-      }
-
       await apiService.downloadAndInstallUpdate(
         installerUrl,
-        expectedSHA256,
         t('aboutPanel.version.updaterWindowTitle'),
         t('aboutPanel.version.updaterWindowBody'),
         t('aboutPanel.version.updaterWindowRestarting'),
@@ -405,7 +427,7 @@ export default function AboutPanel() {
       setUpdateError(message);
       toast.error(t('aboutPanel.version.installFailed', { error: message }));
     }
-  }, [installerUrl, latestRelease, t, updateSource]);
+  }, [installerUrl, t]);
 
   const clearSponsorHoverTimer = useCallback(() => {
     if (sponsorHoverTimerRef.current !== null) {
@@ -821,7 +843,7 @@ export default function AboutPanel() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  openUrl(latestReleaseUrl || releasesPageUrl(updateSource))
+                  openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
                 }
                 icon={<ExternalLink className="h-4 w-4" />}
               >
@@ -857,7 +879,7 @@ export default function AboutPanel() {
               variant="outline"
               size="sm"
               onClick={() =>
-                openUrl(latestReleaseUrl || releasesPageUrl(updateSource))
+                openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
               }
               icon={<ExternalLink className="h-3.5 w-3.5" />}
             >
@@ -1463,7 +1485,7 @@ export default function AboutPanel() {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        openUrl(latestReleaseUrl || releasesPageUrl(updateSource))
+                        openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
                       }
                       icon={<ExternalLink className="h-3.5 w-3.5" />}
                     >
