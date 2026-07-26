@@ -510,7 +510,7 @@ type AppConfig struct {
 	ManualGear                       string                    `json:"manualGear"`                       // 手动挡位设置
 	ManualLevel                      string                    `json:"manualLevel"`                      // 手动挡位级别(低中高)
 	DebugMode                        bool                      `json:"debugMode"`                        // 调试模式
-	GuiMonitoring                    bool                      `json:"guiMonitoring"`                    // GUI监控开关
+	GuiMonitoring                    bool                      `json:"guiMonitoring"`                    // 已废弃：健康监控/自愈现在无条件运行，保留字段仅为兼容旧配置文件
 	CustomSpeedEnabled               bool                      `json:"customSpeedEnabled"`               // 自定义转速开关
 	CustomSpeedRPM                   int                       `json:"customSpeedRPM"`                   // 自定义转速值(无上下限)
 	IgnoreDeviceOnReconnect          bool                      `json:"ignoreDeviceOnReconnect"`          // 断连后忽略设备状态(保持APP配置)

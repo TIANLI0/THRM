@@ -161,13 +161,17 @@ func (a *CoreApp) Start() error {
 		a.logInfo("已注册飞智 HID 设备接口到达通知")
 	}
 
-	// 启动健康监控
-	if cfg.GuiMonitoring {
-		a.logInfo("启动健康监控")
-		a.safeGo("startHealthMonitoring", func() {
-			a.startHealthMonitoring()
-		})
-	}
+	// 启动健康监控。
+	//
+	// 这里不再受 cfg.GuiMonitoring 开关控制：该开关名义上只关"GUI 监控"，
+	// 但健康循环同时承担设备断线重连兜底、温控循环自愈、托盘健康检查，以及
+	// 唤醒通知丢失时基于时间间隔的唤醒检测。一旦关掉，若挂起通知已生效而唤醒
+	// 通知未送达，核心会停在"已挂起"状态永久僵死——温控循环自己不会重启，
+	// 也没有任何其它路径能恢复。自愈必须无条件运行。
+	a.logInfo("启动健康监控")
+	a.safeGo("startHealthMonitoring", func() {
+		a.startHealthMonitoring()
+	})
 
 	a.logInfo("=== THRM 核心服务启动完成 ===")
 
