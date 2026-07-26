@@ -180,15 +180,35 @@ type Server struct {
 }
 
 type clientState struct {
-	conn      net.Conn
+	conn net.Conn
+	// writeCh 承载事件，respCh 承载请求响应。两者分开是因为优先级不同：
+	// 事件拥塞时可以丢弃，响应一旦丢弃就会让对端等到超时，因此响应必须优先写出
+	// 且不参与"队列满即丢"的策略。
 	writeCh   chan []byte
+	respCh    chan []byte
+	sem       chan struct{}
 	closeOnce sync.Once
 	closed    chan struct{}
 }
 
 const clientWriteQueueSize = 64
+const clientResponseQueueSize = 64
 const defaultRequestTimeout = 15 * time.Second
 const serverCriticalEventEnqueueTimeout = 500 * time.Millisecond
+
+// maxConcurrentRequestsPerClient 限制单个连接上并发执行的请求处理数，
+// 既避免慢请求相互阻塞，也避免异常对端灌请求导致协程无上限增长。
+const maxConcurrentRequestsPerClient = 16
+
+// clientWriteTimeout 是单次写操作的上限。
+//
+// 没有这个超时，对端进程假死（webview 卡死、进程被挂起、调试器断住）时
+// conn.Write 会永久不返回：写协程再也不会退出，客户端条目永远留在 s.clients 里，
+// HasClients() 恒为 true，于是核心永远按"有 GUI 在线"全速采样并广播事件，
+// 且再也不会归还空闲内存——这是一个只能靠重启核心才能解除的资源泄漏。
+//
+// 声明为变量以便测试缩短等待。
+var clientWriteTimeout = 10 * time.Second
 
 var ErrRequestTimeout = errors.New("等待 IPC 响应超时")
 
@@ -255,6 +275,8 @@ func (s *Server) acceptConnections() {
 		state := &clientState{
 			conn:    conn,
 			writeCh: make(chan []byte, clientWriteQueueSize),
+			respCh:  make(chan []byte, clientResponseQueueSize),
+			sem:     make(chan struct{}, maxConcurrentRequestsPerClient),
 			closed:  make(chan struct{}),
 		}
 
@@ -275,22 +297,53 @@ func (s *Server) isRunning() bool {
 	return s.running
 }
 
+// clientWriter 是该连接唯一的写入者。响应优先于事件：请求-响应时延直接决定
+// 对端是否判定超时，而事件迟到只影响界面刷新。
 func (s *Server) clientWriter(state *clientState) {
 	for {
+		// 先把已就绪的响应排空，再考虑事件。
 		select {
+		case data := <-state.respCh:
+			if !s.writeToClient(state, data) {
+				return
+			}
+			continue
+		case <-state.closed:
+			return
+		default:
+		}
+
+		select {
+		case data := <-state.respCh:
+			if !s.writeToClient(state, data) {
+				return
+			}
 		case data, ok := <-state.writeCh:
 			if !ok {
 				return
 			}
-			if _, err := state.conn.Write(data); err != nil {
-				s.logDebug("发送数据失败: %v", err)
-				s.closeClient(state)
+			if !s.writeToClient(state, data) {
 				return
 			}
 		case <-state.closed:
 			return
 		}
 	}
+}
+
+// writeToClient 带超时地写出一帧数据。写超时按连接故障处理：对端假死时必须
+// 主动断开并从 clients 中摘除，否则核心会永远认为 GUI 仍在线。
+func (s *Server) writeToClient(state *clientState, data []byte) bool {
+	if err := state.conn.SetWriteDeadline(time.Now().Add(clientWriteTimeout)); err != nil {
+		// 少数传输不支持 deadline，此时退化为无超时写入而不是拒绝服务。
+		s.logDebug("设置 IPC 写超时失败: %v", err)
+	}
+	if _, err := state.conn.Write(data); err != nil {
+		s.logDebug("发送数据失败，断开该客户端: %v", err)
+		s.closeClient(state)
+		return false
+	}
+	return true
 }
 
 func (s *Server) closeClient(state *clientState) {
@@ -303,7 +356,16 @@ func (s *Server) closeClient(state *clientState) {
 	})
 }
 
-// handleClient 处理客户端连接
+// handleClient 处理客户端连接。
+//
+// 每个请求交给独立的协程执行，读取循环立刻回到 ReadBytes 等下一条请求。
+// 串行处理会造成队头阻塞：一次设备连接（就绪握手最长 6 秒）或一次桥接故障探测
+// （最长 10 秒）会把同一条连接上后续所有请求一起拖过对端的超时阈值，
+// 对端连续超时后便拆掉整条连接重连，表现为"核心服务不可用"的误报。
+//
+// 并发执行要求 handler 本身是协程安全的——这一点本来就必须成立：托盘回调、
+// 全局快捷键、插件与温控循环都在各自的协程里调用同一批 CoreApp 方法，
+// 仅把 IPC 这一条链路串行化从来不构成任何真实的互斥保证。
 func (s *Server) handleClient(conn net.Conn, state *clientState) {
 	defer func() {
 		s.closeClient(state)
@@ -334,30 +396,67 @@ func (s *Server) handleClient(conn net.Conn, state *clientState) {
 		if req.Timestamp == 0 {
 			req.Timestamp = time.Now().UnixMilli()
 		}
-		s.logDebug("IPC 请求[%s]: %s", req.RequestID, req.Type)
-		resp := s.handler(req)
-		if resp.ProtocolVersion == "" {
-			resp.ProtocolVersion = appmeta.ProtocolVersion
-		}
-		if resp.RequestID == "" {
-			resp.RequestID = req.RequestID
-		}
-		if resp.Timestamp == 0 {
-			resp.Timestamp = time.Now().UnixMilli()
-		}
-		resp.IsResponse = true
 
-		respBytes, err := json.Marshal(resp)
-		if err != nil {
-			s.logError("序列化响应失败: %v", err)
-			continue
-		}
-
-		if _, err := conn.Write(append(respBytes, '\n')); err != nil {
-			s.logError("发送响应失败: %v", err)
+		// 信号量给并发处理数设上限，避免异常对端灌请求导致协程无上限增长。
+		select {
+		case state.sem <- struct{}{}:
+		case <-state.closed:
 			return
 		}
+
+		go func(req Request) {
+			defer func() { <-state.sem }()
+			s.serveRequest(state, req)
+		}(req)
 	}
+}
+
+// serveRequest 执行单个请求并把响应交给写协程。
+func (s *Server) serveRequest(state *clientState, req Request) {
+	s.logDebug("IPC 请求[%s]: %s", req.RequestID, req.Type)
+
+	resp := s.invokeHandler(req)
+	if resp.ProtocolVersion == "" {
+		resp.ProtocolVersion = appmeta.ProtocolVersion
+	}
+	if resp.RequestID == "" {
+		resp.RequestID = req.RequestID
+	}
+	if resp.Timestamp == 0 {
+		resp.Timestamp = time.Now().UnixMilli()
+	}
+	resp.IsResponse = true
+
+	respBytes, err := json.Marshal(resp)
+	if err != nil {
+		s.logError("序列化响应失败: %v", err)
+		return
+	}
+
+	// 响应不参与"队列满即丢"：丢弃只会让对端白等一个超时。这里阻塞等待队列空位，
+	// 连接一旦被判定为故障（写超时/对端断开）就会关闭 closed 从而解除阻塞。
+	select {
+	case state.respCh <- append(respBytes, '\n'):
+	case <-state.closed:
+		s.logDebug("客户端已断开，丢弃响应: requestID=%s", resp.RequestID)
+	}
+}
+
+// invokeHandler 兜底 handler 的 panic。请求现在在独立协程里执行，
+// 未捕获的 panic 会直接终止整个核心进程，因此必须在此拦下并回一条错误响应。
+func (s *Server) invokeHandler(req Request) (resp Response) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logError("处理 IPC 请求[%s] type=%s 时发生 panic: %v", req.RequestID, req.Type, recovered)
+			resp = Response{
+				Success:   false,
+				ErrorCode: "internal_panic",
+				Error:     fmt.Sprintf("核心服务内部错误: %v", recovered),
+			}
+		}
+	}()
+
+	return s.handler(req)
 }
 
 var highFrequencyEventTypes = map[string]time.Duration{
@@ -720,24 +819,63 @@ func (c *Client) SendRequestWithTimeout(reqType RequestType, data any, timeout t
 	c.pending[requestID] = respCh
 	c.pendingMutex.Unlock()
 
+	// 写入必须带超时。没有 deadline 时，核心侧假死（不再读取管道）会让这次写入
+	// 永久阻塞在持有 c.mutex 的状态下，后续所有请求跟着永久阻塞——而下面的
+	// timeout 只覆盖"等响应"，对卡在写入上的调用完全无效。
 	c.mutex.Lock()
+	if err := conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+		c.logDebug("设置 IPC 写超时失败: %v", err)
+	}
 	_, err = conn.Write(append(reqBytes, '\n'))
 	c.mutex.Unlock()
 	if err != nil {
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
+		// 写超时说明对端已不可用，直接标记连接失效，让上层走重连而不是反复超时。
+		// 注意不能用 errors.Is(err, os.ErrDeadlineExceeded)：Windows 命名管道
+		// （go-winio）返回的是它自己的 ErrTimeout，只有 net.Error.Timeout() 能统一识别。
+		if isTimeoutError(err) {
+			c.invalidateConn(conn)
+			return nil, fmt.Errorf("%w: request=%s 发送超时", ErrRequestTimeout, reqType)
+		}
 		return nil, fmt.Errorf("发送请求失败: %v", err)
 	}
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case resp := <-respCh:
 		return resp, nil
-	case <-time.After(timeout):
+	case <-timer.C:
 		c.pendingMutex.Lock()
 		delete(c.pending, requestID)
 		c.pendingMutex.Unlock()
 		return nil, fmt.Errorf("%w: request=%s, timeout=%s", ErrRequestTimeout, reqType, timeout)
+	}
+}
+
+// isTimeoutError 判断错误是否为 I/O 超时。各传输实现返回的超时错误类型不同
+// （go-winio 有自己的 ErrTimeout，标准库用 os.ErrDeadlineExceeded），
+// 但都实现了 net.Error 且 Timeout() 为 true。
+func isTimeoutError(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// invalidateConn 把指定连接标记为失效。只在它仍是当前连接时生效，
+// 避免旧连接的延迟失败覆盖掉新建立的连接状态。
+func (c *Client) invalidateConn(conn net.Conn) {
+	c.connMutex.Lock()
+	stale := c.conn == conn
+	if stale {
+		c.connected = false
+		c.conn = nil
+		c.reader = nil
+	}
+	c.connMutex.Unlock()
+	if stale {
+		_ = conn.Close()
 	}
 }
 
