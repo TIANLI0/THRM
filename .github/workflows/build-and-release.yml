@@ -778,6 +778,14 @@ jobs:
 
           "notes_path=$notesRelativePath" >> $env:GITHUB_OUTPUT
 
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ steps.finalize_notes.outputs.notes_path }}
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -789,3 +797,177 @@ jobs:
           files: |
             dist/windows/*
             dist/linux/*
+
+  # 把同一批产物同步到 GitCode 国内镜像仓库。该仓库只承载 Release 文件，不同步任何代码。
+  sync-gitcode-release:
+    name: Sync release to GitCode
+    needs: [prepare-release, publish-release]
+    if: needs.prepare-release.outputs.should_publish_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: dist/windows
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: dist/linux
+
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: dist/notes
+
+      - name: Publish GitCode release
+        shell: bash
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          GITCODE_OWNER: ${{ vars.GITCODE_OWNER || 'TIANLI0' }}
+          GITCODE_REPO: ${{ vars.GITCODE_REPO || 'THRMRealese' }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
+          RELEASE_NAME: ${{ needs.prepare-release.outputs.release_name }}
+          IS_PRERELEASE: ${{ needs.prepare-release.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GITCODE_TOKEN:-}" ]; then
+            echo "::warning::GITCODE_TOKEN is not configured; skipping the GitCode release sync."
+            exit 0
+          fi
+
+          API="https://api.gitcode.com/api/v5/repos/${GITCODE_OWNER}/${GITCODE_REPO}"
+          TAG_ENC=$(jq -rn --arg v "$RELEASE_TAG" '$v | @uri')
+
+          RELEASE_STATUS=latest
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            RELEASE_STATUS=pre
+          fi
+
+          NOTES_FILE=dist/notes/release-notes.md
+          if [ ! -f "$NOTES_FILE" ]; then
+            NOTES_FILE=/dev/null
+          fi
+
+          BODY_FILE=$(mktemp)
+
+          # GitCode OpenAPI v5 以 access_token 查询参数鉴权；响应体写入 $BODY_FILE，函数本身返回 HTTP 状态码。
+          api_call() {
+            local method="$1" path="$2" data="${3:-}"
+            local url="${API}${path}"
+            case "$url" in
+              *\?*) url="${url}&access_token=${GITCODE_TOKEN}" ;;
+              *)    url="${url}?access_token=${GITCODE_TOKEN}" ;;
+            esac
+
+            if [ -n "$data" ]; then
+              curl -sS --retry 3 --retry-delay 3 -o "$BODY_FILE" -w '%{http_code}' \
+                -X "$method" \
+                -H 'Content-Type: application/json' \
+                -H 'Accept: application/json' \
+                --data-binary "@$data" \
+                "$url"
+            else
+              curl -sS --retry 3 --retry-delay 3 -o "$BODY_FILE" -w '%{http_code}' \
+                -X "$method" -H 'Accept: application/json' "$url"
+            fi
+          }
+
+          mapfile -t FILES < <(find dist/windows dist/linux -type f | sort)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No release assets were found to sync."
+            exit 1
+          fi
+
+          existing=''
+          code=$(api_call GET "/releases/tags/${TAG_ENC}")
+          if [ "$code" = "200" ]; then
+            existing=$(cat "$BODY_FILE")
+            echo "GitCode already has a release for ${RELEASE_TAG}; updating it in place."
+          elif [ "$code" != "404" ]; then
+            echo "Failed to query the GitCode release: HTTP $code"
+            cat "$BODY_FILE"
+            exit 1
+          fi
+
+          if [ -n "$existing" ]; then
+            jq -n --arg name "$RELEASE_NAME" --rawfile body "$NOTES_FILE" --arg status "$RELEASE_STATUS" \
+              '{name: $name, body: $body, release_status: $status}' > gitcode-payload.json
+            code=$(api_call PATCH "/releases/${TAG_ENC}" gitcode-payload.json)
+          else
+            # 不传 target_commitish：镜像仓库没有 GitHub 侧的提交，让 GitCode 用默认分支最新提交建 tag。
+            jq -n --arg tag "$RELEASE_TAG" --arg name "$RELEASE_NAME" --rawfile body "$NOTES_FILE" --arg status "$RELEASE_STATUS" \
+              '{tag_name: $tag, name: $name, body: $body, release_status: $status}' > gitcode-payload.json
+            code=$(api_call POST "/releases" gitcode-payload.json)
+          fi
+
+          case "$code" in
+            200|201) ;;
+            *)
+              echo "Failed to create or update the GitCode release: HTTP $code"
+              cat "$BODY_FILE"
+              exit 1
+              ;;
+          esac
+
+          # 重跑同一 tag（例如同一天的 nightly）时先清掉同名旧附件，否则会留下重复文件。
+          if [ -n "$existing" ]; then
+            for file in "${FILES[@]}"; do
+              name=$(basename "$file")
+              while IFS= read -r attach_id; do
+                [ -n "$attach_id" ] || continue
+                delete_code=$(api_call DELETE "/releases/${TAG_ENC}/attach_files/${attach_id}")
+                echo "Removed stale attachment ${name} (id=${attach_id}): HTTP ${delete_code}"
+              done < <(printf '%s' "$existing" | jq -r --arg n "$name" '.assets[]? | select(.name == $n) | .id | select(. != null) | tostring')
+            done
+          fi
+
+          for file in "${FILES[@]}"; do
+            name=$(basename "$file")
+            name_enc=$(jq -rn --arg v "$name" '$v | @uri')
+
+            code=$(api_call GET "/releases/${TAG_ENC}/upload_url?file_name=${name_enc}")
+            if [ "$code" != "200" ]; then
+              echo "Failed to get an upload address for ${name}: HTTP $code"
+              cat "$BODY_FILE"
+              exit 1
+            fi
+
+            upload_url=$(jq -r '.url // empty' "$BODY_FILE")
+            if [ -z "$upload_url" ]; then
+              echo "GitCode returned an empty upload address for ${name}."
+              cat "$BODY_FILE"
+              exit 1
+            fi
+
+            # 预签名地址是华为云 OBS 的直传 URL，必须原样带上接口返回的全部头部。
+            header_args=()
+            while IFS= read -r header; do
+              if [ -n "$header" ]; then
+                header_args+=(-H "$header")
+              fi
+            done < <(jq -r '.headers // {} | to_entries[] | "\(.key): \(.value)"' "$BODY_FILE")
+
+            upload_code=$(curl -sS --retry 3 --retry-delay 5 -o gitcode-upload.log -w '%{http_code}' \
+              -H 'Expect:' "${header_args[@]}" --upload-file "$file" "$upload_url")
+
+            case "$upload_code" in
+              200|201|204)
+                echo "Uploaded ${name} ($(stat -c %s "$file") bytes)."
+                ;;
+              *)
+                echo "Failed to upload ${name}: HTTP ${upload_code}"
+                cat gitcode-upload.log
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "GitCode release ready: https://gitcode.com/${GITCODE_OWNER}/${GITCODE_REPO}/releases"
