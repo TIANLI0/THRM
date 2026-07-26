@@ -20,6 +20,8 @@ type CustomLogger struct {
 	debugMode bool
 	logDir    string
 	atom      zap.AtomicLevel
+	// 轮转写入器需要在 Close 时显式关闭，否则文件句柄会一直被占用。
+	rotators []*lumberjack.Logger
 }
 
 // NewCustomLogger 创建新的日志记录器
@@ -89,10 +91,14 @@ func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
 		}),
 	)
 
+	// debug 文件只收 Debug 级日志。此前它用的是 atom（非调试模式下等于 Info），
+	// 与 appCore 的门槛完全相同，导致每条 Info 日志都被写进两个文件，磁盘写量翻倍。
 	debugCore := zapcore.NewCore(
 		fileEncoder,
 		zapcore.AddSync(debugLogRotate),
-		atom,
+		zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+			return atom.Enabled(lvl) && lvl < zapcore.InfoLevel
+		}),
 	)
 
 	// 控制台输出核心
@@ -115,6 +121,7 @@ func NewCustomLogger(debugMode bool, installDir string) (*CustomLogger, error) {
 		debugMode: debugMode,
 		logDir:    logDir,
 		atom:      atom,
+		rotators:  []*lumberjack.Logger{appLogRotate, debugLogRotate},
 	}, nil
 }
 
@@ -147,10 +154,16 @@ func (l *CustomLogger) Fatal(format string, v ...any) {
 	l.sugar.Fatalf(format, v...)
 }
 
-// Close 关闭日志
+// Close 关闭日志。除了 Sync，还要关闭轮转写入器：
+// 否则日志文件句柄会一直被占用，目录无法被删除或轮转。
 func (l *CustomLogger) Close() {
 	if l.logger != nil {
-		l.logger.Sync()
+		_ = l.logger.Sync()
+	}
+	for _, rotator := range l.rotators {
+		if rotator != nil {
+			_ = rotator.Close()
+		}
 	}
 }
 
