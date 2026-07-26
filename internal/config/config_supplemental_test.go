@@ -20,9 +20,10 @@ func TestLoadFromCorruptedJSON(t *testing.T) {
 	os.WriteFile(configPath, []byte("{not valid json!!!"), 0644)
 
 	// Override home to use tmpDir
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
+	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -47,9 +48,10 @@ func TestMissingFieldsBackfill(t *testing.T) {
 	minimalJSON := `{"autoControl": false, "fanCurve": [{"temperature": 30, "rpm": 800}, {"temperature": 70, "rpm": 3000}]}`
 	os.WriteFile(configPath, []byte(minimalJSON), 0644)
 
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
+	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -121,9 +123,10 @@ func TestConfigSaveAndReload(t *testing.T) {
 	configDir := filepath.Join(tmpDir, ".thrm")
 	os.MkdirAll(configDir, 0755)
 
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
+	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -190,9 +193,10 @@ func TestLegacyConfigMigration(t *testing.T) {
 	legacyConfig := `{"autoControl": true, "fanCurve": [{"temperature": 30, "rpm": 800}, {"temperature": 70, "rpm": 3000}]}`
 	os.WriteFile(filepath.Join(legacyDir, "config.json"), []byte(legacyConfig), 0644)
 
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", origHome)
+	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
+	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)

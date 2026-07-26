@@ -61,9 +61,10 @@ func TestGetWithRevision(t *testing.T) {
 
 func TestSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
-	homeOrig := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", homeOrig)
+	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
+	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager("/tmp", testLogger{})
 	cfg := types.GetDefaultConfig(false)
@@ -178,9 +179,10 @@ func TestLegacyConfigDir(t *testing.T) {
 
 func TestLoad_NoConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
+	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
 
 	cfgDir := filepath.Join(tmpDir, ".thrm")
 	os.RemoveAll(cfgDir)
