@@ -804,6 +804,8 @@ jobs:
     needs: [prepare-release, publish-release]
     if: needs.prepare-release.outputs.should_publish_release == 'true'
     runs-on: ubuntu-latest
+    # 兜底上限：跨境上传到 OBS 可能很慢，但绝不该占满 job 默认的 6 小时。
+    timeout-minutes: 45
     permissions:
       contents: read
 
@@ -867,15 +869,19 @@ jobs:
               *)    url="${url}?access_token=${GITCODE_TOKEN}" ;;
             esac
 
+            # 接口调用一律带连接与总时长上限：没有超时的 curl 卡住时会一直挂到
+            # job 超时为止，且 -sS 吞掉了进度输出，日志上完全看不出卡在哪。
             if [ -n "$data" ]; then
-              curl -sS --retry 3 --retry-delay 3 -o "$BODY_FILE" -w '%{http_code}' \
+              curl -sS --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 3 \
+                -o "$BODY_FILE" -w '%{http_code}' \
                 -X "$method" \
                 -H 'Content-Type: application/json' \
                 -H 'Accept: application/json' \
                 --data-binary "@$data" \
                 "$url"
             else
-              curl -sS --retry 3 --retry-delay 3 -o "$BODY_FILE" -w '%{http_code}' \
+              curl -sS --connect-timeout 20 --max-time 120 --retry 3 --retry-delay 3 \
+                -o "$BODY_FILE" -w '%{http_code}' \
                 -X "$method" -H 'Accept: application/json' "$url"
             fi
           }
@@ -909,7 +915,9 @@ jobs:
           fi
 
           case "$code" in
-            200|201) ;;
+            200|201)
+              echo "GitCode release ${RELEASE_TAG} is ready (HTTP $code); uploading ${#FILES[@]} assets."
+              ;;
             *)
               echo "Failed to create or update the GitCode release: HTTP $code"
               cat "$BODY_FILE"
@@ -928,6 +936,13 @@ jobs:
               done < <(printf '%s' "$existing" | jq -r --arg n "$name" '.assets[]? | select(.name == $n) | .id | select(. != null) | tostring')
             done
           fi
+
+          # 上传并发执行。跨境到华为云 OBS 的单条 TCP 吞吐很低，串行传完整批产物
+          # 要几十分钟；瓶颈在单连接而非总带宽，并发几乎能线性缩短墙钟时间。
+          mkdir -p gitcode-upload
+          upload_pids=()
+          upload_names=()
+          upload_index=0
 
           for file in "${FILES[@]}"; do
             name=$(basename "$file")
@@ -948,26 +963,65 @@ jobs:
             fi
 
             # 预签名地址是华为云 OBS 的直传 URL，必须原样带上接口返回的全部头部。
-            header_args=()
-            while IFS= read -r header; do
-              if [ -n "$header" ]; then
-                header_args+=(-H "$header")
-              fi
-            done < <(jq -r '.headers // {} | to_entries[] | "\(.key): \(.value)"' "$BODY_FILE")
+            jq -r '.headers // {} | to_entries[] | "\(.key): \(.value)"' "$BODY_FILE" \
+              > "gitcode-upload/${upload_index}.headers"
 
-            upload_code=$(curl -sS --retry 3 --retry-delay 5 -o gitcode-upload.log -w '%{http_code}' \
-              -H 'Expect:' "${header_args[@]}" --upload-file "$file" "$upload_url")
+            echo "Uploading ${name} ($(stat -c %s "$file") bytes) to $(printf '%s' "$upload_url" | sed -E 's#^(https?://[^/]+).*#\1#')"
 
+            (
+              header_args=()
+              while IFS= read -r header; do
+                if [ -n "$header" ]; then
+                  header_args+=(-H "$header")
+                fi
+              done < "gitcode-upload/${upload_index}.headers"
+
+              # --connect-timeout 抓"连不上"，--speed-limit/--speed-time 抓"连上了但不动"，
+              # --max-time 兜底。缺了它们就只能像上一次那样干等到 job 被取消。
+              curl -sS \
+                --connect-timeout 30 \
+                --speed-limit 4096 --speed-time 120 \
+                --max-time 1500 \
+                --retry 2 --retry-delay 10 \
+                -o "gitcode-upload/${upload_index}.body" \
+                -w '%{http_code} %{speed_upload} %{time_total}' \
+                -H 'Expect:' "${header_args[@]}" \
+                --upload-file "$file" "$upload_url" \
+                > "gitcode-upload/${upload_index}.result"
+            ) &
+
+            upload_pids+=("$!")
+            upload_names+=("$name")
+            upload_index=$((upload_index + 1))
+          done
+
+          upload_failed=0
+          for idx in "${!upload_pids[@]}"; do
+            name="${upload_names[$idx]}"
+
+            if ! wait "${upload_pids[$idx]}"; then
+              echo "Upload of ${name} failed: curl exited non-zero (connect/stall/timeout)."
+              cat "gitcode-upload/${idx}.body" 2>/dev/null || true
+              upload_failed=1
+              continue
+            fi
+
+            read -r upload_code upload_speed upload_secs < "gitcode-upload/${idx}.result"
             case "$upload_code" in
               200|201|204)
-                echo "Uploaded ${name} ($(stat -c %s "$file") bytes)."
+                printf 'Uploaded %s in %ss at %s KiB/s.\n' \
+                  "$name" "$upload_secs" "$(awk -v s="$upload_speed" 'BEGIN{printf "%.0f", s/1024}')"
                 ;;
               *)
                 echo "Failed to upload ${name}: HTTP ${upload_code}"
-                cat gitcode-upload.log
-                exit 1
+                cat "gitcode-upload/${idx}.body" 2>/dev/null || true
+                upload_failed=1
                 ;;
             esac
           done
+
+          if [ "$upload_failed" -ne 0 ]; then
+            exit 1
+          fi
 
           echo "GitCode release ready: https://gitcode.com/${GITCODE_OWNER}/${GITCODE_REPO}/releases"
