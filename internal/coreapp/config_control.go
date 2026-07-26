@@ -346,14 +346,22 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 	lightCfg, _ = normalizeLightStripConfig(lightCfg)
 
+	// 配置的读-改-写必须在锁内完成，且 isConnected 也要在锁内取快照：
+	// 托盘回调、快捷键与 IPC 请求都会并发调到这里，无锁时会丢更新。
+	// 设备写入放到锁外，避免多帧 RGB 命令期间阻塞托盘状态刷新等其它持锁者。
+	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	cfg.LightStrip = lightCfg
 	a.configManager.Set(cfg)
-	if err := a.configManager.Save(); err != nil {
-		return err
+	saveErr := a.configManager.Save()
+	connected := a.isConnected
+	a.mutex.Unlock()
+
+	if saveErr != nil {
+		return saveErr
 	}
 
-	if a.isConnected {
+	if connected {
 		if err := a.deviceManager.SetLightStrip(lightCfg); err != nil {
 			return err
 		}
