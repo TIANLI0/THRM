@@ -52,7 +52,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 		m.config.ConfigPath = defaultConfigPath
 		m.logInfo("从默认目录加载配置成功: %s", defaultConfigPath)
 		m.bumpRevisionLocked()
-		return m.config
+		return m.config.Clone()
 	}
 
 	m.logInfo("从默认目录加载配置失败，尝试从旧目录加载: %s", legacyConfigPath)
@@ -64,7 +64,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 			m.logError("迁移旧目录配置失败: %v", err)
 		}
 		m.bumpRevisionLocked()
-		return m.config
+		return m.config.Clone()
 	}
 
 	m.logInfo("从默认目录加载配置失败，尝试从安装目录加载: %s", installConfigPath)
@@ -74,7 +74,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 		m.config.ConfigPath = installConfigPath
 		m.logInfo("从安装目录加载配置成功: %s", installConfigPath)
 		m.bumpRevisionLocked()
-		return m.config
+		return m.config.Clone()
 	}
 
 	m.logError("所有配置目录加载失败，使用默认配置")
@@ -86,7 +86,7 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	}
 	m.bumpRevisionLocked()
 
-	return m.config
+	return m.config.Clone()
 }
 
 // tryLoadFromPathLocked 尝试从指定路径加载配置（调用方需持有 m.mu）
@@ -301,23 +301,27 @@ func (m *Manager) GetLegacyConfigDir() string {
 	return appmeta.LegacyUserConfigDir(homeDir)
 }
 
-// Get 获取当前配置（线程安全，返回拷贝）
+// Get 获取当前配置（线程安全，返回深拷贝）
+//
+// 必须是深拷贝：AppConfig 含切片/映射字段，浅拷贝会让调用方与管理器内部状态
+// 共享底层数组，任何一方原地改写元素都构成数据竞争。
 func (m *Manager) Get() types.AppConfig {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config
+	return m.config.Clone()
 }
 
 func (m *Manager) GetWithRevision() (types.AppConfig, uint64) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.config, m.revision
+	return m.config.Clone(), m.revision
 }
 
-// Set 设置配置（线程安全）
+// Set 设置配置（线程安全）。同样深拷贝入参，避免调用方在 Set 之后继续改写
+// 自己手上的切片而间接改到管理器内部状态。
 func (m *Manager) Set(config types.AppConfig) {
 	m.mu.Lock()
-	m.config = config
+	m.config = config.Clone()
 	m.bumpRevisionLocked()
 	m.mu.Unlock()
 }
@@ -326,7 +330,7 @@ func (m *Manager) Set(config types.AppConfig) {
 func (m *Manager) Update(config types.AppConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.config = config
+	m.config = config.Clone()
 	m.bumpRevisionLocked()
 	return m.saveLocked()
 }
