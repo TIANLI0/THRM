@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,11 +24,19 @@ const (
 	historyBinaryMagic                  = "THST"
 	historyBinaryVersionLegacy   uint16 = 1
 	historyBinaryVersionPower    uint16 = 2
-	historyBinaryVersion         uint16 = 3 // v3: 追加笔记本内置 CPU/GPU 风扇转速
+	historyBinaryVersionFans     uint16 = 3 // v3: 追加笔记本内置 CPU/GPU 风扇转速
+	historyBinaryVersion         uint16 = 4 // v4: 追加时间轴事件
 	historyEnabledFlag           uint8  = 1
 
 	dirtyFlushThreshold = 6
 	dirtyFlushInterval  = 30 * time.Second
+
+	// 事件比采样点稀疏得多，固定上限即可覆盖最长 24 小时保留窗口；
+	// 超出后按时间从最旧的开始丢弃。
+	timelineEventCapacity = 240
+	// 同类事件在此窗口内重复到达视为同一次（例如 Windows 唤醒会同时发出
+	// PBT_APMRESUMESUSPEND 与 PBT_APMRESUMEAUTOMATIC 两个通知）。
+	timelineEventDedupeWindow = 3 * time.Second
 )
 
 type HistoryRecorder struct {
@@ -41,6 +50,10 @@ type HistoryRecorder struct {
 	next           int
 	filled         bool
 	lastSampleAt   int64
+	events         []types.TimelineEvent // 按时间升序，与 points 共享保留窗口
+	lastEventType  string                // 去重用，独立于 events：关闭记录时也要折叠重复通知
+	lastEventKey   string
+	lastEventAt    int64
 
 	dirtyCount  int
 	lastFlushAt time.Time
@@ -131,6 +144,8 @@ func (r *HistoryRecorder) SetRetentionHours(hours int) error {
 	r.next = 0
 	r.filled = false
 	r.applyLoadedPointsLocked(ordered)
+	// 保留窗口变了，事件的过期界限跟着变（缩短时要立刻丢弃窗口外的旧事件）。
+	r.pruneEventsLocked(0)
 	payload, err := r.serializeLocked()
 	r.mutex.Unlock()
 	if err != nil {
@@ -221,6 +236,115 @@ func (r *HistoryRecorder) Add(temp types.TemperatureData, fanData *types.FanData
 	return point, true
 }
 
+// AddEvent 记录一次时间轴事件。返回落库后的事件与是否真的记录了。
+//
+// 记录在核心侧而非 GUI 侧：GUI 多数时间是关闭的，只在前端内存里攒事件意味着
+// "关着界面时断的线"永远看不到——温度曲线明明有一小时，标记却只有开界面之后的
+// 那几分钟。
+func (r *HistoryRecorder) AddEvent(eventType, labelKey string) (types.TimelineEvent, bool) {
+	if eventType == "" || labelKey == "" {
+		return types.TimelineEvent{}, false
+	}
+
+	event := types.TimelineEvent{
+		Timestamp: time.Now().UnixMilli(),
+		Type:      eventType,
+		LabelKey:  labelKey,
+	}
+
+	var flushPayload []byte
+
+	r.mutex.Lock()
+	// 去重状态独立于 events 维护：关闭后台记录时事件不入缓冲，但重复通知
+	// （例如唤醒时 Windows 连发的两个电源事件）依然要折叠成一次，
+	// 否则会向 GUI 广播出两个重叠的标记。
+	if r.lastEventType == event.Type && r.lastEventKey == event.LabelKey &&
+		r.lastEventAt > 0 && event.Timestamp-r.lastEventAt < timelineEventDedupeWindow.Milliseconds() {
+		r.mutex.Unlock()
+		return types.TimelineEvent{}, false
+	}
+	r.lastEventType = event.Type
+	r.lastEventKey = event.LabelKey
+	r.lastEventAt = event.Timestamp
+
+	if r.enabled {
+		r.events = append(r.events, event)
+		r.pruneEventsLocked(event.Timestamp)
+
+		r.dirtyCount++
+		now := time.Now()
+		if r.dirtyCount >= dirtyFlushThreshold || now.Sub(r.lastFlushAt) >= dirtyFlushInterval {
+			if payload, err := r.serializeLocked(); err == nil {
+				flushPayload = payload
+				r.dirtyCount = 0
+				r.lastFlushAt = now
+			} else {
+				r.logError("序列化温度历史失败: %v", err)
+			}
+		}
+	}
+	r.mutex.Unlock()
+
+	if flushPayload != nil {
+		if err := r.writeFile(flushPayload); err != nil {
+			r.logError("保存温度历史失败: %v", err)
+		}
+	}
+	return event, true
+}
+
+func compareEventTime(a, b types.TimelineEvent) int {
+	switch {
+	case a.Timestamp < b.Timestamp:
+		return -1
+	case a.Timestamp > b.Timestamp:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// retentionMillisLocked 返回采样点覆盖的时间跨度，事件按同一窗口过期，
+// 避免图表里出现早于最旧曲线数据、无处可标的孤立标记。
+func (r *HistoryRecorder) retentionMillisLocked() int64 {
+	if r.sampleInterval <= 0 || r.capacity <= 0 {
+		return int64(DefaultHistoryRetentionHours) * time.Hour.Milliseconds()
+	}
+	return int64(r.capacity) * r.sampleInterval.Milliseconds()
+}
+
+// pruneEventsLocked 按保留窗口与容量上限裁剪事件，并保证按时间升序。
+func (r *HistoryRecorder) pruneEventsLocked(newestTimestamp int64) {
+	if len(r.events) == 0 {
+		return
+	}
+	if !slices.IsSortedFunc(r.events, compareEventTime) {
+		slices.SortStableFunc(r.events, compareEventTime)
+	}
+
+	if newestTimestamp <= 0 {
+		newestTimestamp = r.events[len(r.events)-1].Timestamp
+	}
+	cutoff := newestTimestamp - r.retentionMillisLocked()
+	start := 0
+	for start < len(r.events) && r.events[start].Timestamp < cutoff {
+		start++
+	}
+	if len(r.events)-start > timelineEventCapacity {
+		start = len(r.events) - timelineEventCapacity
+	}
+	if start > 0 {
+		r.events = append(r.events[:0], r.events[start:]...)
+	}
+}
+
+func (r *HistoryRecorder) snapshotEventsLocked() []types.TimelineEvent {
+	if len(r.events) == 0 {
+		return nil
+	}
+	return slices.Clone(r.events)
+}
+
 func (r *HistoryRecorder) Snapshot() types.TemperatureHistoryPayload {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
@@ -234,6 +358,7 @@ func (r *HistoryRecorder) Snapshot() types.TemperatureHistoryPayload {
 		SampleIntervalSeconds: int(r.sampleInterval / time.Second),
 		RetentionHours:        retentionHours,
 		Points:                r.snapshotPointsLocked(),
+		Events:                r.snapshotEventsLocked(),
 	}
 }
 
@@ -288,7 +413,7 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 	if err := binary.Read(reader, binary.LittleEndian, &version); err != nil {
 		return err
 	}
-	if version != historyBinaryVersionLegacy && version != historyBinaryVersionPower && version != historyBinaryVersion {
+	if version < historyBinaryVersionLegacy || version > historyBinaryVersion {
 		return fmt.Errorf("unsupported history version: %d", version)
 	}
 
@@ -343,7 +468,7 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 				return err
 			}
 		}
-		if version >= historyBinaryVersion {
+		if version >= historyBinaryVersionFans {
 			if err := binary.Read(reader, binary.LittleEndian, &cpuFanRPM); err != nil {
 				return err
 			}
@@ -363,6 +488,41 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 		})
 	}
 
+	// v4 起在采样点之后追加时间轴事件。旧版本文件读到这里就结束，事件为空。
+	var events []types.TimelineEvent
+	if version >= historyBinaryVersion {
+		var eventCount uint32
+		if err := binary.Read(reader, binary.LittleEndian, &eventCount); err != nil {
+			return err
+		}
+		if eventCount > timelineEventCapacity {
+			return fmt.Errorf("history event count out of range: %d", eventCount)
+		}
+		events = make([]types.TimelineEvent, 0, eventCount)
+		for i := uint32(0); i < eventCount; i++ {
+			var timestamp int64
+			if err := binary.Read(reader, binary.LittleEndian, &timestamp); err != nil {
+				return err
+			}
+			eventType, err := readHistoryString(reader)
+			if err != nil {
+				return err
+			}
+			labelKey, err := readHistoryString(reader)
+			if err != nil {
+				return err
+			}
+			if eventType == "" || labelKey == "" {
+				continue
+			}
+			events = append(events, types.TimelineEvent{
+				Timestamp: normalizeTimestampMillis(timestamp),
+				Type:      eventType,
+				LabelKey:  labelKey,
+			})
+		}
+	}
+
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -371,7 +531,25 @@ func (r *HistoryRecorder) loadBinaryData(data []byte) error {
 		r.sampleInterval = time.Duration(sampleIntervalSeconds) * time.Second
 	}
 	r.applyLoadedPointsLocked(points)
+	r.events = events
+	r.pruneEventsLocked(0)
 	return nil
+}
+
+// readHistoryString 读取 uint16 长度前缀的 UTF-8 字符串。
+func readHistoryString(reader io.Reader) (string, error) {
+	var length uint16
+	if err := binary.Read(reader, binary.LittleEndian, &length); err != nil {
+		return "", err
+	}
+	if length == 0 {
+		return "", nil
+	}
+	buf := make([]byte, length)
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		return "", err
+	}
+	return string(buf), nil
 }
 
 func (r *HistoryRecorder) applyLoadedPointsLocked(points []types.TemperatureHistoryPoint) {
@@ -453,7 +631,23 @@ func (r *HistoryRecorder) serializeLocked() ([]byte, error) {
 			appendPoint(p)
 		}
 	}
+
+	buf = binary.LittleEndian.AppendUint32(buf, uint32(len(r.events)))
+	for _, event := range r.events {
+		buf = binary.LittleEndian.AppendUint64(buf, uint64(normalizeTimestampMillis(event.Timestamp)))
+		buf = appendHistoryString(buf, event.Type)
+		buf = appendHistoryString(buf, event.LabelKey)
+	}
 	return buf, nil
+}
+
+// appendHistoryString 以 uint16 长度前缀写入字符串。
+func appendHistoryString(buf []byte, value string) []byte {
+	if len(value) > int(^uint16(0)) {
+		value = value[:^uint16(0)]
+	}
+	buf = binary.LittleEndian.AppendUint16(buf, uint16(len(value)))
+	return append(buf, value...)
 }
 
 // writeFile 在锁外执行磁盘 IO。flushMutex 串行化多次并发 Flush 调用。
@@ -486,6 +680,7 @@ func (r *HistoryRecorder) clearLocked() {
 	r.next = 0
 	r.filled = false
 	r.lastSampleAt = 0
+	r.events = nil
 }
 
 func (r *HistoryRecorder) logError(format string, args ...any) {

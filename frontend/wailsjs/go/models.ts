@@ -956,6 +956,22 @@ export namespace types {
 		}
 	}
 	
+	export class TimelineEvent {
+	    timestamp: number;
+	    type: string;
+	    labelKey: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new TimelineEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.timestamp = source["timestamp"];
+	        this.type = source["type"];
+	        this.labelKey = source["labelKey"];
+	    }
+	}
 	export class TemperatureHistoryPoint {
 	    timestamp: number;
 	    cpuTemp: number;
@@ -987,6 +1003,7 @@ export namespace types {
 	    sampleIntervalSeconds: number;
 	    retentionHours: number;
 	    points: TemperatureHistoryPoint[];
+	    events: TimelineEvent[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TemperatureHistoryPayload(source);
@@ -998,6 +1015,7 @@ export namespace types {
 	        this.sampleIntervalSeconds = source["sampleIntervalSeconds"];
 	        this.retentionHours = source["retentionHours"];
 	        this.points = this.convertValues(source["points"], TemperatureHistoryPoint);
+	        this.events = this.convertValues(source["events"], TimelineEvent);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1018,6 +1036,7 @@ export namespace types {
 		    return a;
 		}
 	}
+	
 	
 	
 	

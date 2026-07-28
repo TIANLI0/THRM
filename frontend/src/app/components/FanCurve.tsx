@@ -26,7 +26,16 @@ import { Input } from '@/components/ui/input';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { useLocale } from '../lib/i18n';
-import { HISTORY_RETENTION_HOUR_OPTIONS, downsampleHistoryPoints, type HistorySeriesKey, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import {
+  HISTORY_RETENTION_HOUR_OPTIONS,
+  downsampleHistoryPoints,
+  findHistoryGaps,
+  historyGapThresholdMs,
+  insertHistoryGapBreaks,
+  type HistoryChartPoint,
+  type HistorySeriesKey,
+  type TemperatureHistoryPoint,
+} from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
 import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
@@ -319,12 +328,23 @@ type HistoryNumericField = 'cpuTemp' | 'gpuTemp' | 'fanRpm' | 'cpuFanRpm' | 'gpu
 // 趋势图渲染前抽稀到的上限点数（详见 downsampleHistoryPoints）。
 const HISTORY_RAW_CAP = 1500;
 
+// 时间轴标记最多同屏显示的条数：错行布局只有 4 行，再多就互相压字看不清了。
+const TIMELINE_MARKER_CAP = 12;
+// 超出上限时的取舍优先级，数字大的先保留。
+const TIMELINE_MARKER_PRIORITY: Record<TimelineEvent['type'], number> = {
+  disconnect: 3,
+  resume: 2,
+  profile: 1,
+  mode: 0,
+};
+
 // 每张趋势图使用各自的 tooltip：温度/风扇图只列温度与转速，功耗图只列功耗，避免互相堆叠遮挡。
 // 仅展示当前已开启且有数据的曲线。
 function HistoryTrendTooltip(props: {
   active?: boolean;
   label?: string | number;
-  payload?: Array<{ payload?: TemperatureHistoryPoint }>;
+  // 记录中断处的数据点各系列为 null，下面按 `?? 0` 过滤掉，悬停空窗不弹提示框。
+  payload?: Array<{ payload?: HistoryChartPoint }>;
   locale: string;
   meta: HistorySeriesMetaItem[];
   visibility: Record<HistorySeriesKey, boolean>;
@@ -863,7 +883,14 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     return sliced.length >= 2 ? sliced : historyChartData;
   }, [historyChartData, historyZoomDomain]);
   // 渲染用数据：对可见窗口等距抽稀到上限点数。两图共用同一份，保持缩放与指针联动。
-  const historyDisplayData = useMemo(() => downsampleHistoryPoints(zoomedHistoryChartData, HISTORY_RAW_CAP), [zoomedHistoryChartData]);
+  //
+  // 抽稀之后再找中断：抽稀本身会把相邻点的间隔按 stride 等比拉大，用原始数据的阈值
+  // 会把每一段都判成中断；改用抽稀后自身的节奏做判据，缩放到哪一级就用哪一级的尺度。
+  const { historyDisplayData, historyGaps } = useMemo(() => {
+    const sampled = downsampleHistoryPoints(zoomedHistoryChartData, HISTORY_RAW_CAP);
+    const gaps = findHistoryGaps(sampled, historyGapThresholdMs(sampled));
+    return { historyDisplayData: insertHistoryGapBreaks(sampled, gaps), historyGaps: gaps };
+  }, [zoomedHistoryChartData]);
   const handleHistoryZoomMouseDown = useCallback((state: { activeLabel?: string | number } | null) => {
     if (state?.activeLabel == null) return;
     const ts = Number(state.activeLabel);
@@ -894,7 +921,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const visibleTimelineEvents = useMemo(() => {
     const first = zoomedHistoryChartData[0]?.timestamp ?? 0;
     const last = zoomedHistoryChartData[zoomedHistoryChartData.length - 1]?.timestamp ?? Number.MAX_SAFE_INTEGER;
-    return timelineEvents.filter((event) => event.timestamp >= first && event.timestamp <= last).slice(-12);
+    const inWindow = timelineEvents.filter((event) => event.timestamp >= first && event.timestamp <= last);
+    if (inWindow.length <= TIMELINE_MARKER_CAP) return inWindow;
+    // 超出可读上限时按重要性取舍，而不是简单地留最近的几条：断连和睡眠唤醒才是
+    // 用户找的东西，几小时前的一次断连不该被后来一串"切换曲线方案"挤掉。
+    return inWindow
+      .map((event, index) => ({ event, index }))
+      .sort((a, b) => (TIMELINE_MARKER_PRIORITY[b.event.type] - TIMELINE_MARKER_PRIORITY[a.event.type]) || (b.index - a.index))
+      .slice(0, TIMELINE_MARKER_CAP)
+      .sort((a, b) => a.index - b.index)
+      .map(({ event }) => event);
   }, [zoomedHistoryChartData, timelineEvents]);
   // 为聚集在一起的时间线标记分配垂直行号，避免各条参考线的文字标签叠在同一处；
   // 同时按标记在时间轴的位置决定文字朝向，防止靠右的标记文字溢出图表。
@@ -954,6 +990,26 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const tempChartKeys = useMemo<HistorySeriesKey[]>(() => tempChartSeries.map((s) => s.key), [tempChartSeries]);
   const powerChartKeys = useMemo<HistorySeriesKey[]>(() => powerChartSeries.map((s) => s.key), [powerChartSeries]);
 
+  // 把每段没有采样的时间窗口画成一条灰色遮罩，并标出"记录中断"。
+  // 只靠折线断开还不够：断口很窄时几乎看不见，遮罩才能让人一眼看出这段时间没数据。
+  const renderHistoryGapAreas = useCallback((yAxisId: 'temp' | 'power') => historyGaps.map((gap) => (
+    <ReferenceArea
+      key={`gap-${gap.start}-${gap.end}`}
+      yAxisId={yAxisId}
+      x1={gap.start}
+      x2={gap.end}
+      fill="var(--chart-tick)"
+      fillOpacity={0.12}
+      strokeOpacity={0}
+      label={{
+        value: t('fanCurve.history.recordingGap'),
+        position: 'insideTop',
+        fontSize: 10,
+        fill: 'var(--chart-tick)',
+      }}
+    />
+  )), [historyGaps, t]);
+
   const renderHistoryLines = useCallback((series: HistoryLineSpec[]) => series.flatMap((spec) => {
     if (!historySeriesVisibility[spec.key]) return [];
     return [
@@ -968,7 +1024,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         dot={false}
         activeDot={false}
         isAnimationActive={false}
-        connectNulls
+        // 记录中断处插了全 null 的点，必须断开而不是连成一条直线——
+        // 连起来会让"睡了一小时"看上去像一段平缓的温度变化。
+        connectNulls={false}
       />,
     ];
   }), [historySeriesVisibility]);
@@ -2463,6 +2521,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                         <RechartsTooltip
                           content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} keys={tempChartKeys} />}
                         />
+                        {renderHistoryGapAreas('temp')}
                         {timelineEventLayout.map(({ event, row, anchorEnd }, index) => {
                           const markerColor = event.type === 'disconnect' ? '#ef4444' : event.type === 'resume' ? '#8b5cf6' : '#0ea5e9';
                           return (
@@ -2558,6 +2617,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                           <RechartsTooltip
                             content={<HistoryTrendTooltip locale={locale} meta={historySeriesMeta} visibility={historySeriesVisibility} keys={powerChartKeys} />}
                           />
+                          {renderHistoryGapAreas('power')}
                           {renderHistoryLines(powerChartSeries)}
                           {historyZoomSelect && historyZoomSelect.start !== historyZoomSelect.end && (
                             <ReferenceArea

@@ -552,7 +552,9 @@
         "smartControlOn": "切换为智能控温",
         "smartControlOff": "退出智能控温",
         "curveSwitched": "切换风扇曲线",
-        "resumeFromSleep": "系统睡眠唤醒"
+        "resumeFromSleep": "系统睡眠唤醒",
+        "systemSuspended": "系统进入睡眠",
+        "coreStarted": "核心服务启动"
       },
       "series": {
         "cpu": "CPU",
@@ -583,7 +585,8 @@
         "noCpuPower": "暂无 CPU 功耗数据",
         "noGpuPower": "暂无 GPU 功耗数据",
         "noFanData": "暂无风扇数据"
-      }
+      },
+      "recordingGap": "记录中断"
     },
     "profiles": {
       "title": "曲线方案",

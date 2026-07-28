@@ -9,6 +9,7 @@ import {
   DEFAULT_HISTORY_RETENTION_HOURS,
   clampHistoryRetentionHours,
   type TemperatureHistoryPoint,
+  type TimelineEvent,
 } from '../lib/temperature-history';
 import { useAppStore } from '../store/app-store';
 
@@ -17,6 +18,7 @@ const POINTS_PER_HOUR = Math.round((60 * 60 * 1000) / HISTORY_SAMPLE_INTERVAL_MS
 
 export function useTemperatureHistory() {
   const sessionHistoryPoints = useAppStore((state) => state.sessionHistoryPoints);
+  const mergeTimelineEvents = useAppStore((state) => state.mergeTimelineEvents);
   const [points, setPoints] = useState<TemperatureHistoryPoint[]>([]);
   const [enabled, setEnabledState] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,6 +58,8 @@ export function useTemperatureHistory() {
       setPoints(nextEnabled
         ? trimHistoryPoints((payload?.points || []) as TemperatureHistoryPoint[], retentionMs, limit)
         : sessionPointsRef.current);
+      // 补齐界面关闭期间核心记下的断连/唤醒标记，否则曲线有一小时、标记只有几分钟。
+      mergeTimelineEvents((payload?.events || []) as TimelineEvent[]);
     } catch {
       if (activeGuard && !activeGuard.active) {
         return;
@@ -64,7 +68,7 @@ export function useTemperatureHistory() {
       setEnabledState(false);
       setPoints(sessionPointsRef.current);
     }
-  }, []);
+  }, [mergeTimelineEvents]);
 
   useEffect(() => {
     const activeGuard = { active: true };

@@ -165,6 +165,7 @@ const (
 	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
 	EventHealthPing               = "health-ping"
 	EventHeartbeat                = "heartbeat"
+	EventTimelineEvent            = "timeline-event"
 )
 
 // Server IPC 服务器

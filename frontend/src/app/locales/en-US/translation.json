@@ -552,7 +552,9 @@
         "smartControlOn": "Smart cooling on",
         "smartControlOff": "Smart cooling off",
         "curveSwitched": "Fan curve switched",
-        "resumeFromSleep": "Resumed from sleep"
+        "resumeFromSleep": "Resumed from sleep",
+        "systemSuspended": "System suspended",
+        "coreStarted": "Core service started"
       },
       "series": {
         "cpu": "CPU",
@@ -583,7 +585,8 @@
         "noCpuPower": "No CPU power data yet",
         "noGpuPower": "No GPU power data yet",
         "noFanData": "No fan data yet"
-      }
+      },
+      "recordingGap": "Recording gap"
     },
     "profiles": {
       "title": "Curve profiles",

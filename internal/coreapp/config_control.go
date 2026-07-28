@@ -178,6 +178,7 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 		return fmt.Errorf("自定义转速模式下无法开启智能变频")
 	}
 
+	changed := cfg.AutoControl != enabled
 	cfg.AutoControl = enabled
 
 	if enabled {
@@ -192,6 +193,10 @@ func (a *CoreApp) SetAutoControl(enabled bool) error {
 
 	a.configManager.Set(cfg)
 	err := a.configManager.Save()
+
+	if changed {
+		a.recordSmartControlTimelineEvent(enabled)
+	}
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)

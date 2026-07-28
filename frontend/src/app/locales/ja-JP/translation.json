@@ -551,7 +551,9 @@
         "smartControlOn": "スマート制御 オン",
         "smartControlOff": "スマート制御 オフ",
         "curveSwitched": "ファンカーブ切替",
-        "resumeFromSleep": "スリープから復帰"
+        "resumeFromSleep": "スリープから復帰",
+        "systemSuspended": "システムがスリープ",
+        "coreStarted": "コアサービス起動"
       },
       "series": {
         "cpu": "CPU",
@@ -582,7 +584,8 @@
         "noCpuPower": "CPU 消費電力データなし",
         "noGpuPower": "GPU 消費電力データなし",
         "noFanData": "ファン RPMデータなし"
-      }
+      },
+      "recordingGap": "記録の中断"
     },
     "profiles": {
       "title": "カーブプロファイル",

@@ -121,6 +121,7 @@ func (a *CoreApp) onDeviceDisconnect() {
 
 	if wasConnected {
 		a.logInfo("设备连接已断开，将在健康检查时尝试自动重连")
+		a.recordTimelineEvent(types.TimelineEventTypeDisconnect, types.TimelineKeyDeviceDisconnected)
 	}
 
 	if a.ipcServer != nil {
@@ -377,6 +378,9 @@ func (a *CoreApp) onSystemSuspend() {
 	generation := a.suspendGeneration.Add(1)
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
+	// 趁进程还活着先记下挂起点：唤醒标记只能说明"这里恢复了"，配上挂起标记
+	// 才能在图上把整段没有采样的空窗圈出来。
+	a.recordTimelineEvent(types.TimelineEventTypeResume, types.TimelineKeySystemSuspended)
 
 	a.mutex.RLock()
 	coreConnected := a.isConnected
@@ -545,6 +549,7 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 
 	a.logInfo("检测到系统从睡眠/休眠恢复，来源=%s，挂起时长约=%s，主动挂起=%v，开始执行连接自愈",
 		source, gap.Round(time.Second), proactivelySuspended)
+	a.recordTimelineEvent(types.TimelineEventTypeResume, types.TimelineKeyResumeFromSleep)
 
 	// 唤醒后 Explorer 可能重启或通知区域被重建，主动刷新托盘图标避免图标丢失/无响应。
 	a.refreshTrayAfterResume()
@@ -732,6 +737,7 @@ func (a *CoreApp) connectDeviceOnce(generation uint64, manual bool) bool {
 			}
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
 		}
+		a.recordTimelineEvent(types.TimelineEventTypeMode, types.TimelineKeyDeviceConnected)
 
 		// BS1 不支持灯带。配置写入只能在连接已就绪时发生，
 		// 以避免对休眠后仍在初始化的 HID 句柄发包。
@@ -779,6 +785,8 @@ func (a *CoreApp) DisconnectDevice() {
 	a.mutex.Unlock()
 
 	a.deviceManager.DisconnectSilently()
+
+	a.recordTimelineEvent(types.TimelineEventTypeDisconnect, types.TimelineKeyDeviceDisconnected)
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceDisconnected, nil)

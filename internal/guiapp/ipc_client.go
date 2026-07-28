@@ -137,6 +137,12 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 			runtime.EventsEmit(a.ctx, "temperature-history-update", point)
 		}
 
+	case ipc.EventTimelineEvent:
+		var timelineEvent types.TimelineEvent
+		if err := json.Unmarshal(event.Data, &timelineEvent); err == nil {
+			runtime.EventsEmit(a.ctx, "timeline-event", timelineEvent)
+		}
+
 	case ipc.EventDeviceConnected:
 		var deviceInfo map[string]string
 		json.Unmarshal(event.Data, &deviceInfo)

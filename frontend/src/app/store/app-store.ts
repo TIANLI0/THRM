@@ -6,10 +6,11 @@ import { deviceService, type DeviceStatusPayload } from '../services/device-serv
 import {
   appendSampledHistoryPoint,
   createLiveHistoryPoint,
+  mergeTimelineEvents,
   SESSION_HISTORY_LIMIT,
   SESSION_HISTORY_RETENTION_MS,
 } from '../lib/temperature-history';
-import type { TemperatureHistoryPoint } from '../lib/temperature-history';
+import type { TemperatureHistoryPoint, TimelineEvent } from '../lib/temperature-history';
 import { i18n } from '../lib/i18n';
 import { toast } from 'sonner';
 import type { DeviceSettings } from '../types/app';
@@ -43,7 +44,7 @@ const isCoreServiceFailureDetail = (detail?: string) => {
 type ActiveTab = 'status' | 'curve' | 'control' | 'about';
 export type CurveFocusTarget = 'curve-editor' | 'history-details';
 // labelKey 为 i18n 键（在 FanCurve 时间线渲染时翻译）；不再存储已本地化的字面量，保证跟随语言切换。
-export interface TimelineEvent { timestamp: number; type: 'mode' | 'disconnect' | 'resume' | 'profile'; labelKey: string }
+export type { TimelineEvent } from '../lib/temperature-history';
 
 interface AppStore {
   isConnected: boolean;
@@ -69,6 +70,7 @@ interface AppStore {
   clearBridgeWarning: () => void;
   handleTemperaturePayload: (data: types.TemperatureData | null) => void;
   appendSessionHistoryPoint: (data: types.TemperatureData | null) => void;
+  mergeTimelineEvents: (events: TimelineEvent[] | null | undefined) => void;
 
   initializeApp: () => Promise<void>;
   resyncCore: () => Promise<void>;
@@ -137,6 +139,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         limit: SESSION_HISTORY_LIMIT,
       }),
     }));
+  },
+
+  // 快照与实时推送共用一个入口，由 mergeTimelineEvents 负责去重与排序。
+  mergeTimelineEvents: (events) => {
+    if (!events || events.length === 0) return;
+    set((state) => ({ timelineEvents: mergeTimelineEvents(state.timelineEvents, events) }));
   },
 
   initializeApp: async () => {
@@ -280,10 +288,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (telemetryTimer !== null) return;
       telemetryTimer = window.setTimeout(flushTelemetry, document.hidden ? 1000 : 200);
     };
-    const addTimelineEvent = (event: TimelineEvent) => set((state) => ({
-      timelineEvents: [...state.timelineEvents, event].slice(-100),
-    }));
-    let lastHeartbeat = 0;
 
     unsubscribers.push(
       apiService.onCoreServiceError((message) => {
@@ -335,7 +339,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           coreServiceError: null,
           error: null,
         });
-        addTimelineEvent({ timestamp: Date.now(), type: 'mode', labelKey: 'fanCurve.history.timeline.deviceConnected' });
       })
     );
 
@@ -343,7 +346,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       deviceService.onDeviceDisconnected(() => {
         console.log('设备已断开');
         set({ isConnected: false, deviceProductId: null, deviceModel: null, deviceSettings: null, fanData: null });
-        addTimelineEvent({ timestamp: Date.now(), type: 'disconnect', labelKey: 'fanCurve.history.timeline.deviceDisconnected' });
+      })
+    );
+
+    // 时间轴标记统一由核心推送：核心常驻后台，界面关着时发生的断连/唤醒也记得下来，
+    // 打开界面后连同历史快照一起补齐。前端自己从 IPC 事件推导只能覆盖开着界面的那段。
+    unsubscribers.push(
+      apiService.onTimelineEvent((event) => {
+        get().mergeTimelineEvents([event]);
       })
     );
 
@@ -376,26 +386,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     unsubscribers.push(
       configService.onConfigUpdate((updatedConfig) => {
-        const previous = get().config;
         set({ config: updatedConfig });
-        if (previous && previous.autoControl !== updatedConfig.autoControl) {
-          addTimelineEvent({ timestamp: Date.now(), type: 'mode', labelKey: updatedConfig.autoControl ? 'fanCurve.history.timeline.smartControlOn' : 'fanCurve.history.timeline.smartControlOff' });
-        }
-        const previousProfile = (previous as any)?.activeFanCurveProfileId;
-        const nextProfile = (updatedConfig as any)?.activeFanCurveProfileId;
-        if (previousProfile && nextProfile && previousProfile !== nextProfile) {
-          addTimelineEvent({ timestamp: Date.now(), type: 'profile', labelKey: 'fanCurve.history.timeline.curveSwitched' });
-        }
       })
     );
-
-    unsubscribers.push(apiService.onHeartbeat((timestamp) => {
-      const now = Number(timestamp || Date.now());
-      if (lastHeartbeat > 0 && now - lastHeartbeat > 20_000) {
-        addTimelineEvent({ timestamp: now, type: 'resume', labelKey: 'fanCurve.history.timeline.resumeFromSleep' });
-      }
-      lastHeartbeat = now;
-    }));
 
     unsubscribers.push(
       deviceService.onHotkeyTriggered((payload) => {

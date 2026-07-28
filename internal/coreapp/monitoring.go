@@ -223,7 +223,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	settingsRefreshGeneration := uint64(0)
 	learningDirty := false
 	lastLearningSave := time.Now()
-	lastMonitorTick := time.Now()
 	lastBridgeUpdateTime := initialTemp.UpdateTime
 	staleBridgeUpdateCount := 0
 	bridgeFailureCount := 0
@@ -238,6 +237,16 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	thermalPredictor := smartcontrol.NewThermalPredictor()
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
+	// 只统计"定时器等待"期间流逝的时间，不把本轮采样/控温的耗时算进去。
+	// 桥接一次 GetTemperature 超时就是 10 秒，加上兜底读取轻松突破 20 秒的
+	// 唤醒判定阈值——若按"上一轮开始到本轮开始"计时，一次桥接卡顿就会被
+	// 误判成系统休眠唤醒，白白触发断连重连与桥接重启，而重启桥接本身又要
+	// 十几秒，足以让误判自我延续。
+	lastTimerReset := time.Now()
+	resetTimer := func(d time.Duration) {
+		lastTimerReset = time.Now()
+		timer.Reset(d)
+	}
 
 	prevHasClients := hasClients
 	var lastMemRelease time.Time
@@ -249,15 +258,14 @@ monitorLoop:
 			break monitorLoop
 		case <-timer.C:
 			now := time.Now()
-			gap := now.Sub(lastMonitorTick)
-			lastMonitorTick = now
+			gap := now.Sub(lastTimerReset)
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
 				thermalPredictor.Reset()
-				timer.Reset(updateInterval)
+				resetTimer(updateInterval)
 				continue
 			}
 			if a.systemSuspended.Load() {
-				timer.Reset(updateInterval)
+				resetTimer(updateInterval)
 				continue
 			}
 			deviceGeneration := a.deviceManager.ConnectionGeneration()
@@ -573,7 +581,7 @@ monitorLoop:
 				thermalPredictor.Reset()
 			}
 
-			timer.Reset(updateInterval)
+			resetTimer(updateInterval)
 		}
 	}
 
@@ -665,20 +673,24 @@ func (a *CoreApp) startHealthMonitoring() {
 			a.healthMutex.Unlock()
 			close(done)
 		}()
+		// 记录的是"上一轮健康检查结束"的时刻而非开始时刻：performHealthCheck 会
+		// 做重连、重启桥接等外部调用，可能阻塞数分钟。把这段工作耗时算进 gap 会
+		// 让一次卡顿被误判成系统休眠唤醒。Ticker 会丢弃错过的 tick，工作超时后
+		// 下一个 tick 立即到达，此时相对"上一轮结束"的间隔接近 0，不会误触发。
 		lastHealthCheck := time.Now()
 
 		for {
 			select {
 			case <-ticker.C:
-				now := time.Now()
-				gap := now.Sub(lastHealthCheck)
-				lastHealthCheck = now
+				gap := time.Since(lastHealthCheck)
 				if a.maybeRecoverFromSystemResume("health-monitor", gap, 30*time.Second) {
+					lastHealthCheck = time.Now()
 					continue
 				}
 
 				a.emitHeartbeat()
 				a.performHealthCheck()
+				lastHealthCheck = time.Now()
 			case <-stop:
 				a.logInfo("健康监控系统已停止")
 				return

@@ -360,12 +360,43 @@ type TemperatureHistoryPoint struct {
 	GPUFanRPM int     `json:"gpuFanRpm"` // 笔记本内置 GPU 风扇转速（0=不可用）
 }
 
+// TimelineEvent 温度趋势图上标注的一次状态变化（设备断连、切换控温模式、睡眠唤醒等）。
+//
+// LabelKey 存的是前端 i18n 键而不是本地化文案：核心服务常驻后台、不感知 GUI 当前
+// 语言，且事件会跨进程重启持久化，存成中文会让日后切换语言的用户看到混排文案。
+type TimelineEvent struct {
+	Timestamp int64  `json:"timestamp"` // Unix 毫秒
+	Type      string `json:"type"`      // 决定标记颜色，见 TimelineEventType* 常量
+	LabelKey  string `json:"labelKey"`  // 前端 i18n 键
+}
+
+// 时间轴事件分类。前端按此决定参考线颜色。
+const (
+	TimelineEventTypeMode       = "mode"       // 连接、控温模式等常规状态变化
+	TimelineEventTypeDisconnect = "disconnect" // 设备断连
+	TimelineEventTypeResume     = "resume"     // 系统睡眠唤醒
+	TimelineEventTypeProfile    = "profile"    // 曲线方案切换
+)
+
+// 时间轴事件的前端 i18n 键，对应 locales 里的 fanCurve.history.timeline.*。
+const (
+	TimelineKeyDeviceConnected    = "fanCurve.history.timeline.deviceConnected"
+	TimelineKeyDeviceDisconnected = "fanCurve.history.timeline.deviceDisconnected"
+	TimelineKeySmartControlOn     = "fanCurve.history.timeline.smartControlOn"
+	TimelineKeySmartControlOff    = "fanCurve.history.timeline.smartControlOff"
+	TimelineKeyCurveSwitched      = "fanCurve.history.timeline.curveSwitched"
+	TimelineKeyResumeFromSleep    = "fanCurve.history.timeline.resumeFromSleep"
+	TimelineKeySystemSuspended    = "fanCurve.history.timeline.systemSuspended"
+	TimelineKeyCoreStarted        = "fanCurve.history.timeline.coreStarted"
+)
+
 // TemperatureHistoryPayload 温度历史返回载荷。
 type TemperatureHistoryPayload struct {
 	Enabled               bool                      `json:"enabled"`
 	SampleIntervalSeconds int                       `json:"sampleIntervalSeconds"`
 	RetentionHours        int                       `json:"retentionHours"` // 后台保留的历史时长(小时)
 	Points                []TemperatureHistoryPoint `json:"points"`
+	Events                []TimelineEvent           `json:"events"` // 与 Points 同一保留窗口内的状态变化
 }
 
 // BridgeTemperatureData 桥接程序返回的温度数据

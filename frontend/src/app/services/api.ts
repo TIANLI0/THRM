@@ -1,5 +1,6 @@
 // Wails API 服务封装
 import { EventsOn } from '../../../wailsjs/runtime/runtime';
+import type { TimelineEvent } from '../lib/temperature-history';
 import { 
   ConnectDevice, 
   DisconnectDevice, 
@@ -345,6 +346,11 @@ class ApiService {
 
   onHeartbeat(callback: (timestamp: number) => void): () => void {
     return EventsOn('heartbeat', callback);
+  }
+
+  // 核心记录的时间轴事件（设备断连、睡眠唤醒、切换控温模式等）。
+  onTimelineEvent(callback: (event: TimelineEvent) => void): () => void {
+    return EventsOn('timeline-event', callback);
   }
 
   onCoreServiceError(callback: (message: string) => void): () => void {

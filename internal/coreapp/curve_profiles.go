@@ -59,10 +59,14 @@ func (a *CoreApp) SetActiveFanCurveProfile(profileID string) (types.FanCurveProf
 		return types.FanCurveProfile{}, fmt.Errorf("未找到温控曲线方案")
 	}
 
+	switched := cfg.ActiveFanCurveProfileID != cfg.FanCurveProfiles[idx].ID
 	cfg.ActiveFanCurveProfileID = cfg.FanCurveProfiles[idx].ID
 	cfg.FanCurve = curveprofiles.CloneCurve(cfg.FanCurveProfiles[idx].Curve)
 	if err := a.applyCurveProfilesConfig(cfg); err != nil {
 		return types.FanCurveProfile{}, err
+	}
+	if switched {
+		a.recordTimelineEvent(types.TimelineEventTypeProfile, types.TimelineKeyCurveSwitched)
 	}
 	return types.FanCurveProfile{
 		ID:    cfg.FanCurveProfiles[idx].ID,
@@ -85,11 +89,15 @@ func (a *CoreApp) CycleFanCurveProfile() (types.FanCurveProfile, error) {
 
 	idx := max(curveprofiles.FindIndex(cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID), 0)
 	nextIdx := (idx + 1) % len(cfg.FanCurveProfiles)
+	switched := cfg.ActiveFanCurveProfileID != cfg.FanCurveProfiles[nextIdx].ID
 	cfg.ActiveFanCurveProfileID = cfg.FanCurveProfiles[nextIdx].ID
 	cfg.FanCurve = curveprofiles.CloneCurve(cfg.FanCurveProfiles[nextIdx].Curve)
 
 	if err := a.applyCurveProfilesConfig(cfg); err != nil {
 		return types.FanCurveProfile{}, err
+	}
+	if switched {
+		a.recordTimelineEvent(types.TimelineEventTypeProfile, types.TimelineKeyCurveSwitched)
 	}
 
 	return types.FanCurveProfile{

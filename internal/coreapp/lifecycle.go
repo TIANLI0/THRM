@@ -174,6 +174,8 @@ func (a *CoreApp) Start() error {
 	})
 
 	a.logInfo("=== THRM 核心服务启动完成 ===")
+	// 核心重启同样会在曲线上留下一段空窗，标出来才能和"系统休眠"区分开。
+	a.recordTimelineEvent(types.TimelineEventTypeMode, types.TimelineKeyCoreStarted)
 
 	// 软件启动后立即开始温度监控（与智能控温开关解耦）
 	a.safeGo("startTemperatureMonitoring@Start", func() {
