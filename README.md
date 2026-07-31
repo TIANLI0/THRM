@@ -89,6 +89,7 @@ BS2、BS2 Pro、BS3 和 BS3 Pro 在完成系统蓝牙配对后，会以 HID 设�
 * CPU、GPU 实时温度
 * CPU、GPU 实时功耗
 * 散热器当前转速和目标转速
+* Windows 下可将散热器实时转速输出到 RTSS 游戏内叠加层
 * 温度、功耗与风扇转速历史趋势
 * 图表时间范围缩放与详细统计
 * 自定义 CPU/GPU 设备和传感器
@@ -251,6 +252,19 @@ Windows 用户可以依次尝试：
 
 如果混合显卡笔记本只需要使用 CPU 温度控温，可以关闭 GPU 监测，避免独立显卡被后台轮询唤醒。
 
+### 如何在游戏内显示散热器转速
+
+此功能仅支持 Windows，并需要预先安装 [RivaTuner Statistics Server](https://www.guru3d.com/download/rtss-rivatuner-statistics-server-download/)。
+
+1. 启动 RTSS，确认目标游戏的 Application detection level 未设置为 `None`。
+2. 启动 THRM，在“系统设置”中开启“RTSS 屏幕显示”。
+3. 根据需要选择 250 毫秒、500 毫秒、1 秒或 2 秒的刷新频率。
+4. 连接散热器并启动游戏，叠加层中会显示 `Cooler Fan: <转速> RPM`。
+
+刷新频率只限制 THRM 写入 RTSS 共享内存的频率，不会改变散热器数据采样、风扇曲线或智能控温的响应速度。默认 500 毫秒适合大多数场景。
+
+THRM 直接使用 RTSS 官方共享内存接口，不需要安装 MSI Afterburner。建议让 THRM 与 RTSS 使用相同的权限级别；如果其中一个以管理员身份运行，另一个也应以管理员身份运行。RTSS 晚于 THRM 启动或中途重启时，THRM 会自动重新连接。
+
 ### 核心服务不可用
 
 确认以下文件仍位于安装目录：
@@ -327,6 +341,7 @@ BS2, BS2 Pro, BS3 and BS3 Pro must first be paired through the operating system'
 * RGB lighting controls
 * Tray mode, autostart and global hotkeys
 * Automatic device reconnection
+* Optional RTSS OSD output for cooler fan RPM on Windows
 * In-app updates and diagnostics export
 * Windows and Linux builds
 * Simplified Chinese, English and Japanese interfaces
@@ -403,6 +418,7 @@ THRM/
 │   ├── deviceproto/                # 飞智设备协议
 │   ├── guiapp/                     # GUI 对外 API
 │   ├── ipc/                        # 跨进程通信
+│   ├── rtss/                       # RTSS 共享内存 OSD 输出
 │   ├── smartcontrol/               # 智能控温算法
 │   ├── temperature/                # 温度和功耗读取
 │   ├── theme/                      # 主题系统

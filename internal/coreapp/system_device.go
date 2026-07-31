@@ -66,14 +66,14 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	if fanData == nil {
 		return
 	}
-	if a.rtssPublisher != nil {
-		a.rtssPublisher.Publish(fanData.CurrentRPM)
-	}
 
 	// A newly opened HID handle can deliver the device's default gear-mode
 	// report before the connection has passed its readiness gate. Do not treat
 	// that bootstrap report as a user-requested mode transition.
 	controlReady := a.isDeviceControlReady()
+	if controlReady && a.rtssPublisher != nil {
+		a.rtssPublisher.Publish(fanData.CurrentRPM)
+	}
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, fanData.WorkMode)
