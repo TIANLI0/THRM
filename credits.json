@@ -7,7 +7,7 @@
     "note": "备注 / 留言（可省略）",
     "amount": "赞助金额，数字（可省略，省略时不显示金额）"
   },
-  "updatedAt": "2026-07-18",
+  "updatedAt": "2026-07-31",
   "contributors": [
     {
       "login": "TIANLI0",
@@ -56,6 +56,7 @@
     { "name": "麦克阿兰", "avatar": "https://q1.qlogo.cn/g?b=qq&nk=1318825181&s=640", "amount": 50.00 },
     { "name": "这个冬天不太冷。", "amount": 20.00 },
     { "name": "精分的胡子", "avatar": "https://q1.qlogo.cn/g?b=qq&nk=2325226745&s=640", "amount": 20.00 },
+    { "name": "**宇", "amount": 20.00 },
     { "name": "*🌈", "amount": 19.90 },
     { "name": "P*g", "amount": 18.88, "note": "感谢大佬开发的 THRM，非常好用，请大佬喝红牛充充能" },
     { "name": "*强", "amount": 18.88, "note": "请作者喝奶茶" },
@@ -66,6 +67,7 @@
     { "name": "F*X", "amount": 10.00 },
     { "name": "*达", "amount": 10.00 },
     { "name": "A*s", "amount": 10.00 },
+    { "name": "**贤", "amount": 10.00 },
     { "name": "*氢", "amount": 8.88 },
     { "name": "*晨", "amount": 7.39 },
     { "name": "Y*t", "amount": 6.66, "note": "请老大喝杯柠檬水" },
@@ -74,7 +76,10 @@
     { "name": "*。", "amount": 6.00 },
     { "name": "*哥", "amount": 5.00, "note": "能给 app 增加一个关灯吹风的功能吗" },
     { "name": "X*y", "amount": 5.00 },
+    { "name": "**程", "amount": 5.00 },
+    { "name": "**成", "amount": 5.00 },
     { "name": "鸡耀白水25-275hx-70ti", "amount": 4.59 },
+    { "name": "**翔", "amount": 3.00 },
     { "name": "*撒", "amount": 2.00, "note": "感谢大佬的驱动🫡" },
     { "name": "*诚", "amount": 2.00 },
     { "name": "*ド", "amount": 1.88 },
