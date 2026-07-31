@@ -507,6 +507,30 @@ type SmartControlConfig struct {
 	NoiseProfileUpdatedAt int64               `json:"noiseProfileUpdatedAt"` // 噪音测试完成时间(Unix 秒)
 }
 
+const DefaultRTSSUpdateIntervalMS = 500
+
+type RTSSConfig struct {
+	Enabled          bool `json:"enabled"`
+	UpdateIntervalMS int  `json:"updateIntervalMs"`
+}
+
+func GetDefaultRTSSConfig() RTSSConfig {
+	return RTSSConfig{
+		Enabled:          false,
+		UpdateIntervalMS: DefaultRTSSUpdateIntervalMS,
+	}
+}
+
+func NormalizeRTSSConfig(cfg RTSSConfig) (RTSSConfig, bool) {
+	switch cfg.UpdateIntervalMS {
+	case 250, 500, 1000, 2000:
+		return cfg, false
+	default:
+		cfg.UpdateIntervalMS = DefaultRTSSUpdateIntervalMS
+		return cfg, true
+	}
+}
+
 // AppConfig 应用配置
 type AppConfig struct {
 	LegionFnQ                        LegionFnQConfig           `json:"legionFnQ"`
@@ -546,6 +570,7 @@ type AppConfig struct {
 	CustomSpeedRPM                   int                       `json:"customSpeedRPM"`                   // 自定义转速值(无上下限)
 	IgnoreDeviceOnReconnect          bool                      `json:"ignoreDeviceOnReconnect"`          // 断连后忽略设备状态(保持APP配置)
 	LastDeviceTransport              string                    `json:"lastDeviceTransport"`              // 上次成功连接的传输方式("hid"/"ble")，用于重启后恢复重连偏好
+	RTSS                             RTSSConfig                `json:"rtss"`                             // RTSS 游戏内叠加层转速输出
 
 	SpeedAvoidance    SpeedAvoidanceConfig    `json:"speedAvoidance"`    // 智能控温转速避让
 	TimeCurveSchedule TimeCurveScheduleConfig `json:"timeCurveSchedule"` // 分时曲线计划
@@ -926,6 +951,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		CustomSpeedEnabled:      false,
 		CustomSpeedRPM:          2000,
 		IgnoreDeviceOnReconnect: true, // 默认开启，防止断连后误判用户手动切换
+		RTSS:                    GetDefaultRTSSConfig(),
 		SpeedAvoidance:          GetDefaultSpeedAvoidanceConfig(),
 		TimeCurveSchedule:       GetDefaultTimeCurveScheduleConfig(),
 		SmartControl:            GetDefaultSmartControlConfig(defaultCurve),

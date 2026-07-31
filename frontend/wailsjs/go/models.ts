@@ -394,6 +394,20 @@ export namespace types {
 		    return a;
 		}
 	}
+	export class RTSSConfig {
+	    enabled: boolean;
+	    updateIntervalMs: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RTSSConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.updateIntervalMs = source["updateIntervalMs"];
+	    }
+	}
 	export class AppConfig {
 	    legionFnQ: LegionFnQConfig;
 	    legionFnQSupport: LegionFnQSupportCache;
@@ -432,6 +446,7 @@ export namespace types {
 	    customSpeedRPM: number;
 	    ignoreDeviceOnReconnect: boolean;
 	    lastDeviceTransport: string;
+	    rtss: RTSSConfig;
 	    speedAvoidance: SpeedAvoidanceConfig;
 	    timeCurveSchedule: TimeCurveScheduleConfig;
 	    smartControl: SmartControlConfig;
@@ -480,6 +495,7 @@ export namespace types {
 	        this.customSpeedRPM = source["customSpeedRPM"];
 	        this.ignoreDeviceOnReconnect = source["ignoreDeviceOnReconnect"];
 	        this.lastDeviceTransport = source["lastDeviceTransport"];
+	        this.rtss = this.convertValues(source["rtss"], RTSSConfig);
 	        this.speedAvoidance = this.convertValues(source["speedAvoidance"], SpeedAvoidanceConfig);
 	        this.timeCurveSchedule = this.convertValues(source["timeCurveSchedule"], TimeCurveScheduleConfig);
 	        this.smartControl = this.convertValues(source["smartControl"], SmartControlConfig);

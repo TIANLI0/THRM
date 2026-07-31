@@ -791,6 +791,10 @@
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
+      "rtssTitle": "RTSS オンスクリーン表示",
+      "rtssDescription": "クーラーのリアルタイム回転数を RivaTuner Statistics Server のゲーム内オーバーレイへ送信します。",
+      "rtssIntervalTitle": "RTSS 更新間隔",
+      "rtssIntervalDescription": "共有メモリの更新頻度のみを制限し、デバイスの取得間隔やファン制御の応答性には影響しません。",
       "blurTitle": "ウィンドウ素材",
       "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。",
       "suspendFanOffTitle": "スリープ時に停止",
@@ -932,6 +936,12 @@
         "mica": "マイカ",
         "tabbed": "マイカ Alt",
         "off": "オフ"
+      },
+      "rtssInterval": {
+        "250": "250 ミリ秒",
+        "500": "500 ミリ秒",
+        "1000": "1 秒",
+        "2000": "2 秒"
       }
     }
   }

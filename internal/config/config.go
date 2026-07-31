@@ -120,9 +120,36 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
 	applyMissingFanFeatureDefaults(&config, rawConfig)
+	applyMissingRTSSDefaults(&config, rawConfig)
 
 	m.config = config
 	return true
+}
+
+func applyMissingRTSSDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
+	if cfg == nil {
+		return
+	}
+
+	defaults := types.GetDefaultRTSSConfig()
+	rawRTSS, ok := rawConfig["rtss"]
+	if !ok {
+		cfg.RTSS = defaults
+		return
+	}
+
+	var rtssConfig map[string]json.RawMessage
+	if err := json.Unmarshal(rawRTSS, &rtssConfig); err != nil {
+		cfg.RTSS = defaults
+		return
+	}
+	if _, ok := rtssConfig["enabled"]; !ok {
+		cfg.RTSS.Enabled = defaults.Enabled
+	}
+	if _, ok := rtssConfig["updateIntervalMs"]; !ok {
+		cfg.RTSS.UpdateIntervalMS = defaults.UpdateIntervalMS
+	}
+	cfg.RTSS, _ = types.NormalizeRTSSConfig(cfg.RTSS)
 }
 
 func applyMissingHotkeyDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {

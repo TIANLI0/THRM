@@ -88,6 +88,9 @@ func (a *CoreApp) Start() error {
 		}
 	}
 	a.syncManualGearLevelMemory(cfg)
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.Configure(cfg.RTSS.Enabled, time.Duration(cfg.RTSS.UpdateIntervalMS)*time.Millisecond)
+	}
 	a.logInfo("配置加载完成，配置路径: %s", cfg.ConfigPath)
 
 	// 同步调试模式配置
@@ -238,6 +241,9 @@ func (a *CoreApp) Stop() {
 
 	// 停止所有监控
 	a.DisconnectDevice()
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.Close()
+	}
 
 	// 停止桥接程序
 	a.bridgeManager.Stop()

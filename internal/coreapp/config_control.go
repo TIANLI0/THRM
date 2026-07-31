@@ -68,6 +68,11 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	if cfg.SmartControl.LearningBiasByProfile == nil {
 		cfg.SmartControl.LearningBiasByProfile = oldCfg.SmartControl.LearningBiasByProfile
 	}
+	// Older GUI clients do not send the nested RTSS object. Preserve the stored
+	// settings instead of disabling OSD output when they update another field.
+	if cfg.RTSS.UpdateIntervalMS == 0 {
+		cfg.RTSS = oldCfg.RTSS
+	}
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
@@ -91,6 +96,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	normalizeManualGearMemoryConfig(&cfg)
 	types.NormalizeManualGearRPM(&cfg)
 	normalizeFanFeatureConfig(&cfg)
+	cfg.RTSS, _ = types.NormalizeRTSSConfig(cfg.RTSS)
 
 	cfg.ConfigPath = oldCfg.ConfigPath
 	if err := a.configManager.Update(cfg); err != nil {
@@ -99,6 +105,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	a.syncManualGearLevelMemoryLocked(cfg)
 	a.applyHotkeyBindings(cfg)
 	a.applyPluginConfig(cfg)
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.Configure(cfg.RTSS.Enabled, time.Duration(cfg.RTSS.UpdateIntervalMS)*time.Millisecond)
+	}
 	return nil
 }
 

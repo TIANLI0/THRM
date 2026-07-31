@@ -25,6 +25,7 @@ import {
   X,
   RotateCw,
   FileArchive,
+  Gauge,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
@@ -119,6 +120,7 @@ function getRequiredColorCount(mode: string): number {
 const LEGION_POWER_MODE_VALUES = ['Quiet', 'Balance', 'Performance', 'Extreme', 'GodMode'] as const;
 const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
 const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
+const RTSS_UPDATE_INTERVALS = [250, 500, 1000, 2000] as const;
 
 // 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
 const DANGEROUS_DEBUG_COMMANDS = new Set<number>([0xed, 0xee, 0xf0, 0xf1, 0xf2]);
@@ -503,6 +505,10 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return effectiveGpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
   }, [config, effectiveGpuSensors]);
   const legionFnQConfig = useMemo(() => normalizeLegionFnQConfig((config as any).legionFnQ), [config]);
+  const rtssConfig = useMemo(
+    () => types.RTSSConfig.createFrom((config as any).rtss || { enabled: false, updateIntervalMs: 500 }),
+    [config],
+  );
   const legionPowerModes = useMemo(
     () => LEGION_POWER_MODE_VALUES.map((value) => ({ value, label: t(`controlPanel.options.legionPowerModes.${value}`) })),
     [locale, t],
@@ -543,6 +549,13 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       { value: 'tabbed', label: t('controlPanel.options.windowBlur.tabbed') },
       { value: 'off', label: t('controlPanel.options.windowBlur.off') },
     ],
+    [locale, t],
+  );
+  const rtssIntervalOptions = useMemo(
+    () => RTSS_UPDATE_INTERVALS.map((value) => ({
+      value,
+      label: t(`controlPanel.options.rtssInterval.${value}`),
+    })),
     [locale, t],
   );
   const lightModeOptions = useMemo(
@@ -802,6 +815,30 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('suspendFanOff', false);
     }
   }, [config, onConfigChange]);
+
+  const handleRTSSEnabledChange = useCallback(async (enabled: boolean) => {
+    setLoading('rtssEnabled', true);
+    try {
+      const rtss = types.RTSSConfig.createFrom({ ...rtssConfig, enabled });
+      const newCfg = types.AppConfig.createFrom({ ...config, rtss });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('rtssEnabled', false);
+    }
+  }, [config, onConfigChange, rtssConfig]);
+
+  const handleRTSSIntervalChange = useCallback(async (updateIntervalMs: number) => {
+    setLoading('rtssInterval', true);
+    try {
+      const rtss = types.RTSSConfig.createFrom({ ...rtssConfig, updateIntervalMs });
+      const newCfg = types.AppConfig.createFrom({ ...config, rtss });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('rtssInterval', false);
+    }
+  }, [config, onConfigChange, rtssConfig]);
 
   const handleTransientSpikeFilterChange = useCallback(async (enabled: boolean) => {
     setLoading('transientSpikeFilter', true);
@@ -1738,6 +1775,37 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               size="sm"
               color="green"
             />
+          </SettingRow>
+
+          <SettingRow
+            icon={<Gauge className={clsx('h-4 w-4', rtssConfig.enabled ? 'text-emerald-500' : '')} />}
+            title={t('controlPanel.system.rtssTitle')}
+            description={t('controlPanel.system.rtssDescription')}
+          >
+            <ToggleSwitch
+              enabled={rtssConfig.enabled}
+              onChange={handleRTSSEnabledChange}
+              loading={loadingStates.rtssEnabled}
+              size="sm"
+              color="green"
+            />
+          </SettingRow>
+
+          <SettingRow
+            icon={<RotateCw className="h-4 w-4" />}
+            title={t('controlPanel.system.rtssIntervalTitle')}
+            description={t('controlPanel.system.rtssIntervalDescription')}
+            disabled={!rtssConfig.enabled}
+          >
+            <div className="w-36">
+              <Select
+                value={rtssConfig.updateIntervalMs || 500}
+                onChange={(value: string | number) => handleRTSSIntervalChange(Number(value))}
+                options={rtssIntervalOptions}
+                disabled={!rtssConfig.enabled || loadingStates.rtssInterval}
+                size="sm"
+              />
+            </div>
           </SettingRow>
 
           <SettingRow
