@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/TIANLI0/THRM/internal/coreapp"
@@ -13,10 +14,23 @@ import (
 //go:embed icon.ico
 var iconData []byte
 
+// idleCoreGCPercent 收紧核心进程的 GC 触发阈值。
+//
+// 核心是常驻后台进程：存活堆只有几 MB，只在 GUI 会话期间因 JSON 序列化与历史
+// 快照短暂膨胀。默认 GOGC=100 要等堆涨到存活集的两倍才回收，对一个大部分时间在
+// 空转的守护进程来说是纯粹的常驻内存浪费。堆本身很小，把阈值收到 50% 后多出来的
+// 那几次标记开销可以忽略，换来的是明显更低的后台 RSS。
+const idleCoreGCPercent = 50
+
 func main() {
 	var app *coreapp.CoreApp
 	cleanupFatalOutput, _ := setupFatalOutput()
 	defer cleanupFatalOutput()
+
+	// 显式设置了 GOGC 时以用户/调试配置为准，不覆盖。
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(idleCoreGCPercent)
+	}
 
 	defer func() {
 		if r := recover(); r != nil {

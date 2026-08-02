@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/TIANLI0/THRM/internal/types"
 )
 
 func TestResolveControlTempFallsBackToAvailableSensor(t *testing.T) {
@@ -72,29 +74,46 @@ func TestDetectGPUVendorCachesResult(t *testing.T) {
 	}
 }
 
-func TestReadWindowsCPUTempUsesTimeout(t *testing.T) {
+// 没有可信 CPU 温度来源的平台（Windows）必须彻底放弃兜底：ACPI 温区不是 CPU 核心
+// 温度，拿它填补空缺会给出错误的控温依据，并把 PawnIO 故障伪装成一次正常读数。
+// 这里断言降级路径既不返回伪造的 CPU 温度，也不再为此创建 wmic 进程。
+func TestCPUFallbackDisabledWithoutTrustedSource(t *testing.T) {
+	if platformHasCPUTempFallback {
+		t.Skip("本平台存在可信的进程内 CPU 温度来源")
+	}
+
 	oldExec := execHelperCommand
 	defer func() {
 		execHelperCommand = oldExec
 	}()
 
-	called := false
+	var spawned []string
 	execHelperCommand = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
-		called = true
-		if timeout != helperCommandTimeout {
-			t.Fatalf("unexpected timeout: %s", timeout)
-		}
-		if name != "wmic" {
-			t.Fatalf("unexpected command: %s", name)
-		}
+		spawned = append(spawned, name)
 		return nil, context.DeadlineExceeded
 	}
 
 	r := NewReader(nil, testLogger{})
-	if got := r.readWindowsCPUTemp(); got != 0 {
-		t.Fatalf("readWindowsCPUTemp() = %d, want 0 on timeout", got)
+	// disableGpu=true 把 GPU 链路排除在外，只观察 CPU 链路的行为。
+	if reading := r.readFallback(true); reading.cpuTemp != 0 {
+		t.Fatalf("readFallback().cpuTemp = %d, want 0", reading.cpuTemp)
 	}
-	if !called {
-		t.Fatal("readWindowsCPUTemp() did not invoke helper command")
+	if len(spawned) != 0 {
+		t.Fatalf("CPU 降级读取不应创建任何外部进程，实际调用: %v", spawned)
+	}
+}
+
+// CPU 专属故障说明必须原样透传给上层，界面才能给出重装 PawnIO 的指引。
+func TestCopyBridgeTemperatureMetadataCarriesCPUTempError(t *testing.T) {
+	const wantErr = "未读取到 CPU 温度；请重装 PawnIO"
+
+	var temp types.TemperatureData
+	copyBridgeTemperatureMetadata(&temp, types.BridgeTemperatureData{
+		GpuTemp:      55,
+		CpuTempError: wantErr,
+	}, types.TemperatureSelection{TempSource: types.TempSourceMax})
+
+	if temp.CPUTempError != wantErr {
+		t.Fatalf("CPUTempError = %q, want %q", temp.CPUTempError, wantErr)
 	}
 }

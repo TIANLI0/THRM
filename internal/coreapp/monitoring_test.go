@@ -64,6 +64,17 @@ func TestCompactTemperatureEventPayload(t *testing.T) {
 	if len(compactCleared.CpuSensors) != 0 {
 		t.Fatalf("compactTemperatureEventPayload() kept unexpected cpuSensors length: %d", len(compactCleared.CpuSensors))
 	}
+
+	// nil 与空切片对前端含义不同（略去 vs 明确清空），因此不能视为相等：
+	// 上一帧没有清单、这一帧显式为空时，那个 [] 必须原样发出去。
+	emptyAfterNil := current
+	emptyAfterNil.CpuSensors = []types.TemperatureSensor{}
+	previousWithoutCPUSensors := previous
+	previousWithoutCPUSensors.CpuSensors = nil
+	compactEmptyAfterNil := compactTemperatureEventPayload(emptyAfterNil, previousWithoutCPUSensors)
+	if compactEmptyAfterNil.CpuSensors == nil {
+		t.Fatal("compactTemperatureEventPayload() should treat empty cpuSensors as different from nil")
+	}
 }
 
 func TestTrackBridgeTemperatureStaleness(t *testing.T) {

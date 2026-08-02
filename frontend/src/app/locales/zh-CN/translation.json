@@ -93,7 +93,7 @@
   },
   "store": {
     "bridgeWarning": {
-      "default": "CPU/GPU 温度读取失败，可尝试重新初始化温度监控；若 CPU 仍为空，请安装或更新 PawnIO，或关闭其它硬件监控工具。"
+      "default": "CPU/GPU 温度读取失败。CPU 温度依赖 PawnIO 驱动读取，可点击“重装 PawnIO”后重启 THRM；若仍不可用，请关闭其它硬件监控工具后重试。"
     },
     "coreService": {
       "unavailable": "核心服务不可用。请检查 THRM Core.exe 是否被安全软件隔离，或重新安装/恢复 Core 后重试。",
@@ -215,7 +215,9 @@
       "transportLine": "通信方式：{{transport}}",
       "pipeLine": "命名管道：{{pipe}}",
       "diagnosticsLine": "诊断信息：{{message}}",
-      "reinitialize": "重新初始化温度监控"
+      "reinitialize": "重新初始化温度监控",
+      "reinstallPawnIo": "重装 PawnIO",
+      "reinstallPawnIoRunning": "正在重装 PawnIO…"
     },
     "controlProtection": "控制与保护",
     "stats": {

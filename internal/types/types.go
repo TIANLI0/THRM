@@ -344,6 +344,10 @@ type TemperatureData struct {
 	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
 	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
 	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
+	// CPUTempError 是 CPU 温度专属的故障说明与修复指引。
+	// CPU 温度只能由 PawnIO 读取，没有可信的替代来源，因此读不到时必须明确告知用户，
+	// 而不是留一个没有解释的空值。GPU 正常时 BridgeOk 仍为 true，该字段独立生效。
+	CPUTempError string `json:"cpuTempError"`
 	CPUFanRPM         int                    `json:"cpuFanRpm"`         // 笔记本内置 CPU 风扇转速（0=不可用）
 	GPUFanRPM         int                    `json:"gpuFanRpm"`         // 笔记本内置 GPU 风扇转速（0=不可用）
 }
@@ -419,6 +423,8 @@ type BridgeTemperatureData struct {
 	UpdateTime        int64                  `json:"updateTime"`
 	Success           bool                   `json:"success"`
 	Error             string                 `json:"error"`
+	// CpuTempError 在 GPU 可读、仅 CPU 读不到时也会填充（此时 Success 仍为 true）。
+	CpuTempError string `json:"cpuTempError"`
 }
 
 // BridgeCommand 桥接程序命令

@@ -2,7 +2,6 @@ package coreapp
 
 import (
 	"fmt"
-	"reflect"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -91,24 +90,76 @@ func (a *CoreApp) recoverTemperatureBridge(reason string) {
 	})
 }
 
+// compactTemperatureEventPayload 去掉与上一帧完全相同的传感器清单，只广播变化的部分。
+//
+// 这里用逐字段比较而不是 reflect.DeepEqual：这条路径在 GUI 打开时每个采样周期都要
+// 跑一遍，而传感器清单动辄几十项，反射比较要为每个元素的每个字段走一次反射调度，
+// 比直接比较慢一个数量级，且清单几乎总是相等（真正变化的只有 Value），
+// 也就是说每次都要走完最坏路径。
 func compactTemperatureEventPayload(current, previous types.TemperatureData) types.TemperatureData {
 	compact := current
-	if reflect.DeepEqual(current.CpuSensors, previous.CpuSensors) {
+	if temperatureSensorsEqual(current.CpuSensors, previous.CpuSensors) {
 		compact.CpuSensors = nil
 	}
-	if reflect.DeepEqual(current.GpuSensors, previous.GpuSensors) {
+	if temperatureSensorsEqual(current.GpuSensors, previous.GpuSensors) {
 		compact.GpuSensors = nil
 	}
-	if reflect.DeepEqual(current.CpuPowerSensors, previous.CpuPowerSensors) {
+	if powerSensorsEqual(current.CpuPowerSensors, previous.CpuPowerSensors) {
 		compact.CpuPowerSensors = nil
 	}
-	if reflect.DeepEqual(current.GpuPowerSensors, previous.GpuPowerSensors) {
+	if powerSensorsEqual(current.GpuPowerSensors, previous.GpuPowerSensors) {
 		compact.GpuPowerSensors = nil
 	}
-	if reflect.DeepEqual(current.GpuDevices, previous.GpuDevices) {
+	if gpuDevicesEqual(current.GpuDevices, previous.GpuDevices) {
 		compact.GpuDevices = nil
 	}
 	return compact
+}
+
+// 三个比较函数都保留 nil 与空切片的区别，与 reflect.DeepEqual 的语义完全一致：
+// 空切片序列化成 []（明确告诉前端清空旧清单），nil 则被 omitempty 略去（保持不变），
+// 二者对前端的含义不同，不能混为一谈。
+
+func temperatureSensorsEqual(a, b []types.TemperatureSensor) bool {
+	if len(a) != len(b) || (a == nil) != (b == nil) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func powerSensorsEqual(a, b []types.PowerSensor) bool {
+	if len(a) != len(b) || (a == nil) != (b == nil) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func gpuDevicesEqual(a, b []types.TemperatureGPUDevice) bool {
+	if len(a) != len(b) || (a == nil) != (b == nil) {
+		return false
+	}
+	for i := range a {
+		if a[i].Key != b[i].Key || a[i].Name != b[i].Name || a[i].Vendor != b[i].Vendor {
+			return false
+		}
+		if !temperatureSensorsEqual(a[i].Sensors, b[i].Sensors) {
+			return false
+		}
+		if !powerSensorsEqual(a[i].PowerSensors, b[i].PowerSensors) {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *CoreApp) stopTemperatureMonitoring() <-chan struct{} {

@@ -5,8 +5,6 @@ package laptopfan
 import (
 	"fmt"
 	"strconv"
-
-	"github.com/go-ole/go-ole"
 )
 
 const (
@@ -24,30 +22,22 @@ const (
 
 // readUniwillFanSpeeds 通过 root\WMI 的 AcpiTest_MULong.GetSetULong（ExecMethod）
 // 读取 Uniwill/同方准系统（机械革命等品牌）的 EC RAM。
-func readUniwillFanSpeeds() (FanSpeeds, error) {
-	var speeds FanSpeeds
-	err := withWMIService(func(service *ole.IDispatch) error {
-		caller, err := newWMIMethodCaller(service, "AcpiTest_MULong", "GetSetULong")
-		if err != nil {
-			return err
-		}
-		defer caller.release()
-
-		cpuRPM, err := readUniwillEC16(caller, ecRegFan1RPM)
-		if err != nil {
-			return err
-		}
-		gpuRPM, err := readUniwillEC16(caller, ecRegFan2RPM)
-		if err != nil {
-			return err
-		}
-		speeds = FanSpeeds{CPUFanRPM: cpuRPM, GPUFanRPM: gpuRPM}
-		return nil
-	})
+func readUniwillFanSpeeds(session *wmiSession) (FanSpeeds, error) {
+	caller, err := session.caller("AcpiTest_MULong", "GetSetULong")
 	if err != nil {
 		return FanSpeeds{}, err
 	}
-	return validateSpeeds(speeds)
+
+	cpuRPM, err := readUniwillEC16(caller, ecRegFan1RPM)
+	if err != nil {
+		return FanSpeeds{}, err
+	}
+	gpuRPM, err := readUniwillEC16(caller, ecRegFan2RPM)
+	if err != nil {
+		return FanSpeeds{}, err
+	}
+
+	return validateSpeeds(FanSpeeds{CPUFanRPM: cpuRPM, GPUFanRPM: gpuRPM})
 }
 
 // readUniwillEC16 读取 16 位大端 EC 寄存器。单次 GetSetULong 返回 addr（低字节）与
@@ -56,9 +46,7 @@ func readUniwillEC16(caller *wmiMethodCaller, addr uint16) (int, error) {
 	// 输入 u64：byte0=addr_low, byte1=addr_high, byte5=功能码(1=读)。
 	// CIM uint64 经 IDispatch 自动化传输时以十进制字符串表示。
 	data := uint64(addr) | uint64(uniwillFunctionRead)<<40
-	value, err := caller.call(map[string]interface{}{
-		"Data": strconv.FormatUint(data, 10),
-	}, "Return")
+	value, err := caller.call("Data", strconv.FormatUint(data, 10), "Return")
 	if err != nil {
 		return 0, fmt.Errorf("GetSetULong(0x%04x): %w", addr, err)
 	}

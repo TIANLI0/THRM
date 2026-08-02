@@ -82,7 +82,14 @@ func (r *Reader) readFallback(disableGpu bool) fallbackReading {
 }
 
 // readCheapCPUTemp 只做进程内的廉价 CPU 温度读取。
+//
+// 平台没有可信的 CPU 温度来源时（Windows，见 cpu_windows.go）直接返回 0：
+// gopsutil 在 Windows 上读的同样是 ACPI 温区，不是 CPU 核心温度，
+// 用它填补空缺只会掩盖 PawnIO 故障并给出错误的控温依据。
 func (r *Reader) readCheapCPUTemp() int {
+	if !platformHasCPUTempFallback {
+		return 0
+	}
 	if temp := r.readSensorCPUTemp(); temp > 0 {
 		return temp
 	}

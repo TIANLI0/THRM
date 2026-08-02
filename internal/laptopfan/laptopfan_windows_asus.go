@@ -2,11 +2,7 @@
 
 package laptopfan
 
-import (
-	"fmt"
-
-	"github.com/go-ole/go-ole"
-)
+import "fmt"
 
 const (
 	// ATK WMI DSTS 设备 ID，与 Linux asus-wmi 驱动一致。
@@ -20,37 +16,27 @@ const (
 // readAsusFanSpeeds 通过 root\WMI 的 AsusAtkWmi_WMNB.DSTS 读取华硕机型
 // （ROG/TUF 等）的风扇转速。返回值低 16 位为转速（单位：百 RPM），
 // 与 asus-wmi 驱动及 G-Helper 的换算一致。
-func readAsusFanSpeeds() (FanSpeeds, error) {
-	var speeds FanSpeeds
-	err := withWMIService(func(service *ole.IDispatch) error {
-		caller, err := newWMIMethodCaller(service, "AsusAtkWmi_WMNB", "DSTS")
-		if err != nil {
-			return err
-		}
-		defer caller.release()
-
-		cpuRPM, err := readAsusFanRPM(caller, asusDevIDCPUFan)
-		if err != nil {
-			return err
-		}
-		// 部分机型（如无独显或单风扇）不提供 GPU 风扇，容忍缺失。
-		gpuRPM, err := readAsusFanRPM(caller, asusDevIDGPUFan)
-		if err != nil {
-			gpuRPM = 0
-		}
-		speeds = FanSpeeds{CPUFanRPM: cpuRPM, GPUFanRPM: gpuRPM}
-		return nil
-	})
+func readAsusFanSpeeds(session *wmiSession) (FanSpeeds, error) {
+	caller, err := session.caller("AsusAtkWmi_WMNB", "DSTS")
 	if err != nil {
 		return FanSpeeds{}, err
 	}
-	return validateSpeeds(speeds)
+
+	cpuRPM, err := readAsusFanRPM(caller, asusDevIDCPUFan)
+	if err != nil {
+		return FanSpeeds{}, err
+	}
+	// 部分机型（如无独显或单风扇）不提供 GPU 风扇，容忍缺失。
+	gpuRPM, err := readAsusFanRPM(caller, asusDevIDGPUFan)
+	if err != nil {
+		gpuRPM = 0
+	}
+
+	return validateSpeeds(FanSpeeds{CPUFanRPM: cpuRPM, GPUFanRPM: gpuRPM})
 }
 
 func readAsusFanRPM(caller *wmiMethodCaller, devID uint32) (int, error) {
-	status, err := caller.call(map[string]interface{}{
-		"Device_ID": int32(devID),
-	}, "device_status")
+	status, err := caller.call("Device_ID", int32(devID), "device_status")
 	if err != nil {
 		return 0, fmt.Errorf("DSTS(0x%08x): %w", devID, err)
 	}

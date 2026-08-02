@@ -93,7 +93,7 @@
   },
   "store": {
     "bridgeWarning": {
-      "default": "CPU/GPU temperature reading failed. Try reinitializing temperature monitoring. If the CPU temperature is still empty, install or update PawnIO, or close other hardware monitoring tools."
+      "default": "CPU/GPU temperature reading failed. CPU temperature is read through the PawnIO driver — click \"Reinstall PawnIO\" and then restart THRM. If it still fails, close other hardware monitoring tools and try again."
     },
     "coreService": {
       "unavailable": "Core service is unavailable. Check whether THRM Core.exe was quarantined by security software, or restore/reinstall Core and try again.",
@@ -215,7 +215,9 @@
       "transportLine": "Transport: {{transport}}",
       "pipeLine": "Named pipe: {{pipe}}",
       "diagnosticsLine": "Diagnostics: {{message}}",
-      "reinitialize": "Reinitialize temperature monitoring"
+      "reinitialize": "Reinitialize temperature monitoring",
+      "reinstallPawnIo": "Reinstall PawnIO",
+      "reinstallPawnIoRunning": "Reinstalling PawnIO…"
     },
     "controlProtection": "Control and protection",
     "stats": {

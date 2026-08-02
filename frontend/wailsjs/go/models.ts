@@ -593,6 +593,7 @@ export namespace types {
 	    updateTime: number;
 	    success: boolean;
 	    error: string;
+	    cpuTempError: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new BridgeTemperatureData(source);
@@ -618,6 +619,7 @@ export namespace types {
 	        this.updateTime = source["updateTime"];
 	        this.success = source["success"];
 	        this.error = source["error"];
+	        this.cpuTempError = source["cpuTempError"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -906,6 +908,7 @@ export namespace types {
 	    updateTime: number;
 	    bridgeOk: boolean;
 	    bridgeMessage: string;
+	    cpuTempError: string;
 	    cpuFanRpm: number;
 	    gpuFanRpm: number;
 	
@@ -933,6 +936,7 @@ export namespace types {
 	        this.updateTime = source["updateTime"];
 	        this.bridgeOk = source["bridgeOk"];
 	        this.bridgeMessage = source["bridgeMessage"];
+	        this.cpuTempError = source["cpuTempError"];
 	        this.cpuFanRpm = source["cpuFanRpm"];
 	        this.gpuFanRpm = source["gpuFanRpm"];
 	    }

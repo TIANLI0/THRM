@@ -205,10 +205,18 @@ func (p *Plugin) setLastError(err error) {
 const powerShellListenerScript = `
 $ErrorActionPreference = 'Stop'
 
-$pollIntervalSeconds = 2
+# When the WMI event registration succeeds, polling is only a safety net: real
+# mode changes arrive through the event immediately. Stretch it to 30s and keep
+# the 2s cadence only when the event is unavailable and polling is the sole
+# source. Every wake-up of this long-lived PowerShell host costs a WMI round
+# trip, which is pure background CPU on an otherwise idle machine.
+$pollIntervalWithEvents = 30
+$pollIntervalPollingOnly = 2
+$pollIntervalSeconds = $pollIntervalPollingOnly
 $lastRaw = $null
 $nextPollAt = [DateTime]::UtcNow
 $eventRegistered = $false
+$gameZone = $null
 
 function Get-ModeName([int]$mapped) {
     switch ($mapped) {
@@ -221,13 +229,33 @@ function Get-ModeName([int]$mapped) {
     }
 }
 
-function Read-SmartFanModeRaw() {
+# Cache the LENOVO_GAMEZONE_DATA instance: the class holds a single instance
+# that stays valid for the lifetime of this process. The previous version
+# re-enumerated the whole class on every poll, paying an extra cross-process
+# WMI round trip each time.
+function Get-GameZone() {
+    if ($null -ne $script:gameZone) {
+        return $script:gameZone
+    }
+
     $data = Get-WmiObject -Namespace 'root\WMI' -Class 'LENOVO_GAMEZONE_DATA' -ErrorAction Stop | Select-Object -First 1
     if ($null -eq $data) {
         throw 'LENOVO_GAMEZONE_DATA not found'
     }
+    $script:gameZone = $data
+    return $data
+}
 
-    $result = $data.GetSmartFanMode()
+function Read-SmartFanModeRaw() {
+    try {
+        $result = (Get-GameZone).GetSmartFanMode()
+    } catch {
+        # The cached instance went stale (WMI service restart, resume from
+        # sleep). Drop it, re-acquire once, and let a second failure propagate.
+        $script:gameZone = $null
+        $result = (Get-GameZone).GetSmartFanMode()
+    }
+
     if ($null -eq $result -or $null -eq $result.Data) {
         throw 'GetSmartFanMode returned empty data'
     }
@@ -270,6 +298,7 @@ $sourceIdentifier = "BS2PRO.LenovoLegionFnQ.$PID"
 try {
     Register-WmiEvent -Namespace 'root\WMI' -Query 'SELECT * FROM LENOVO_GAMEZONE_SMART_FAN_MODE_EVENT' -SourceIdentifier $sourceIdentifier | Out-Null
     $eventRegistered = $true
+    $pollIntervalSeconds = $pollIntervalWithEvents
 } catch {
     Emit-Error ("LENOVO_GAMEZONE_SMART_FAN_MODE_EVENT registration failed: " + $_.Exception.Message)
 }
@@ -277,7 +306,10 @@ try {
 try {
     while ($true) {
         if ($eventRegistered) {
-            $event = Wait-Event -SourceIdentifier $sourceIdentifier -Timeout 1
+            # The timeout only controls how often the fallback poll deadline is
+            # checked; a mode change still wakes this immediately through the
+            # event. Widening it to 5s cuts idle wake-ups fivefold.
+            $event = Wait-Event -SourceIdentifier $sourceIdentifier -Timeout 5
             if ($null -ne $event) {
                 try {
                     $raw = [int]$event.SourceEventArgs.NewEvent.Properties['mode'].Value

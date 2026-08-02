@@ -46,6 +46,7 @@ export interface TemperatureData {
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
+  cpuTempError?: string; // CPU 温度专属故障说明（GPU 正常时 bridgeOk 仍为 true）
 }
 
 export interface TemperatureSensor {

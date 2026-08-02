@@ -93,7 +93,7 @@
   },
   "store": {
     "bridgeWarning": {
-      "default": "CPU/GPU 温度の取得に失敗しました。温度モニタリングの初期化を試してください。CPU 温度が表示されないままの場合は、PawnIO をインストールまたはアップデートするか、他のハードウェアモニタリングソフトを終了してください。"
+      "default": "CPU/GPU 温度の取得に失敗しました。CPU 温度は PawnIO ドライバー経由で取得します。「PawnIO を再インストール」をクリックしてから THRM を再起動してください。それでも解決しない場合は、他のハードウェアモニタリングソフトを終了して再試行してください。"
     },
     "coreService": {
       "unavailable": "Core サービスを利用できません。THRM Core.exe がセキュリティソフトに隔離されていないか確認するか、Core を復元/再インストールしてから再試行してください。",
@@ -214,7 +214,9 @@
       "sharedProcess": "現在のインスタンスは共有プロセスを再利用しています",
       "pipeLine": "名前付きパイプ: {{pipe}}",
       "diagnosticsLine": "診断情報: {{message}}",
-      "reinitialize": "温度モニタリングを初期化"
+      "reinitialize": "温度モニタリングを初期化",
+      "reinstallPawnIo": "PawnIO を再インストール",
+      "reinstallPawnIoRunning": "PawnIO を再インストール中…"
     },
     "controlProtection": "制御と保護",
     "stats": {

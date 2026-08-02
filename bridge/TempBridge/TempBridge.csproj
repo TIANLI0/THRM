@@ -43,7 +43,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="System.Management" />
+    <!-- System.Management 曾用于 WMI 温区兜底读取，该兜底已移除（见 Program.cs）。 -->
     <Reference Include="System.ServiceProcess" />
   </ItemGroup>
 </Project>
