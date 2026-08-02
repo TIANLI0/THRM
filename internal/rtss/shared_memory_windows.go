@@ -45,6 +45,7 @@ type sharedMemoryLayout struct {
 
 type sharedMemorySink struct {
 	mapHandle windows.Handle
+	viewBase  uintptr
 	view      []byte
 	entry     int
 }
@@ -258,6 +259,24 @@ func mappedViewSize(view uintptr) (int, bool) {
 	return int(size), true
 }
 
+// mappedViewBytes is the only place that converts the address returned by
+// MapViewOfFile into a Go slice. The conversion is safe only while all of the
+// following conditions remain true:
+//   - view is the unchanged base address returned by MapViewOfFile;
+//   - VirtualQuery has verified a committed, accessible region of regionSize;
+//   - length does not exceed that verified region; and
+//   - the mapping remains alive until every returned slice is no longer used.
+//
+// The caller owns the mapping lifetime. This helper enforces the local address
+// and length checks so future call sites cannot accidentally create an
+// out-of-bounds slice from an untrusted RTSS header.
+func mappedViewBytes(view uintptr, length, regionSize int) ([]byte, bool) {
+	if view == 0 || length <= 0 || regionSize <= 0 || length > regionSize {
+		return nil, false
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(view)), length), true
+}
+
 func (s *sharedMemorySink) ensureMapped() bool {
 	if len(s.view) > 0 {
 		return true
@@ -280,23 +299,36 @@ func (s *sharedMemorySink) ensureMapped() bool {
 		windows.CloseHandle(h)
 		return false
 	}
-	header := unsafe.Slice((*byte)(unsafe.Pointer(view)), headerSize)
+	header, ok := mappedViewBytes(view, headerSize, viewSize)
+	if !ok {
+		windows.UnmapViewOfFile(view)
+		windows.CloseHandle(h)
+		return false
+	}
 	layout, ok := decodeLayout(header, viewSize)
 	if !ok {
 		windows.UnmapViewOfFile(view)
 		windows.CloseHandle(h)
 		return false
 	}
+	mapped, ok := mappedViewBytes(view, layout.requiredSize, viewSize)
+	if !ok {
+		windows.UnmapViewOfFile(view)
+		windows.CloseHandle(h)
+		return false
+	}
 	s.mapHandle = h
-	s.view = unsafe.Slice((*byte)(unsafe.Pointer(view)), layout.requiredSize)
+	s.viewBase = view
+	s.view = mapped
 	return true
 }
 
 func (s *sharedMemorySink) unmap() {
-	if len(s.view) > 0 {
-		windows.UnmapViewOfFile(uintptr(unsafe.Pointer(&s.view[0])))
-		s.view = nil
+	if s.viewBase != 0 {
+		windows.UnmapViewOfFile(s.viewBase)
+		s.viewBase = 0
 	}
+	s.view = nil
 	if s.mapHandle != 0 {
 		windows.CloseHandle(s.mapHandle)
 		s.mapHandle = 0

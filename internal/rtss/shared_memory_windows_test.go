@@ -81,6 +81,20 @@ func TestMappedViewSize(t *testing.T) {
 	if got < mappingSize || got > maxViewSize {
 		t.Fatalf("mapped view size = %d, want at least %d and at most %d", got, mappingSize, maxViewSize)
 	}
+	mapped, ok := mappedViewBytes(view, mappingSize, got)
+	if !ok {
+		t.Fatal("verified mapped view could not be converted to bytes")
+	}
+	mapped[0] = 0x5a
+	if mapped[0] != 0x5a {
+		t.Fatal("mapped view byte was not writable")
+	}
+	if _, ok := mappedViewBytes(view, got+1, got); ok {
+		t.Fatal("slice larger than the verified mapped region was accepted")
+	}
+	if _, ok := mappedViewBytes(0, headerSize, got); ok {
+		t.Fatal("null mapped view was converted to bytes")
+	}
 	if _, ok := mappedViewSize(0); ok {
 		t.Fatal("null mapped view was accepted")
 	}
