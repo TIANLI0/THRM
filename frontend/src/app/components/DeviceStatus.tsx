@@ -23,7 +23,7 @@ import {
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { downsampleHistoryPoints, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { clipHistoryToRecentWindow, downsampleHistoryPoints, HOME_CHART_WINDOW_MS, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import { getManualGearLabel, getReportedMaxRpm } from '../lib/manualGearPresets';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
@@ -445,7 +445,7 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
 });
 
 const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
-  points,
+  points: retainedPoints,
   enabled,
   source,
   onOpen,
@@ -457,6 +457,8 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
 }) {
   const { t } = useTranslation();
   const sourceLabel = source === 'core' ? t('deviceStatus.history.source.core') : t('deviceStatus.history.source.session');
+  // 首页这张图固定只画最近 1 小时，与详情页的后台保留时长（最长 24 小时）解耦。
+  const points = useMemo(() => clipHistoryToRecentWindow(retainedPoints, HOME_CHART_WINDOW_MS), [retainedPoints]);
   const chart = useMemo(() => {
     const width = 520;
     const height = 168;

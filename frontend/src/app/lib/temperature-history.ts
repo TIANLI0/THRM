@@ -67,6 +67,40 @@ export const DEFAULT_HISTORY_RETENTION_HOURS = 1;
 export const MAX_HISTORY_RETENTION_HOURS = 24;
 export const HISTORY_RETENTION_HOUR_OPTIONS = [1, 2, 3, 6, 12, 24] as const;
 
+/**
+ * 首页迷你趋势图的时间窗口，固定 1 小时。后台保留时长（最长 24 小时）是给详情页的
+ * 趋势分析用的，塞进 500px 宽的迷你图只会把当下的波动压成一条平线。
+ */
+export const HOME_CHART_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * 从已按时间升序且归一化过的采样里截出最近 windowMs 的一段。
+ * 不复用 trimHistoryPoints：它会整表重排，而 24 小时窗口下数组可达 1.7 万点。
+ */
+export const clipHistoryToRecentWindow = (
+  points: TemperatureHistoryPoint[],
+  windowMs = HOME_CHART_WINDOW_MS,
+): TemperatureHistoryPoint[] => {
+  if (points.length === 0 || windowMs <= 0) return points;
+
+  // 以最新采样点而不是当前时间为基准：核心中断过（睡眠、重启）时按当前时间裁剪会把
+  // 仅剩的历史全部裁掉，图上突然空白。
+  const cutoff = points[points.length - 1].timestamp - windowMs;
+  if (points[0].timestamp >= cutoff) return points;
+
+  let low = 0;
+  let high = points.length - 1;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (points[mid].timestamp < cutoff) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+  return points.slice(low);
+};
+
 export const clampHistoryRetentionHours = (hours: number | null | undefined): number => {
   const numeric = Math.round(Number(hours || 0));
   if (!Number.isFinite(numeric) || numeric < 1) return DEFAULT_HISTORY_RETENTION_HOURS;
