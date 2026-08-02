@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -27,6 +28,9 @@ const (
 	osdTextSize       = 256
 	osdOwnerSize      = 256
 	osdExtendedSize   = 4096
+
+	releaseLockAttempts   = 10
+	releaseLockRetryDelay = time.Millisecond
 )
 
 var procOpenFileMappingW = windows.NewLazySystemDLL("kernel32.dll").NewProc("OpenFileMappingW")
@@ -110,37 +114,42 @@ func (s *sharedMemorySink) entryBytes(layout sharedMemoryLayout, index int) []by
 }
 
 func (s *sharedMemorySink) tryLock(layout sharedMemoryLayout) (*uint32, bool) {
+	return s.lockWithRetry(layout, 1, nil)
+}
+
+func (s *sharedMemorySink) lockWithRetry(layout sharedMemoryLayout, attempts int, wait func()) (*uint32, bool) {
 	if layout.version < 0x0002000e {
 		return nil, true
 	}
 	busy := (*uint32)(unsafe.Pointer(&s.view[busyOffset]))
-	return busy, tryLock(busy)
+	return busy, tryLockWithRetry(busy, attempts, wait)
 }
 
 func decodeLayout(view []byte, maxSize int) (sharedMemoryLayout, bool) {
-	if len(view) < headerSize || binary.LittleEndian.Uint32(view[:4]) != rtssSignature {
+	if len(view) < headerSize || maxSize < headerSize || binary.LittleEndian.Uint32(view[:4]) != rtssSignature {
 		return sharedMemoryLayout{}, false
 	}
 	version := binary.LittleEndian.Uint32(view[4:8])
-	entrySize := int(binary.LittleEndian.Uint32(view[20:24]))
-	arrayOffset := int(binary.LittleEndian.Uint32(view[24:28]))
-	arraySize := int(binary.LittleEndian.Uint32(view[28:32]))
+	entrySize := uint64(binary.LittleEndian.Uint32(view[20:24]))
+	arrayOffset := uint64(binary.LittleEndian.Uint32(view[24:28]))
+	arraySize := uint64(binary.LittleEndian.Uint32(view[28:32]))
+	viewSize := uint64(maxSize)
 	if version < 0x00020000 || entrySize < osdOwnerOffset+osdOwnerSize || arrayOffset < headerSize || arraySize <= 1 {
 		return sharedMemoryLayout{}, false
 	}
-	if entrySize > (maxSize-arrayOffset)/arraySize {
+	if arrayOffset > viewSize || entrySize > (viewSize-arrayOffset)/arraySize {
 		return sharedMemoryLayout{}, false
 	}
 	requiredSize := arrayOffset + entrySize*arraySize
-	if requiredSize > maxSize {
+	if requiredSize > viewSize {
 		return sharedMemoryLayout{}, false
 	}
 	return sharedMemoryLayout{
 		version:      version,
-		entrySize:    entrySize,
-		arrayOffset:  arrayOffset,
-		arraySize:    arraySize,
-		requiredSize: requiredSize,
+		entrySize:    int(entrySize),
+		arrayOffset:  int(arrayOffset),
+		arraySize:    int(arraySize),
+		requiredSize: int(requiredSize),
 	}, true
 }
 
@@ -154,6 +163,18 @@ func tryLock(value *uint32) bool {
 			return true
 		}
 	}
+}
+
+func tryLockWithRetry(value *uint32, attempts int, wait func()) bool {
+	for attempt := 0; attempt < attempts; attempt++ {
+		if tryLock(value) {
+			return true
+		}
+		if attempt+1 < attempts && wait != nil {
+			wait()
+		}
+	}
+	return false
 }
 
 func unlock(value *uint32) { atomic.AndUint32(value, ^uint32(1)) }
@@ -175,6 +196,68 @@ func writeCString(dst []byte, size int, value string) {
 	copy(dst[:size-1], value)
 }
 
+type mappedRegionInfo struct {
+	baseAddress    uintptr
+	allocationBase uintptr
+	regionSize     uintptr
+	state          uint32
+	protect        uint32
+}
+
+func queryMappedRegion(view uintptr) (mappedRegionInfo, bool) {
+	if view == 0 {
+		return mappedRegionInfo{}, false
+	}
+	var info windows.MemoryBasicInformation
+	if unsafe.Sizeof(uintptr(0)) == 4 {
+		// VirtualQuery uses the traditional 28-byte MEMORY_BASIC_INFORMATION
+		// layout in 32-bit processes, while x/sys exposes the newer structure
+		// containing PartitionId. Read the returned buffer at its native offsets.
+		const info32Size = 28
+		if err := windows.VirtualQuery(view, &info, info32Size); err != nil {
+			return mappedRegionInfo{}, false
+		}
+		raw := unsafe.Slice((*byte)(unsafe.Pointer(&info)), info32Size)
+		return mappedRegionInfo{
+			baseAddress:    uintptr(binary.LittleEndian.Uint32(raw[0:4])),
+			allocationBase: uintptr(binary.LittleEndian.Uint32(raw[4:8])),
+			regionSize:     uintptr(binary.LittleEndian.Uint32(raw[12:16])),
+			state:          binary.LittleEndian.Uint32(raw[16:20]),
+			protect:        binary.LittleEndian.Uint32(raw[20:24]),
+		}, true
+	}
+	if err := windows.VirtualQuery(view, &info, unsafe.Sizeof(info)); err != nil {
+		return mappedRegionInfo{}, false
+	}
+	return mappedRegionInfo{
+		baseAddress:    info.BaseAddress,
+		allocationBase: info.AllocationBase,
+		regionSize:     info.RegionSize,
+		state:          info.State,
+		protect:        info.Protect,
+	}, true
+}
+
+// mappedViewSize returns a conservative bound for slices created from the
+// mapped address. The shared-memory header is untrusted until this succeeds.
+func mappedViewSize(view uintptr) (int, bool) {
+	info, ok := queryMappedRegion(view)
+	if !ok {
+		return 0, false
+	}
+	if info.baseAddress != view || info.allocationBase != view || info.state != windows.MEM_COMMIT {
+		return 0, false
+	}
+	if info.protect&(windows.PAGE_NOACCESS|windows.PAGE_GUARD) != 0 || info.regionSize < uintptr(headerSize) {
+		return 0, false
+	}
+	size := info.regionSize
+	if size > uintptr(maxViewSize) {
+		size = uintptr(maxViewSize)
+	}
+	return int(size), true
+}
+
 func (s *sharedMemorySink) ensureMapped() bool {
 	if len(s.view) > 0 {
 		return true
@@ -191,8 +274,14 @@ func (s *sharedMemorySink) ensureMapped() bool {
 		return false
 	}
 
+	viewSize, ok := mappedViewSize(view)
+	if !ok {
+		windows.UnmapViewOfFile(view)
+		windows.CloseHandle(h)
+		return false
+	}
 	header := unsafe.Slice((*byte)(unsafe.Pointer(view)), headerSize)
-	layout, ok := decodeLayout(header, maxViewSize)
+	layout, ok := decodeLayout(header, viewSize)
 	if !ok {
 		windows.UnmapViewOfFile(view)
 		windows.CloseHandle(h)
@@ -226,10 +315,19 @@ func (s *sharedMemorySink) Close() {
 	s.unmap()
 }
 
+func waitForReleaseLock() { time.Sleep(releaseLockRetryDelay) }
+
 func (s *sharedMemorySink) releaseEntry(layout sharedMemoryLayout) {
-	busy, ok := s.tryLock(layout)
+	s.releaseEntryWithWait(layout, waitForReleaseLock)
+}
+
+// RTSS holds the busy lock briefly while consuming OSD updates. Normal
+// publishing stays non-blocking, while shutdown retries for a bounded period
+// so a transient collision does not leave THRM's last text in the slot.
+func (s *sharedMemorySink) releaseEntryWithWait(layout sharedMemoryLayout, wait func()) bool {
+	busy, ok := s.lockWithRetry(layout, releaseLockAttempts, wait)
 	if !ok {
-		return
+		return false
 	}
 	if busy != nil {
 		defer unlock(busy)
@@ -238,4 +336,5 @@ func (s *sharedMemorySink) releaseEntry(layout sharedMemoryLayout) {
 		clear(s.entryBytes(layout, s.entry))
 		atomic.AddUint32((*uint32)(unsafe.Pointer(&s.view[osdFrameOffset])), 1)
 	}
+	return true
 }

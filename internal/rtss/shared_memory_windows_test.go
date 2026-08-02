@@ -5,6 +5,8 @@ package rtss
 import (
 	"encoding/binary"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func testHeader(entrySize, arrayOffset, arraySize uint32) []byte {
@@ -47,6 +49,43 @@ func TestDecodeLayoutRejectsInvalidHeaders(t *testing.T) {
 	}
 }
 
+func TestDecodeLayoutRejectsDeclaredSizeBeyondView(t *testing.T) {
+	header := testHeader(4096, 96, 4)
+	requiredSize := 96 + 4096*4
+	if _, ok := decodeLayout(header, requiredSize-1); ok {
+		t.Fatal("layout larger than the mapped view was accepted")
+	}
+	if _, ok := decodeLayout(header, requiredSize); !ok {
+		t.Fatal("layout matching the mapped view was rejected")
+	}
+}
+
+func TestMappedViewSize(t *testing.T) {
+	const mappingSize = 64 << 10
+	mapping, err := windows.CreateFileMapping(windows.InvalidHandle, nil, windows.PAGE_READWRITE, 0, mappingSize, nil)
+	if err != nil {
+		t.Fatalf("CreateFileMapping: %v", err)
+	}
+	t.Cleanup(func() { _ = windows.CloseHandle(mapping) })
+
+	view, err := windows.MapViewOfFile(mapping, mapReadWrite, 0, 0, 0)
+	if err != nil {
+		t.Fatalf("MapViewOfFile: %v", err)
+	}
+	t.Cleanup(func() { _ = windows.UnmapViewOfFile(view) })
+
+	got, ok := mappedViewSize(view)
+	if !ok {
+		t.Fatal("valid mapped view was rejected")
+	}
+	if got < mappingSize || got > maxViewSize {
+		t.Fatalf("mapped view size = %d, want at least %d and at most %d", got, mappingSize, maxViewSize)
+	}
+	if _, ok := mappedViewSize(0); ok {
+		t.Fatal("null mapped view was accepted")
+	}
+}
+
 func TestCStringHelpers(t *testing.T) {
 	buffer := make([]byte, 16)
 	writeCString(buffer, len(buffer), "Cooler Fan")
@@ -85,13 +124,87 @@ func TestSharedMemorySinkOwnsAndReleasesNonPrimarySlot(t *testing.T) {
 	}
 
 	sink.entry = 1
-	writeCString(sink.entryBytes(layout, 1)[osdExtendedOffset:], osdExtendedSize, "Cooler Fan: 1500 RPM")
+	entry := sink.entryBytes(layout, 1)
+	writeCString(entry[osdExtendedOffset:], osdExtendedSize, "Cooler Fan: 1500 RPM")
 	sink.releaseEntry(layout)
-	if got := readCString(sink.entryBytes(layout, 1)); got != "" {
-		t.Fatalf("released entry still contains %q", got)
+	if got := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize]); got != "" {
+		t.Fatalf("released entry owner = %q", got)
+	}
+	if got := readCString(entry[osdExtendedOffset : osdExtendedOffset+osdExtendedSize]); got != "" {
+		t.Fatalf("released entry text = %q", got)
 	}
 	if got := binary.LittleEndian.Uint32(view[osdFrameOffset:]); got != 1 {
 		t.Fatalf("OSD frame = %d, want 1", got)
+	}
+}
+
+func ownedEntryTestSink(t *testing.T) (*sharedMemorySink, sharedMemoryLayout, []byte) {
+	t.Helper()
+	const (
+		entrySize   = osdExtendedOffset + osdExtendedSize
+		arrayOffset = 96
+		arraySize   = 4
+	)
+	view := make([]byte, arrayOffset+entrySize*arraySize)
+	copy(view, testHeader(entrySize, arrayOffset, arraySize))
+	layout, ok := decodeLayout(view, len(view))
+	if !ok {
+		t.Fatal("test layout was rejected")
+	}
+
+	sink := &sharedMemorySink{view: view, entry: 1}
+	entry := sink.entryBytes(layout, 1)
+	writeCString(entry[osdOwnerOffset:], osdOwnerSize, ownerName)
+	writeCString(entry[osdExtendedOffset:], osdExtendedSize, "Cooler Fan: 1500 RPM")
+	return sink, layout, entry
+}
+
+func TestSharedMemorySinkReleaseRetriesBusyLock(t *testing.T) {
+	sink, layout, entry := ownedEntryTestSink(t)
+	view := sink.view
+	binary.LittleEndian.PutUint32(view[busyOffset:], 1)
+
+	waits := 0
+	if !sink.releaseEntryWithWait(layout, func() {
+		waits++
+		binary.LittleEndian.PutUint32(view[busyOffset:], 0)
+	}) {
+		t.Fatal("release did not acquire the lock after it became available")
+	}
+	if waits != 1 {
+		t.Fatalf("release waits = %d, want 1", waits)
+	}
+	if got := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize]); got != "" {
+		t.Fatalf("released entry owner = %q", got)
+	}
+	if got := readCString(entry[osdExtendedOffset : osdExtendedOffset+osdExtendedSize]); got != "" {
+		t.Fatalf("released entry text = %q", got)
+	}
+	if got := binary.LittleEndian.Uint32(view[osdFrameOffset:]); got != 1 {
+		t.Fatalf("OSD frame = %d, want 1", got)
+	}
+}
+
+func TestSharedMemorySinkReleaseRetryIsBounded(t *testing.T) {
+	sink, layout, entry := ownedEntryTestSink(t)
+	view := sink.view
+	binary.LittleEndian.PutUint32(view[busyOffset:], 1)
+
+	waits := 0
+	if sink.releaseEntryWithWait(layout, func() { waits++ }) {
+		t.Fatal("release unexpectedly acquired a permanently busy lock")
+	}
+	if waits != releaseLockAttempts-1 {
+		t.Fatalf("release waits = %d, want %d", waits, releaseLockAttempts-1)
+	}
+	if got := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize]); got != ownerName {
+		t.Fatalf("busy entry owner = %q, want %q", got, ownerName)
+	}
+	if got := readCString(entry[osdExtendedOffset : osdExtendedOffset+osdExtendedSize]); got != "Cooler Fan: 1500 RPM" {
+		t.Fatalf("busy entry text = %q", got)
+	}
+	if got := binary.LittleEndian.Uint32(view[osdFrameOffset:]); got != 0 {
+		t.Fatalf("OSD frame = %d, want 0", got)
 	}
 }
 
