@@ -1,6 +1,35 @@
 package smartcontrol
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/TIANLI0/THRM/internal/types"
+)
+
+// 两个子开关都必须跟着自适应学习一起生效：学习关闭时用户要的是纯曲线查表。
+func TestLearningSubFeaturesRequireLearning(t *testing.T) {
+	cases := []struct {
+		name     string
+		cfg      types.SmartControlConfig
+		wantPred bool
+		wantFan  bool
+	}{
+		{name: "学习与子开关都开", cfg: types.SmartControlConfig{Learning: true, PredictiveBoost: true, LaptopFanGuard: true}, wantPred: true, wantFan: true},
+		{name: "学习关闭时子开关不生效", cfg: types.SmartControlConfig{Learning: false, PredictiveBoost: true, LaptopFanGuard: true}},
+		{name: "学习开启但子开关关闭", cfg: types.SmartControlConfig{Learning: true}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PredictiveBoostActive(tc.cfg); got != tc.wantPred {
+				t.Fatalf("PredictiveBoostActive = %v, want %v", got, tc.wantPred)
+			}
+			if got := LaptopFanGuardActive(tc.cfg); got != tc.wantFan {
+				t.Fatalf("LaptopFanGuardActive = %v, want %v", got, tc.wantFan)
+			}
+		})
+	}
+}
 
 func TestDecayLaptopFanPeak(t *testing.T) {
 	if got := DecayLaptopFanPeak(0, 3000); got != 3000 {

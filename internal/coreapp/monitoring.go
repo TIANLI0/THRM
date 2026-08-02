@@ -499,11 +499,11 @@ monitorLoop:
 					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
 				}
 
-				// 预测只作为升温方向的前馈补偿：短窗口温度斜率叠加 CPU/GPU
-				// 功耗突增，可在实测温度越过曲线点前提前升速。稳态学习仍使用
-				// learningControlTemp，避免将预测值写入长期学习偏移。
+				// 提前升速只作用于升温方向：短窗口温度斜率叠加 CPU/GPU 功耗突增，
+				// 得出"再过一会儿大概会到多少度"，据此提前查曲线升速。稳态学习仍使用
+				// learningControlTemp（实测值），避免把预测值写进长期学习偏移。
 				learningControlTemp := controlTemp
-				if smartCfg.PredictiveBoost {
+				if smartcontrol.PredictiveBoostActive(smartCfg) {
 					prediction := thermalPredictor.Observe(temp, now, cfg.TempSource, smartCfg.TrendGain)
 					if prediction.ControlTemp > controlTemp {
 						controlTemp = prediction.ControlTemp
@@ -546,12 +546,12 @@ monitorLoop:
 					targetRPM = adjustedRPM
 				}
 
-				// 本机风扇联动缓降：本机散热仍接近近期峰值时抑制散热器快速降速，
-				// 避免“温度骤降→散热器降速→温度回升”的忽高忽低振荡。
-				if smartCfg.LaptopFanGuard {
+				// 笔记本风扇仍接近近期最高转速时，限制散热器单次的降速幅度，
+				// 避免“温度一掉就急降速→温度立刻回升→又得升速”的来回摆动。
+				if smartcontrol.LaptopFanGuardActive(smartCfg) {
 					guardedRPM, guarded := smartcontrol.ApplyLaptopFanGuard(targetRPM, prevTargetRPM, laptopFanRPM, laptopFanPeakRPM)
 					if guarded {
-						a.logDebug("本机风扇联动缓降: 本机=%dRPM 峰值=%dRPM 目标 %d→%d RPM", laptopFanRPM, laptopFanPeakRPM, targetRPM, guardedRPM)
+						a.logDebug("笔记本风扇高转，限制降速: 笔记本=%dRPM 近期峰值=%dRPM 目标 %d→%d RPM", laptopFanRPM, laptopFanPeakRPM, targetRPM, guardedRPM)
 						targetRPM = guardedRPM
 					}
 				}

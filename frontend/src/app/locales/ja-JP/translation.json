@@ -383,6 +383,7 @@
     "learning": {
       "title": "適応学習",
       "paused": "一時停止中",
+      "requiresLearning": "適応学習を有効にしてください",
       "description": "実際の温度が設定値に近づくよう各ポイントの目標回転数を微調整します。オフセットはいつでもリセットできます。",
       "toggleAria": "適応学習を切り替える",
       "biasTitle": "学習傾向",
@@ -410,12 +411,12 @@
           "description": "RPM の低下のみを許可し、学習カーブによる不要な加速をできるだけを防ぎます。"
         }
       },
-      "predictiveTitle": "消費電力予測フィードフォワード",
-      "predictiveDescription": "CPU/GPU の消費電力の急増と温度上昇トレンドに基づき、実測温度がカーブ点を越える前に先行して回転数を上げます。適応学習とは独立しています。",
-      "laptopGuardTitle": "本体ファン連動スローダウン",
-      "laptopGuardDescription": "本体の CPU/GPU ファンが直近ピークに近い間はクーラーの減速幅を制限し、急な温度低下→急減速→温度再上昇という振動を防ぎます。",
-      "laptopGuardToggleAria": "本体ファン連動スローダウンの切り替え",
-      "predictiveToggleAria": "消費電力予測フィードフォワードの切り替え"
+      "predictiveTitle": "早めに回転を上げる",
+      "predictiveDescription": "CPU/GPU の消費電力が急増して温度が上昇しているときは、実測温度がカーブ点を超えるのを待たず、予測温度に合わせて先に回転を上げます。上げる方向のみで、下げる方向には適用しません。学習オフセットは実測温度で計算されます。",
+      "laptopGuardTitle": "ノートPCのファンが高回転の間はゆっくり下げる",
+      "laptopGuardDescription": "ノートPC本体のファンが直近の最高回転に近いあいだ、クーラーの回転は1サンプリングあたり最大 60 RPM しか下げません。温度が少し下がった途端に回転を落とし、温度が戻って再び上げる、という往復を防ぎます。ファン回転数を読み取れる機種でのみ利用できます。",
+      "laptopGuardToggleAria": "ノートPCのファンが高回転の間はゆっくり下げるの切り替え",
+      "predictiveToggleAria": "早めに回転を上げるの切り替え"
     },
     "noiseTest": {
       "title": "ファン騒音テスト",

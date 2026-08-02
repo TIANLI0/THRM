@@ -501,10 +501,10 @@ type NoiseProfilePoint struct {
 type SmartControlConfig struct {
 	Enabled                 bool              `json:"enabled"`                         // 智能耦合控制开关
 	Learning                bool              `json:"learning"`                        // 学习开关
-	PredictiveBoost         bool              `json:"predictiveBoost"`                 // 功耗预测前馈开关(独立于学习)
+	PredictiveBoost         bool              `json:"predictiveBoost"`                 // 提前升速：自适应学习的子开关，仅在 Learning 开启时生效
 	LearningBias            string            `json:"learningBias"`                    // 学习倾向: balanced/cooling/quiet
 	FilterTransientSpike    bool              `json:"filterTransientSpike"`            // 是否过滤孤立温度尖峰
-	LaptopFanGuard          bool              `json:"laptopFanGuard"`                  // 本机风扇联动缓降：本机散热仍高负荷时抑制散热器快速降速(仅支持读取本机风扇的机型生效)
+	LaptopFanGuard          bool              `json:"laptopFanGuard"`                  // 笔记本风扇高转时缓慢降速：自适应学习的子开关，仅在 Learning 开启且能读到笔记本风扇转速时生效
 	TargetTemp              int               `json:"targetTemp"`                      // 目标温度(°C)
 	Aggressiveness          int               `json:"aggressiveness"`                  // 响应激进度(1-10)
 	Hysteresis              int               `json:"hysteresis"`                      // 滞回温差(°C)

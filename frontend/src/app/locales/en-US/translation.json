@@ -384,6 +384,7 @@
     "learning": {
       "title": "Adaptive learning",
       "paused": "Paused",
+      "requiresLearning": "Requires adaptive learning",
       "description": "After longer runtime, the target RPM at each temperature point is fine-tuned automatically so real temperatures stay closer to the configured curve. Learned offsets can be reset at any time.",
       "toggleAria": "Toggle adaptive learning",
       "biasTitle": "Learning bias",
@@ -411,12 +412,12 @@
           "description": "Only allows learned RPM decreases, avoiding unnecessary fan ramp-up."
         }
       },
-      "predictiveTitle": "Power-aware prediction",
-      "predictiveDescription": "Ramps up early from CPU/GPU power surges and temperature trends, before the measured temperature crosses a curve point. Independent from adaptive learning.",
-      "laptopGuardTitle": "Laptop fan-linked slow ramp-down",
-      "laptopGuardDescription": "While the laptop's own CPU/GPU fans are still near their recent peak, limits how fast the cooling pad ramps down, preventing oscillation where a quick temperature drop slows the pad and the temperature bounces back.",
-      "laptopGuardToggleAria": "Toggle laptop fan-linked slow ramp-down",
-      "predictiveToggleAria": "Toggle power-aware prediction"
+      "predictiveTitle": "Ramp up early",
+      "predictiveDescription": "When CPU/GPU power spikes while temperature is climbing, ramps up against the projected temperature instead of waiting for the measured one to cross the curve point. Ramps up early only, never down; learned offsets still use measured temperatures.",
+      "laptopGuardTitle": "Ramp down slowly while laptop fans are high",
+      "laptopGuardDescription": "While the laptop's own fans are still near their recent maximum, the cooling pad drops at most 60 RPM per sampling cycle. That avoids the back-and-forth where a temperature dip cuts pad speed, the temperature bounces back, and it has to ramp up again. Available only on laptops whose fan speed can be read.",
+      "laptopGuardToggleAria": "Toggle slow ramp-down while laptop fans are high",
+      "predictiveToggleAria": "Toggle ramp up early"
     },
     "noiseTest": {
       "title": "Fan noise test",
