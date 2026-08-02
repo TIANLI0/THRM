@@ -158,6 +158,41 @@ func TestSharedMemorySinkOwnsAndReleasesNonPrimarySlot(t *testing.T) {
 	}
 }
 
+func TestSharedMemorySinkClearsUnownedSlotBeforeClaiming(t *testing.T) {
+	const (
+		entrySize   = osdExtendedOffset + osdExtendedSize
+		arrayOffset = 96
+		arraySize   = 3
+	)
+	view := make([]byte, arrayOffset+entrySize*arraySize)
+	copy(view, testHeader(entrySize, arrayOffset, arraySize))
+	layout, ok := decodeLayout(view, len(view))
+	if !ok {
+		t.Fatal("test layout was rejected")
+	}
+
+	sink := &sharedMemorySink{view: view, entry: -1}
+	writeCString(sink.entryBytes(layout, 0)[osdOwnerOffset:], osdOwnerSize, "MSIAfterburner")
+	entry := sink.entryBytes(layout, 1)
+	for i := range entry {
+		entry[i] = 0xa5
+	}
+	clear(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize])
+
+	if claimed := sink.findEntry(layout); claimed != 1 {
+		t.Fatalf("claimed entry = %d, want 1", claimed)
+	}
+	if got := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize]); got != ownerName {
+		t.Fatalf("claimed entry owner = %q, want %q", got, ownerName)
+	}
+	for i, value := range entry {
+		insideOwner := i >= osdOwnerOffset && i < osdOwnerOffset+len(ownerName)
+		if !insideOwner && value != 0 {
+			t.Fatalf("claimed entry byte %d = %#x, want 0", i, value)
+		}
+	}
+}
+
 func ownedEntryTestSink(t *testing.T) (*sharedMemorySink, sharedMemoryLayout, []byte) {
 	t.Helper()
 	const (

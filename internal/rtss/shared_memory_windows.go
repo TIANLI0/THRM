@@ -102,6 +102,7 @@ func (s *sharedMemorySink) findEntry(layout sharedMemoryLayout) int {
 			}
 			entry := s.entryBytes(layout, i)
 			if pass == 1 && readCString(entry[osdOwnerOffset:osdOwnerOffset+osdOwnerSize]) == "" {
+				clear(entry)
 				writeCString(entry[osdOwnerOffset:], osdOwnerSize, ownerName)
 				return i
 			}
