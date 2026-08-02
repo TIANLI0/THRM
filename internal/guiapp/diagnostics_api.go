@@ -13,16 +13,79 @@ import (
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
+	"github.com/TIANLI0/THRM/internal/types"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type diagnosticManifest struct {
-	CreatedAt string         `json:"createdAt"`
-	App       string         `json:"app"`
-	OS        string         `json:"os"`
-	Arch      string         `json:"arch"`
-	Debug     map[string]any `json:"debug"`
-	Config    AppConfig      `json:"config"`
+	CreatedAt string             `json:"createdAt"`
+	App       string             `json:"app"`
+	OS        string             `json:"os"`
+	Arch      string             `json:"arch"`
+	NumCPU    int                `json:"numCpu"`
+	Hardware  diagnosticHardware `json:"hardware"`
+	Debug     map[string]any     `json:"debug"`
+	Config    AppConfig          `json:"config"`
+}
+
+// diagnosticHardware 记录本机 CPU/GPU 的识别结果与读数：排查温控问题先要确认读到的是
+// 哪颗 CPU/哪块 GPU、哪些传感器可用、读数是否有效。
+type diagnosticHardware struct {
+	CPUModel string `json:"cpuModel"`
+	GPUModel string `json:"gpuModel"`
+
+	CPUTemp  int     `json:"cpuTemp"`
+	GPUTemp  int     `json:"gpuTemp"`
+	CPUPower float64 `json:"cpuPower"`
+	GPUPower float64 `json:"gpuPower"`
+	// 笔记本内置风扇转速，0 表示本机读不到。
+	CPUFanRPM int `json:"cpuFanRpm"`
+	GPUFanRPM int `json:"gpuFanRpm"`
+
+	ControlTemp   int    `json:"controlTemp"`
+	ControlSource string `json:"controlSource"`
+
+	SelectedGPUDevice string                       `json:"selectedGpuDevice"`
+	GPUDevices        []types.TemperatureGPUDevice `json:"gpuDevices"`
+	CPUSensors        []types.TemperatureSensor    `json:"cpuSensors"`
+	GPUSensors        []types.TemperatureSensor    `json:"gpuSensors"`
+	CPUPowerSensors   []types.PowerSensor          `json:"cpuPowerSensors"`
+	GPUPowerSensors   []types.PowerSensor          `json:"gpuPowerSensors"`
+
+	UpdateTime    int64          `json:"updateTime"`
+	BridgeOK      bool           `json:"bridgeOk"`
+	BridgeMessage string         `json:"bridgeMessage"`
+	CPUTempError  string         `json:"cpuTempError"`
+	Bridge        map[string]any `json:"bridge"`
+}
+
+// collectDiagnosticHardware 汇总 CPU/GPU 识别结果。核心不可用时照原样写入零值快照，
+// "读不到"本身就是诊断包需要保留的信息。
+func (a *App) collectDiagnosticHardware() diagnosticHardware {
+	temp := a.GetTemperature()
+	return diagnosticHardware{
+		CPUModel:          temp.CpuModel,
+		GPUModel:          temp.GpuModel,
+		CPUTemp:           temp.CPUTemp,
+		GPUTemp:           temp.GPUTemp,
+		CPUPower:          temp.CPUPower,
+		GPUPower:          temp.GPUPower,
+		CPUFanRPM:         temp.CPUFanRPM,
+		GPUFanRPM:         temp.GPUFanRPM,
+		ControlTemp:       temp.ControlTemp,
+		ControlSource:     temp.ControlSource,
+		SelectedGPUDevice: temp.SelectedGpuDevice,
+		GPUDevices:        temp.GpuDevices,
+		CPUSensors:        temp.CpuSensors,
+		GPUSensors:        temp.GpuSensors,
+		CPUPowerSensors:   temp.CpuPowerSensors,
+		GPUPowerSensors:   temp.GpuPowerSensors,
+		UpdateTime:        temp.UpdateTime,
+		BridgeOK:          temp.BridgeOk,
+		BridgeMessage:     temp.BridgeMsg,
+		CPUTempError:      temp.CPUTempError,
+		Bridge:            a.GetBridgeProgramStatus(),
+	}
 }
 
 func (a *App) ExportDiagnosticPackage() (string, error) {
@@ -56,7 +119,9 @@ func (a *App) ExportDiagnosticPackage() (string, error) {
 
 	manifest := diagnosticManifest{
 		CreatedAt: time.Now().Format(time.RFC3339), App: appmeta.AppName,
-		OS: gort.GOOS, Arch: gort.GOARCH, Debug: a.GetDebugInfo(), Config: a.GetConfig(),
+		OS: gort.GOOS, Arch: gort.GOARCH, NumCPU: gort.NumCPU(),
+		Hardware: a.collectDiagnosticHardware(),
+		Debug:    a.GetDebugInfo(), Config: a.GetConfig(),
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
