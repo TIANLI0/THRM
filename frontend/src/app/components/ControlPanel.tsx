@@ -1777,36 +1777,58 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             />
           </SettingRow>
 
-          <SettingRow
-            icon={<Gauge className={clsx('h-4 w-4', rtssConfig.enabled ? 'text-emerald-500' : '')} />}
-            title={t('controlPanel.system.rtssTitle')}
-            description={t('controlPanel.system.rtssDescription')}
-          >
-            <ToggleSwitch
-              enabled={rtssConfig.enabled}
-              onChange={handleRTSSEnabledChange}
-              loading={loadingStates.rtssEnabled}
-              size="sm"
-              color="green"
-            />
-          </SettingRow>
-
-          <SettingRow
-            icon={<RotateCw className="h-4 w-4" />}
-            title={t('controlPanel.system.rtssIntervalTitle')}
-            description={t('controlPanel.system.rtssIntervalDescription')}
-            disabled={!rtssConfig.enabled}
-          >
-            <div className="w-36">
-              <Select
-                value={rtssConfig.updateIntervalMs || 500}
-                onChange={(value: string | number) => handleRTSSIntervalChange(Number(value))}
-                options={rtssIntervalOptions}
-                disabled={!rtssConfig.enabled || loadingStates.rtssInterval}
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Gauge className={clsx('h-4 w-4', rtssConfig.enabled ? 'text-emerald-500' : '')} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-medium text-foreground">{t('controlPanel.system.rtssTitle')}</div>
+                  <div className="text-sm text-muted-foreground line-clamp-2">
+                    {t('controlPanel.system.rtssDescription')}
+                  </div>
+                </div>
+              </div>
+              <ToggleSwitch
+                enabled={rtssConfig.enabled}
+                onChange={handleRTSSEnabledChange}
+                loading={loadingStates.rtssEnabled}
                 size="sm"
+                color="green"
               />
             </div>
-          </SettingRow>
+
+            <div
+              aria-disabled={!rtssConfig.enabled}
+              className={clsx(
+                'mt-3 rounded-xl border border-border/70 bg-background/45 px-4 py-2 transition-opacity',
+                !rtssConfig.enabled && 'opacity-50',
+              )}
+            >
+              <div className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:gap-4">
+                <div className="min-w-0 flex-1 pr-2">
+                  <div className="flex items-center gap-2 text-sm text-foreground">
+                    <RotateCw className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>{t('controlPanel.system.rtssIntervalTitle')}</span>
+                  </div>
+                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {t('controlPanel.system.rtssIntervalDescription')}
+                  </div>
+                </div>
+
+                <div className="w-full md:ml-auto md:w-36 md:flex-none">
+                  <Select
+                    value={rtssConfig.updateIntervalMs || 500}
+                    onChange={(value: string | number) => handleRTSSIntervalChange(Number(value))}
+                    options={rtssIntervalOptions}
+                    disabled={!rtssConfig.enabled || loadingStates.rtssInterval}
+                    size="sm"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
 
           <SettingRow
             icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'auto') !== 'off' ? 'text-primary' : '')} />}
