@@ -78,7 +78,7 @@ func (s *sharedMemorySink) Update(rpm uint16) bool {
 	}
 
 	entry := s.entryBytes(layout, s.entry)
-	text := fmt.Sprintf("Cooler Fan: %d RPM", rpm)
+	text := formatOSDText(rpm)
 	if layout.version >= 0x00020007 && layout.entrySize >= osdExtendedOffset+osdExtendedSize {
 		writeCString(entry[osdExtendedOffset:], osdExtendedSize, text)
 	} else {
@@ -86,6 +86,12 @@ func (s *sharedMemorySink) Update(rpm uint16) bool {
 	}
 	atomic.AddUint32((*uint32)(unsafe.Pointer(&s.view[osdFrameOffset])), 1)
 	return true
+}
+
+func formatOSDText(rpm uint16) string {
+	// RTSS concatenates client slots into one hypertext stream. Reset styles so
+	// THRM does not inherit the preceding client's color or font size.
+	return fmt.Sprintf("<C><S>Cooler Fan: %d RPM", rpm)
 }
 
 func (s *sharedMemorySink) findEntry(layout sharedMemoryLayout) int {

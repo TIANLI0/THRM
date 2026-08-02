@@ -112,6 +112,12 @@ func TestCStringHelpers(t *testing.T) {
 	}
 }
 
+func TestFormatOSDTextResetsInheritedStyles(t *testing.T) {
+	if got, want := formatOSDText(1500), "<C><S>Cooler Fan: 1500 RPM"; got != want {
+		t.Fatalf("formatOSDText = %q, want %q", got, want)
+	}
+}
+
 func TestSharedMemorySinkOwnsAndReleasesNonPrimarySlot(t *testing.T) {
 	const (
 		entrySize   = osdExtendedOffset + osdExtendedSize
