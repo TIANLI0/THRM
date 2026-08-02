@@ -86,7 +86,6 @@ export interface AppConfig {
   cpuSensors?: string[];       // CPU 多传感器选择(多核平均)；为空则按 cpuSensor 单选/自动
   gpuSensor?: string;
   windowBlur?: 'auto' | 'on' | 'acrylic' | 'mica' | 'tabbed' | 'off'; // 窗口材质；on 为旧版兼容值
-  suspendFanOff?: boolean;     // 系统休眠时归零转速并关闭挡位灯/RGB
   configPath: string;          // 配置文件路径
   manualGear: string;          // 手动挡位设置
   manualLevel: string;         // 手动挡位级别(低中高)

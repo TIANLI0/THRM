@@ -27,6 +27,7 @@ import {
   FileArchive,
 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { Environment } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type ThemeMeta } from '../types/app';
@@ -459,6 +460,20 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [curveProfiles, setCurveProfiles] = useState<CurveProfile[]>([]);
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
+  // 平台取自 Wails 运行时而不是 userAgent：WebKitGTK 的 UA 里没有可靠的平台标识。
+  const [isWindowsPlatform, setIsWindowsPlatform] = useState(false);
+
+  useEffect(() => {
+    let disposed = false;
+    void Environment()
+      .then((env) => {
+        if (!disposed) setIsWindowsPlatform(env.platform === 'windows');
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const isBs1 = deviceModel === 'BS1';
@@ -789,17 +804,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       onConfigChange(newCfg);
     } catch { /* noop */ } finally {
       setLoading('windowBlur', false);
-    }
-  }, [config, onConfigChange]);
-
-  const handleSuspendFanOffChange = useCallback(async (enabled: boolean) => {
-    setLoading('suspendFanOff', true);
-    try {
-      const newCfg = types.AppConfig.createFrom({ ...config, suspendFanOff: enabled });
-      await apiService.updateConfig(newCfg);
-      onConfigChange(newCfg);
-    } catch { /* noop */ } finally {
-      setLoading('suspendFanOff', false);
     }
   }, [config, onConfigChange]);
 
@@ -1640,6 +1644,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             </div>
           </SettingRow>
 
+          {/* 窗口材质是 Windows 桌面合成器的效果，Linux 上没有对应实现 */}
+          {isWindowsPlatform && (
+            <SettingRow
+              icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'auto') !== 'off' ? 'text-primary' : '')} />}
+              title={t('controlPanel.system.blurTitle')}
+              description={t('controlPanel.system.blurDescription')}
+            >
+              <div className="w-36">
+                <Select
+                  value={((config as any).windowBlur === 'on' ? 'mica' : ((config as any).windowBlur || 'auto')) as string}
+                  onChange={(v: string | number) => handleWindowBlurChange(String(v))}
+                  options={windowBlurOptions}
+                  size="sm"
+                />
+              </div>
+            </SettingRow>
+          )}
+
           <SettingRow
             icon={<Languages className="h-4 w-4" />}
             title={t('controlPanel.system.languageTitle')}
@@ -1740,34 +1762,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             />
           </SettingRow>
 
-          <SettingRow
-            icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'auto') !== 'off' ? 'text-primary' : '')} />}
-            title={t('controlPanel.system.blurTitle')}
-            description={t('controlPanel.system.blurDescription')}
-          >
-            <div className="w-36">
-              <Select
-                value={((config as any).windowBlur === 'on' ? 'mica' : ((config as any).windowBlur || 'auto')) as string}
-                onChange={(v: string | number) => handleWindowBlurChange(String(v))}
-                options={windowBlurOptions}
-                size="sm"
-              />
-            </div>
-          </SettingRow>
-
-          <SettingRow
-            icon={<Power className={clsx('h-4 w-4', ((config as any).suspendFanOff ?? false) ? 'text-emerald-500' : '')} />}
-            title={t('controlPanel.system.suspendFanOffTitle')}
-            description={t('controlPanel.system.suspendFanOffDescription')}
-          >
-            <ToggleSwitch
-              enabled={(config as any).suspendFanOff ?? false}
-              onChange={handleSuspendFanOffChange}
-              loading={loadingStates.suspendFanOff}
-              size="sm"
-              color="green"
-            />
-          </SettingRow>
         </Section>
 
         {/* ═══════════ Offline tip ═══════════ */}

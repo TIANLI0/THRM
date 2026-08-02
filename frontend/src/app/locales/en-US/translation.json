@@ -796,9 +796,7 @@
       "reconnectDescription": "Continue using the app configuration after reconnecting",
       "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects",
       "blurTitle": "Window material",
-      "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart.",
-      "suspendFanOffTitle": "Power off on sleep",
-      "suspendFanOffDescription": "When the system sleeps or hibernates, set the fan to 0 RPM and turn off the gear light and RGB."
+      "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart."
     },
     "offline": {
       "message": "Device is not connected. Some features are unavailable."

@@ -795,9 +795,7 @@
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
       "blurTitle": "ウィンドウ素材",
-      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。",
-      "suspendFanOffTitle": "スリープ時に停止",
-      "suspendFanOffDescription": "システムがスリープ/休止状態になると、ファンを 0 RPM にし、ギアライトと RGB をオフにします。"
+      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。"
     },
     "offline": {
       "message": "デバイスが接続されていないため、一部機能は利用できません"

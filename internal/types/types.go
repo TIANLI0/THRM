@@ -561,7 +561,6 @@ type AppConfig struct {
 	CpuSensors                       []string                  `json:"cpuSensors"`                       // CPU 多传感器选择(多核平均): 为空则按 cpuSensor 单选/自动
 	GpuSensor                        string                    `json:"gpuSensor"`                        // GPU 传感器选择: auto 或传感器 key
 	WindowBlur                       string                    `json:"windowBlur"`                       // 窗口材质: auto/acrylic/mica/tabbed/off；兼容旧值 on
-	SuspendFanOff                    bool                      `json:"suspendFanOff"`                    // 系统休眠/睡眠时自动归零转速并关闭挡位灯与 RGB
 	ConfigPath                       string                    `json:"configPath"`                       // 配置文件路径
 	ManualGear                       string                    `json:"manualGear"`                       // 手动挡位设置
 	ManualLevel                      string                    `json:"manualLevel"`                      // 手动挡位级别(低中高)
