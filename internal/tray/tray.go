@@ -16,8 +16,15 @@ import (
 const (
 	// trayAutoStartSettleDelay 自启动首次注册托盘前，要求任务栏通知区域持续稳定的时长。
 	trayAutoStartSettleDelay = 3 * time.Second
+	// trayFirstRegisterSettleDelay 非自启动的首次注册所要求的稳定时长。看门狗重启、
+	// GUI 首次拉起核心也可能落在登录初期，只是通常已晚于登录高峰，等待取得更短。
+	trayFirstRegisterSettleDelay = 1 * time.Second
 	// trayAutoStartSettleTimeout 等待通知区域稳定的最长时间，超时后仍会尝试注册以免永不显示。
 	trayAutoStartSettleTimeout = 25 * time.Second
+	// trayLoginPhaseWindow 开机后视为登录阶段的时长；超过它才启动的实例不再等待稳定。
+	trayLoginPhaseWindow = 3 * time.Minute
+	// trayNotifyAreaWatchWindow 注册图标后继续监视通知区域重建的时长，过后交给定期健康检查。
+	trayNotifyAreaWatchWindow = 30 * time.Second
 	// trayReadyRecoveryDelay is the grace period before rebuilding a systray
 	// instance that is initialized but never becomes ready.
 	trayReadyRecoveryDelay = 75 * time.Second
@@ -252,19 +259,30 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 		return 0
 	}
 
-	// 开机自启动时外壳窗口可能创建很早，但通知区域尚未稳定，过早注册会导致图标被
-	// 静默丢弃。仅对首次注册（开机阶段）追加稳定等待；后续因 Explorer 重启等触发的
-	// 重建无需再延时。
-	if atomic.AddInt32(&m.instanceCount, 1) == 1 && m.isAutoStartLaunch() {
-		m.logInfo("自启动模式：等待任务栏通知区域稳定后再注册系统托盘")
-		waitForTraySettle(m.done, trayAutoStartSettleDelay, trayAutoStartSettleTimeout)
-		select {
-		case <-m.done:
-			close(instanceDone)
-			return 0
-		default:
+	// 外壳窗口可能创建得很早，但通知区域尚未稳定，过早注册会让图标被静默丢弃。
+	// 首次注册一律追加稳定等待（自启动等更久）；后续由 Explorer 重启等触发的重建
+	// 已经晚于登录高峰，systray 自己会响应 TaskbarCreated，无需再延时。
+	if atomic.AddInt32(&m.instanceCount, 1) == 1 {
+		settle := trayFirstRegisterSettleDelay
+		if m.isAutoStartLaunch() {
+			settle = trayAutoStartSettleDelay
 		}
-		m.logInfo("任务栏通知区域已就绪，开始注册系统托盘")
+		// 开机很久之后才启动时任务栏早已稳定，再等只是延后图标出现；
+		// 万一之后仍被重建，watchNotifyAreaRebuild 会补上。
+		if systemUptime() > trayLoginPhaseWindow {
+			settle = 0
+		}
+		if settle > 0 {
+			m.logInfo("等待任务栏通知区域稳定 %v 后再注册系统托盘", settle)
+			waitForTraySettle(m.done, settle, trayAutoStartSettleTimeout)
+			select {
+			case <-m.done:
+				close(instanceDone)
+				return 0
+			default:
+			}
+			m.logInfo("任务栏通知区域已就绪，开始注册系统托盘")
+		}
 	}
 
 	runtime.LockOSThread()
@@ -348,6 +366,49 @@ func (m *Manager) onTrayReady() {
 
 	// 启动托盘健康监控（定期刷新图标以应对 Explorer 重启等）
 	go m.startIconHealthMonitor(instanceDone)
+
+	// 盯住注册后的一小段时间：通知区域若在此期间被重建，立刻补一次图标。
+	go m.watchNotifyAreaRebuild(instanceDone, notifyAreaWindow())
+}
+
+// watchNotifyAreaRebuild 在注册图标后监视通知区域是否被重建，重建后立即补加图标。
+//
+// systray 靠 Explorer 广播的 TaskbarCreated 自行重添，但图标加到一个随即被销毁的
+// 通知区域上、广播又早于我们建窗时，既收不到广播图标也已经丢了。此时只有句柄变化
+// 能反映出来，比等定期健康检查快得多。
+func (m *Manager) watchNotifyAreaRebuild(instanceDone <-chan struct{}, registeredAt uintptr) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.logError("通知区域监视协程发生panic: %v", r)
+		}
+	}()
+
+	if registeredAt == 0 {
+		return // 非 Windows，或注册时通知区域已消失（健康检查会兜住）
+	}
+
+	deadline := time.Now().Add(trayNotifyAreaWatchWindow)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-instanceDone:
+			return
+		case <-m.done:
+			return
+		case <-ticker.C:
+			current := notifyAreaWindow()
+			if current != 0 && current != registeredAt {
+				m.logInfo("检测到任务栏通知区域已重建，重新添加托盘图标")
+				registeredAt = current
+				m.refreshTrayIcon()
+			}
+			if time.Now().After(deadline) {
+				return
+			}
+		}
+	}
 }
 
 // setupIcon 设置托盘图标
