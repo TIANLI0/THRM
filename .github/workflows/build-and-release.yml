@@ -341,12 +341,13 @@ jobs:
           cat > "$PKGROOT/usr/share/applications/thrm.desktop" << 'EOF'
           [Desktop Entry]
           Type=Application
-          Name=THRM Fan Control
+          Name=THRM
           Comment=Flydigi BS Series Fan Controller
           Exec=/usr/bin/thrm
           Icon=thrm
           Terminal=false
           Categories=Utility;
+          StartupWMClass=thrm
           EOF
 
           install -d "$PKGROOT/DEBIAN"
@@ -359,7 +360,7 @@ jobs:
           Depends: libgtk-3-0, libwebkit2gtk-4.1-0, libhidapi-hidraw0
           Recommends: bluez
           Maintainer: TIANLI0 <wutianli@tianli0.top>
-          Description: THRM Fan Control
+          Description: THRM
            Flydigi BS series cooler and multi-brand fan controller.
           EOF
 
@@ -368,8 +369,14 @@ jobs:
           set -e
           if command -v udevadm >/dev/null 2>&1; then
             udevadm control --reload-rules || true
-            udevadm trigger || true
+            udevadm trigger --subsystem-match=usb --subsystem-match=hidraw || true
           fi
+          # The hidraw rules fall back to GROUP="input" because uaccess only covers an
+          # active local seat: Bluetooth HID hotplug and non-seat sessions (SSH, user
+          # services) get no ACL. Package scripts must not edit user groups, so tell
+          # the admin what to run.
+          echo "THRM: for Bluetooth HID access, add your user to the input group:"
+          echo '  sudo usermod -aG input $USER   # re-login afterwards'
           exit 0
           EOF
           chmod 0755 "$PKGROOT/DEBIAN/postinst"
