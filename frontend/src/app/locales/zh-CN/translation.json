@@ -792,6 +792,8 @@
       "autoStartTitle": "开机自启动",
       "autoStartDescription": "Windows 启动时自动运行",
       "autoStartTip": "以管理员身份运行可避免每次 UAC 授权",
+      "autoStartTitleLinux": "开机自启动",
+      "autoStartDescriptionLinux": "登录桌面后自动运行（XDG 自启动项）",
       "reconnectTitle": "断连保持配置",
       "reconnectDescription": "重连后继续使用 APP 配置",
       "reconnectTip": "推荐开启，防止断连后进入设备默认模式",

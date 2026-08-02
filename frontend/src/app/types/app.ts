@@ -255,8 +255,8 @@ export interface DeviceSettings {
   rawFrames?: DeviceDebugFrame[];
 }
 
-// 自启动方式
-export type AutoStartMethod = 'none' | 'task_scheduler' | 'registry';
+// 自启动方式。task_scheduler/registry 为 Windows；desktop 为 Linux 的 XDG autostart 条目。
+export type AutoStartMethod = 'none' | 'task_scheduler' | 'registry' | 'desktop';
 
 // 自启动信息
 export interface AutoStartInfo {

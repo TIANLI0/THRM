@@ -791,6 +791,8 @@
       "autoStartTitle": "Windows 起動時に起動",
       "autoStartDescription": "Windows 起動時に自動実行します",
       "autoStartTip": "管理者権限で実行すると毎回の UAC 確認を省略できます",
+      "autoStartTitleLinux": "ログイン時に起動",
+      "autoStartDescriptionLinux": "デスクトップにログインすると自動実行します（XDG 自動起動エントリ）",
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",

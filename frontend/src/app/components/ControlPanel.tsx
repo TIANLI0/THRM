@@ -632,12 +632,19 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const handleWindowsAutoStartChange = useCallback(async (enabled: boolean) => {
     setLoading('windowsAutoStart', true);
     try {
-      const isAdmin = await apiService.isRunningAsAdmin();
-      if (enabled) await apiService.setAutoStartWithMethod(true, isAdmin ? 'task_scheduler' : 'registry');
-      else await apiService.setAutoStartWithMethod(false, '');
+      if (enabled) {
+        // 注册表/计划任务只有 Windows 有；Linux 走 XDG autostart 条目。
+        let method = 'desktop';
+        if (isWindowsPlatform) {
+          method = (await apiService.isRunningAsAdmin()) ? 'task_scheduler' : 'registry';
+        }
+        await apiService.setAutoStartWithMethod(true, method);
+      } else {
+        await apiService.setAutoStartWithMethod(false, '');
+      }
       onConfigChange(types.AppConfig.createFrom({ ...config, windowsAutoStart: enabled }));
     } catch (e) { toast.error(t('controlPanel.alerts.autoStartFailed', { error: getErrorMessage(e) })); } finally { setLoading('windowsAutoStart', false); }
-  }, [config, onConfigChange, t]);
+  }, [config, onConfigChange, isWindowsPlatform, t]);
 
   const handleIgnoreDeviceOnReconnectChange = useCallback(async (enabled: boolean) => {
     try {
@@ -1735,9 +1742,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
           <SettingRow
             icon={<Monitor className={clsx('h-4 w-4', config.windowsAutoStart ? 'text-emerald-500' : '')} />}
-            title={t('controlPanel.system.autoStartTitle')}
-            description={t('controlPanel.system.autoStartDescription')}
-            tip={t('controlPanel.system.autoStartTip')}
+            title={isWindowsPlatform ? t('controlPanel.system.autoStartTitle') : t('controlPanel.system.autoStartTitleLinux')}
+            description={isWindowsPlatform ? t('controlPanel.system.autoStartDescription') : t('controlPanel.system.autoStartDescriptionLinux')}
+            tip={isWindowsPlatform ? t('controlPanel.system.autoStartTip') : undefined}
           >
             <ToggleSwitch
               enabled={config.windowsAutoStart}

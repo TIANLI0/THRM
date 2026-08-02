@@ -792,6 +792,8 @@
       "autoStartTitle": "Start with Windows",
       "autoStartDescription": "Run automatically when Windows starts",
       "autoStartTip": "Running as administrator avoids a UAC prompt each time",
+      "autoStartTitleLinux": "Start on login",
+      "autoStartDescriptionLinux": "Run automatically after you log in to the desktop (XDG autostart entry)",
       "reconnectTitle": "Keep config after reconnect",
       "reconnectDescription": "Continue using the app configuration after reconnecting",
       "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects",
