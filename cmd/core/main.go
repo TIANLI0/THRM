@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,9 +9,6 @@ import (
 
 	"github.com/TIANLI0/THRM/internal/coreapp"
 )
-
-//go:embed icon.ico
-var iconData []byte
 
 // idleCoreGCPercent 收紧核心进程的 GC 触发阈值。
 //
