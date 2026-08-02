@@ -348,8 +348,8 @@ type TemperatureData struct {
 	// CPU 温度只能由 PawnIO 读取，没有可信的替代来源，因此读不到时必须明确告知用户，
 	// 而不是留一个没有解释的空值。GPU 正常时 BridgeOk 仍为 true，该字段独立生效。
 	CPUTempError string `json:"cpuTempError"`
-	CPUFanRPM         int                    `json:"cpuFanRpm"`         // 笔记本内置 CPU 风扇转速（0=不可用）
-	GPUFanRPM         int                    `json:"gpuFanRpm"`         // 笔记本内置 GPU 风扇转速（0=不可用）
+	CPUFanRPM    int    `json:"cpuFanRpm"` // 笔记本内置 CPU 风扇转速（0=不可用）
+	GPUFanRPM    int    `json:"gpuFanRpm"` // 笔记本内置 GPU 风扇转速（0=不可用）
 }
 
 // TemperatureHistoryPoint CPU/GPU 温度历史点。
@@ -393,6 +393,25 @@ const (
 	TimelineKeySystemSuspended    = "fanCurve.history.timeline.systemSuspended"
 	TimelineKeyCoreStarted        = "fanCurve.history.timeline.coreStarted"
 )
+
+// 温度历史后台保留时长的取值范围。放在 types 而非 temperature 包：配置默认值与归一化
+// 都要用到它，而 temperature 反过来依赖 types。
+const (
+	DefaultTemperatureHistoryRetentionHours = 1
+	MaxTemperatureHistoryRetentionHours     = 24
+)
+
+// NormalizeTemperatureHistoryRetentionHours 把保留时长夹到合法区间；
+// 0（旧配置文件缺少该字段时的零值）按默认处理。
+func NormalizeTemperatureHistoryRetentionHours(hours int) int {
+	if hours < 1 {
+		return DefaultTemperatureHistoryRetentionHours
+	}
+	if hours > MaxTemperatureHistoryRetentionHours {
+		return MaxTemperatureHistoryRetentionHours
+	}
+	return hours
+}
 
 // TemperatureHistoryPayload 温度历史返回载荷。
 type TemperatureHistoryPayload struct {
@@ -917,26 +936,27 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		Brightness:              100,
 		TempUpdateRate:          2,
 		TempSampleCount:         1,
-		TempSource:              defaultTempSelection.TempSource,
-		GpuDevice:               defaultTempSelection.GpuDevice,
-		CpuSensor:               defaultTempSelection.CpuSensor,
-		CpuSensors:              nil,
-		GpuSensor:               defaultTempSelection.GpuSensor,
-		WindowBlur:              WindowBlurAuto,
-		SuspendFanOff:           false,
-		ConfigPath:              "",
-		ManualGear:              "标准",
-		ManualLevel:             "中",
-		DebugMode:               false,
-		GuiMonitoring:           true,
-		CustomSpeedEnabled:      false,
-		CustomSpeedRPM:          2000,
-		IgnoreDeviceOnReconnect: true, // 默认开启，防止断连后误判用户手动切换
-		SpeedAvoidance:          GetDefaultSpeedAvoidanceConfig(),
-		TimeCurveSchedule:       GetDefaultTimeCurveScheduleConfig(),
-		SmartControl:            GetDefaultSmartControlConfig(defaultCurve),
-		LightStrip:              GetDefaultLightStripConfig(),
-		LegionFnQ:               GetDefaultLegionFnQConfig(),
-		LegionFnQSupport:        LegionFnQSupportCache{},
+		// 显式写入默认值，避免新装配置文件里出现一个非法的 0。
+		TemperatureHistoryRetentionHours: DefaultTemperatureHistoryRetentionHours,
+		TempSource:                       defaultTempSelection.TempSource,
+		GpuDevice:                        defaultTempSelection.GpuDevice,
+		CpuSensor:                        defaultTempSelection.CpuSensor,
+		CpuSensors:                       nil,
+		GpuSensor:                        defaultTempSelection.GpuSensor,
+		WindowBlur:                       WindowBlurAuto,
+		ConfigPath:                       "",
+		ManualGear:                       "标准",
+		ManualLevel:                      "中",
+		DebugMode:                        false,
+		GuiMonitoring:                    true,
+		CustomSpeedEnabled:               false,
+		CustomSpeedRPM:                   2000,
+		IgnoreDeviceOnReconnect:          true, // 默认开启，防止断连后误判用户手动切换
+		SpeedAvoidance:                   GetDefaultSpeedAvoidanceConfig(),
+		TimeCurveSchedule:                GetDefaultTimeCurveScheduleConfig(),
+		SmartControl:                     GetDefaultSmartControlConfig(defaultCurve),
+		LightStrip:                       GetDefaultLightStripConfig(),
+		LegionFnQ:                        GetDefaultLegionFnQConfig(),
+		LegionFnQSupport:                 LegionFnQSupportCache{},
 	}
 }

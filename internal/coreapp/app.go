@@ -127,13 +127,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	tempReader := temperature.NewReader(bridgeMgr, customLogger)
 	configMgr := config.NewManager(installDir, customLogger)
 	historyPath := filepath.Join(installDir, temperature.DefaultHistoryRelativePath)
-	historyRetentionHours := configMgr.Get().TemperatureHistoryRetentionHours
-	if historyRetentionHours < 1 {
-		historyRetentionHours = temperature.DefaultHistoryRetentionHours
-	}
-	if historyRetentionHours > temperature.MaxHistoryRetentionHours {
-		historyRetentionHours = temperature.MaxHistoryRetentionHours
-	}
+	historyRetentionHours := types.NormalizeTemperatureHistoryRetentionHours(configMgr.Get().TemperatureHistoryRetentionHours)
 	historyPointsPerHour := int(time.Hour / temperature.DefaultHistorySampleInterval)
 	tempHistory := temperature.NewHistoryRecorder(historyPath, historyPointsPerHour*historyRetentionHours, temperature.DefaultHistorySampleInterval, customLogger)
 	trayMgr := tray.NewManager(customLogger, iconData)

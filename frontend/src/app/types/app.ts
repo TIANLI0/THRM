@@ -80,6 +80,8 @@ export interface AppConfig {
   tempUpdateRate: number;      // 温度更新频率(秒)
   tempSampleCount?: number;
   tempSource?: 'max' | 'cpu' | 'gpu';
+  temperatureHistoryRetentionHours?: number; // 后台温度历史保留时长(小时)，由专用接口维护
+
   cpuSensor?: string;
   cpuSensors?: string[];       // CPU 多传感器选择(多核平均)；为空则按 cpuSensor 单选/自动
   gpuSensor?: string;

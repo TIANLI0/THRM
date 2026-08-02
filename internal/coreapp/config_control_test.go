@@ -1,10 +1,50 @@
 package coreapp
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/TIANLI0/THRM/internal/config"
+	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
+
+// UpdateConfig 不得回退保留时长：GUI 手上的配置副本在通过专用接口改过保留时长之后
+// 仍然是旧值，若整份配置提交时采信该字段，用户的选择会在下次核心启动时静默丢失。
+func TestUpdateConfigKeepsHistoryRetentionSelection(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("USERPROFILE", tmpDir)
+
+	const selectedHours = 6
+	pointsPerHour := int(60 * 60 / temperature.DefaultHistorySampleInterval.Seconds())
+	app := &CoreApp{
+		configManager: config.NewManager(tmpDir, nil),
+		tempHistory: temperature.NewHistoryRecorder(
+			filepath.Join(tmpDir, "history.bin"),
+			pointsPerHour*selectedHours,
+			temperature.DefaultHistorySampleInterval,
+			nil,
+		),
+	}
+
+	staleCfg := types.GetDefaultConfig(false)
+	staleCfg.TemperatureHistoryRetentionHours = types.DefaultTemperatureHistoryRetentionHours
+	if err := app.UpdateConfig(staleCfg); err != nil {
+		t.Fatalf("UpdateConfig failed: %v", err)
+	}
+
+	if got := app.configManager.Get().TemperatureHistoryRetentionHours; got != selectedHours {
+		t.Fatalf("retention hours should stay at the recorder's %d, got %d", selectedHours, got)
+	}
+}
+
+func TestGetDefaultConfigHasValidHistoryRetention(t *testing.T) {
+	got := types.GetDefaultConfig(false).TemperatureHistoryRetentionHours
+	if got != types.DefaultTemperatureHistoryRetentionHours {
+		t.Fatalf("default config retention hours = %d, want %d", got, types.DefaultTemperatureHistoryRetentionHours)
+	}
+}
 
 func TestNormalizeLightStripConfig_FillsDefaults(t *testing.T) {
 	emptyCfg := types.LightStripConfig{}
