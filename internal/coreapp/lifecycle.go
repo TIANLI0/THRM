@@ -100,6 +100,14 @@ func (a *CoreApp) Start() error {
 	}
 	a.deviceManager.SetDebugCapture(cfg.DebugMode)
 
+	// 旧版本创建的自启动任务继承了"电池供电时不启动/满 72 小时后终止"两个默认值，
+	// 先就地升级，再同步开关状态。
+	if upgraded, err := a.autostartManager.EnsureAutoStartTaskHealthy(); err != nil {
+		a.logError("升级自启动任务定义失败: %v", err)
+	} else if upgraded {
+		a.logInfo("已升级自启动任务定义")
+	}
+
 	// 检查并同步Windows自启动状态
 	a.logInfo("检查Windows自启动状态")
 	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()
