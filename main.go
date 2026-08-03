@@ -17,6 +17,16 @@ import (
 var assets embed.FS
 
 func main() {
+	// WebKitGTK hardware acceleration can hit NVIDIA's Wayland explicit-sync
+	// path without setting an acquire point, which makes KWin terminate the
+	// client with a protocol error. Keep dmabuf/GPU rendering enabled, but use
+	// implicit sync unless the user has explicitly chosen otherwise.
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		if _, configured := os.LookupEnv("__NV_DISABLE_EXPLICIT_SYNC"); !configured {
+			_ = os.Setenv("__NV_DISABLE_EXPLICIT_SYNC", "1")
+		}
+	}
+
 	if !guiapp.EnsureCoreServiceRunning() {
 		println("警告：无法启动核心服务，GUI 将以有限功能模式运行")
 	}
