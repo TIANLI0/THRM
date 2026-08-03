@@ -19,15 +19,21 @@ const (
 	mapReadWrite     = 0x0002 | 0x0004
 	maxViewSize      = 64 << 20
 
-	headerSize        = 40
-	busyOffset        = 36
-	osdFrameOffset    = 32
-	osdTextOffset     = 0
-	osdOwnerOffset    = 256
-	osdExtendedOffset = 512
-	osdTextSize       = 256
-	osdOwnerSize      = 256
-	osdExtendedSize   = 4096
+	headerSize         = 40
+	busyOffset         = 36
+	osdFrameOffset     = 32
+	osdTextOffset      = 0
+	osdOwnerOffset     = 256
+	osdExtendedOffset  = 512
+	osdTextSize        = 256
+	osdOwnerSize       = 256
+	osdExtendedSize    = 4096
+	osdBufferSize      = 262144
+	osdExtended2Offset = osdExtendedOffset + osdExtendedSize + osdBufferSize
+	osdExtended2Size   = 32768
+
+	rtssVersionExtended  = 0x00020007
+	rtssVersionExtended2 = 0x00020014
 
 	releaseLockAttempts   = 10
 	releaseLockRetryDelay = time.Millisecond
@@ -78,14 +84,20 @@ func (s *sharedMemorySink) Update(rpm uint16) bool {
 	}
 
 	entry := s.entryBytes(layout, s.entry)
-	text := formatOSDText(rpm)
-	if layout.version >= 0x00020007 && layout.entrySize >= osdExtendedOffset+osdExtendedSize {
-		writeCString(entry[osdExtendedOffset:], osdExtendedSize, text)
-	} else {
-		writeCString(entry[osdTextOffset:], osdTextSize, text)
-	}
+	writeOSDText(entry, layout.version, formatOSDText(rpm))
 	atomic.AddUint32((*uint32)(unsafe.Pointer(&s.view[osdFrameOffset])), 1)
 	return true
+}
+
+func writeOSDText(entry []byte, version uint32, text string) {
+	switch {
+	case version >= rtssVersionExtended2 && len(entry) >= osdExtended2Offset+osdExtended2Size:
+		writeCString(entry[osdExtended2Offset:], osdExtended2Size, text)
+	case version >= rtssVersionExtended && len(entry) >= osdExtendedOffset+osdExtendedSize:
+		writeCString(entry[osdExtendedOffset:], osdExtendedSize, text)
+	default:
+		writeCString(entry[osdTextOffset:], osdTextSize, text)
+	}
 }
 
 func formatOSDText(rpm uint16) string {
@@ -95,20 +107,34 @@ func formatOSDText(rpm uint16) string {
 }
 
 func (s *sharedMemorySink) findEntry(layout sharedMemoryLayout) int {
-	for pass := 0; pass < 2; pass++ {
-		for i := 1; i < layout.arraySize; i++ {
-			if s.ownedEntry(layout, i) {
-				return i
-			}
-			entry := s.entryBytes(layout, i)
-			if pass == 1 && readCString(entry[osdOwnerOffset:osdOwnerOffset+osdOwnerSize]) == "" {
-				clear(entry)
-				writeCString(entry[osdOwnerOffset:], osdOwnerSize, ownerName)
-				return i
-			}
+	target := -1
+	for i := layout.arraySize - 1; i >= 1; i-- {
+		entry := s.entryBytes(layout, i)
+		owner := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize])
+		if owner == "" || owner == ownerName {
+			target = i
+			break
 		}
 	}
-	return -1
+	if target < 1 {
+		return -1
+	}
+
+	entry := s.entryBytes(layout, target)
+	clear(entry)
+	writeCString(entry[osdOwnerOffset:], osdOwnerSize, ownerName)
+	if !s.ownedEntry(layout, target) {
+		return -1
+	}
+
+	// A previous THRM process may have left an owned slot behind. Keep only the
+	// highest usable slot so OverlayEditor's final positioning tags render first.
+	for i := 1; i < layout.arraySize; i++ {
+		if i != target && s.ownedEntry(layout, i) {
+			clear(s.entryBytes(layout, i))
+		}
+	}
+	return target
 }
 
 func (s *sharedMemorySink) ownedEntry(layout sharedMemoryLayout, index int) bool {

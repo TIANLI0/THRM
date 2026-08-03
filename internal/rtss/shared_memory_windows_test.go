@@ -10,9 +10,13 @@ import (
 )
 
 func testHeader(entrySize, arrayOffset, arraySize uint32) []byte {
+	return testHeaderVersion(0x00020015, entrySize, arrayOffset, arraySize)
+}
+
+func testHeaderVersion(version, entrySize, arrayOffset, arraySize uint32) []byte {
 	header := make([]byte, headerSize)
 	binary.LittleEndian.PutUint32(header[0:4], rtssSignature)
-	binary.LittleEndian.PutUint32(header[4:8], 0x00020015)
+	binary.LittleEndian.PutUint32(header[4:8], version)
 	binary.LittleEndian.PutUint32(header[20:24], entrySize)
 	binary.LittleEndian.PutUint32(header[24:28], arrayOffset)
 	binary.LittleEndian.PutUint32(header[28:32], arraySize)
@@ -118,7 +122,133 @@ func TestFormatOSDTextResetsInheritedStyles(t *testing.T) {
 	}
 }
 
-func TestSharedMemorySinkOwnsAndReleasesNonPrimarySlot(t *testing.T) {
+func TestWriteOSDTextUsesVersionSpecificBuffer(t *testing.T) {
+	tests := []struct {
+		name    string
+		version uint32
+		size    int
+		offset  int
+		length  int
+	}{
+		{name: "v2.6 legacy", version: 0x00020006, size: osdExtended2Offset + osdExtended2Size, offset: osdTextOffset, length: osdTextSize},
+		{name: "v2.7 extended", version: rtssVersionExtended, size: osdExtended2Offset + osdExtended2Size, offset: osdExtendedOffset, length: osdExtendedSize},
+		{name: "v2.20 extended2", version: rtssVersionExtended2, size: osdExtended2Offset + osdExtended2Size, offset: osdExtended2Offset, length: osdExtended2Size},
+		{name: "v2.20 small entry fallback", version: rtssVersionExtended2, size: osdExtendedOffset + osdExtendedSize, offset: osdExtendedOffset, length: osdExtendedSize},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := make([]byte, tt.size)
+			writeOSDText(entry, tt.version, "Cooler Fan: 1500 RPM")
+			if got := readCString(entry[tt.offset : tt.offset+tt.length]); got != "Cooler Fan: 1500 RPM" {
+				t.Fatalf("OSD text = %q", got)
+			}
+		})
+	}
+}
+
+func newEntrySelectionTestSink(t *testing.T, arraySize int) (*sharedMemorySink, sharedMemoryLayout) {
+	t.Helper()
+	const (
+		entrySize   = osdExtendedOffset + osdExtendedSize
+		arrayOffset = 96
+	)
+	view := make([]byte, arrayOffset+entrySize*arraySize)
+	copy(view, testHeader(entrySize, arrayOffset, uint32(arraySize)))
+	layout, ok := decodeLayout(view, len(view))
+	if !ok {
+		t.Fatal("test layout was rejected")
+	}
+	return &sharedMemorySink{view: view, entry: -1}, layout
+}
+
+func setTestEntryOwner(sink *sharedMemorySink, layout sharedMemoryLayout, index int, owner string) {
+	writeCString(sink.entryBytes(layout, index)[osdOwnerOffset:], osdOwnerSize, owner)
+}
+
+func testEntryOwner(sink *sharedMemorySink, layout sharedMemoryLayout, index int) string {
+	entry := sink.entryBytes(layout, index)
+	return readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize])
+}
+
+func TestSharedMemorySinkSelectsHighestUsableSlot(t *testing.T) {
+	tests := []struct {
+		name   string
+		owners map[int]string
+		want   int
+	}{
+		{name: "all empty", want: 7},
+		{name: "overlay editor in low slot", owners: map[int]string{2: "RTSSOverlayEditor"}, want: 7},
+		{name: "highest occupied", owners: map[int]string{7: "HWiNFO"}, want: 6},
+		{name: "reuse highest THRM slot", owners: map[int]string{7: ownerName}, want: 7},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sink, layout := newEntrySelectionTestSink(t, 8)
+			setTestEntryOwner(sink, layout, 0, "MSIAfterburner")
+			for index, owner := range tt.owners {
+				setTestEntryOwner(sink, layout, index, owner)
+			}
+
+			if got := sink.findEntry(layout); got != tt.want {
+				t.Fatalf("claimed entry = %d, want %d", got, tt.want)
+			}
+			if got := testEntryOwner(sink, layout, tt.want); got != ownerName {
+				t.Fatalf("claimed entry owner = %q, want %q", got, ownerName)
+			}
+			if got := testEntryOwner(sink, layout, 0); got != "MSIAfterburner" {
+				t.Fatalf("primary entry owner = %q", got)
+			}
+		})
+	}
+}
+
+func TestSharedMemorySinkReusesOnlyAvailableOwnedSlot(t *testing.T) {
+	sink, layout := newEntrySelectionTestSink(t, 8)
+	for i := 1; i < layout.arraySize; i++ {
+		setTestEntryOwner(sink, layout, i, "foreign")
+	}
+	setTestEntryOwner(sink, layout, 2, ownerName)
+
+	if got := sink.findEntry(layout); got != 2 {
+		t.Fatalf("claimed entry = %d, want 2", got)
+	}
+}
+
+func TestSharedMemorySinkCleansDuplicateOwnedSlots(t *testing.T) {
+	sink, layout := newEntrySelectionTestSink(t, 8)
+	setTestEntryOwner(sink, layout, 2, ownerName)
+	setTestEntryOwner(sink, layout, 6, ownerName)
+	setTestEntryOwner(sink, layout, 7, "HWiNFO")
+
+	if got := sink.findEntry(layout); got != 6 {
+		t.Fatalf("claimed entry = %d, want 6", got)
+	}
+	if got := testEntryOwner(sink, layout, 2); got != "" {
+		t.Fatalf("duplicate entry owner = %q, want empty", got)
+	}
+	if got := testEntryOwner(sink, layout, 6); got != ownerName {
+		t.Fatalf("selected entry owner = %q, want %q", got, ownerName)
+	}
+}
+
+func TestSharedMemorySinkDoesNotClaimForeignOrPrimarySlots(t *testing.T) {
+	sink, layout := newEntrySelectionTestSink(t, 8)
+	setTestEntryOwner(sink, layout, 0, ownerName)
+	for i := 1; i < layout.arraySize; i++ {
+		setTestEntryOwner(sink, layout, i, "foreign")
+	}
+
+	if got := sink.findEntry(layout); got != -1 {
+		t.Fatalf("claimed entry = %d, want -1", got)
+	}
+	if got := testEntryOwner(sink, layout, 0); got != ownerName {
+		t.Fatalf("primary entry owner = %q, want %q", got, ownerName)
+	}
+}
+
+func TestSharedMemorySinkOwnsAndReleasesHighestNonPrimarySlot(t *testing.T) {
 	const (
 		entrySize   = osdExtendedOffset + osdExtendedSize
 		arrayOffset = 96
@@ -133,18 +263,18 @@ func TestSharedMemorySinkOwnsAndReleasesNonPrimarySlot(t *testing.T) {
 
 	sink := &sharedMemorySink{view: view, entry: -1}
 	writeCString(sink.entryBytes(layout, 0)[osdOwnerOffset:], osdOwnerSize, "MSIAfterburner")
-	if entry := sink.findEntry(layout); entry != 1 {
-		t.Fatalf("claimed entry = %d, want 1", entry)
+	if entry := sink.findEntry(layout); entry != 3 {
+		t.Fatalf("claimed entry = %d, want 3", entry)
 	}
 	if got := readCString(sink.entryBytes(layout, 0)[osdOwnerOffset:]); got != "MSIAfterburner" {
 		t.Fatalf("primary entry owner = %q", got)
 	}
-	if got := readCString(sink.entryBytes(layout, 1)[osdOwnerOffset:]); got != ownerName {
+	if got := readCString(sink.entryBytes(layout, 3)[osdOwnerOffset:]); got != ownerName {
 		t.Fatalf("claimed entry owner = %q, want %q", got, ownerName)
 	}
 
-	sink.entry = 1
-	entry := sink.entryBytes(layout, 1)
+	sink.entry = 3
+	entry := sink.entryBytes(layout, 3)
 	writeCString(entry[osdExtendedOffset:], osdExtendedSize, "Cooler Fan: 1500 RPM")
 	sink.releaseEntry(layout)
 	if got := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize]); got != "" {
@@ -173,14 +303,14 @@ func TestSharedMemorySinkClearsUnownedSlotBeforeClaiming(t *testing.T) {
 
 	sink := &sharedMemorySink{view: view, entry: -1}
 	writeCString(sink.entryBytes(layout, 0)[osdOwnerOffset:], osdOwnerSize, "MSIAfterburner")
-	entry := sink.entryBytes(layout, 1)
+	entry := sink.entryBytes(layout, 2)
 	for i := range entry {
 		entry[i] = 0xa5
 	}
 	clear(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize])
 
-	if claimed := sink.findEntry(layout); claimed != 1 {
-		t.Fatalf("claimed entry = %d, want 1", claimed)
+	if claimed := sink.findEntry(layout); claimed != 2 {
+		t.Fatalf("claimed entry = %d, want 2", claimed)
 	}
 	if got := readCString(entry[osdOwnerOffset : osdOwnerOffset+osdOwnerSize]); got != ownerName {
 		t.Fatalf("claimed entry owner = %q, want %q", got, ownerName)
@@ -263,7 +393,7 @@ func TestSharedMemorySinkReleaseRetryIsBounded(t *testing.T) {
 	}
 }
 
-func TestSharedMemorySinkReusesOwnedSlot(t *testing.T) {
+func TestSharedMemorySinkMigratesOwnedSlotToHighestAvailable(t *testing.T) {
 	const (
 		entrySize   = osdExtendedOffset + osdExtendedSize
 		arrayOffset = 96
@@ -278,7 +408,10 @@ func TestSharedMemorySinkReusesOwnedSlot(t *testing.T) {
 
 	sink := &sharedMemorySink{view: view, entry: -1}
 	writeCString(sink.entryBytes(layout, 2)[osdOwnerOffset:], osdOwnerSize, ownerName)
-	if entry := sink.findEntry(layout); entry != 2 {
-		t.Fatalf("reused entry = %d, want 2", entry)
+	if entry := sink.findEntry(layout); entry != 3 {
+		t.Fatalf("migrated entry = %d, want 3", entry)
+	}
+	if got := readCString(sink.entryBytes(layout, 2)[osdOwnerOffset:]); got != "" {
+		t.Fatalf("old entry owner = %q, want empty", got)
 	}
 }
