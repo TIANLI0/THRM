@@ -38,43 +38,46 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 优先尝试从默认目录加载配置
-	defaultConfigDir := m.GetDefaultConfigDir()
-	defaultConfigPath := filepath.Join(defaultConfigDir, "config.json")
-	legacyConfigPath := filepath.Join(m.GetLegacyConfigDir(), "config.json")
-
-	installConfigPath := filepath.Join(m.installDir, "config", "config.json")
+	defaultConfigPath := configFilePath(m.GetDefaultConfigDir())
 
 	m.logInfo("尝试从默认目录加载配置: %s", defaultConfigPath)
 
-	// 先尝试从默认目录加载
-	if m.tryLoadFromPathLocked(defaultConfigPath) {
+	if defaultConfigPath != "" && m.tryLoadFromPathLocked(defaultConfigPath) {
 		m.config.ConfigPath = defaultConfigPath
 		m.logInfo("从默认目录加载配置成功: %s", defaultConfigPath)
 		m.bumpRevisionLocked()
 		return m.config.Clone()
 	}
 
-	m.logInfo("从默认目录加载配置失败，尝试从旧目录加载: %s", legacyConfigPath)
-
-	if m.tryLoadFromPathLocked(legacyConfigPath) {
-		m.config.ConfigPath = defaultConfigPath
-		m.logInfo("从旧目录加载配置成功，将迁移到新目录: %s", legacyConfigPath)
-		if err := m.saveLocked(); err != nil {
-			m.logError("迁移旧目录配置失败: %v", err)
+	for _, legacyConfigDir := range m.GetLegacyConfigDirs() {
+		legacyConfigPath := configFilePath(legacyConfigDir)
+		m.logInfo("尝试从旧目录加载配置: %s", legacyConfigPath)
+		if m.tryLoadFromPathLocked(legacyConfigPath) {
+			m.config.ConfigPath = defaultConfigPath
+			m.logInfo("从旧目录加载配置成功，将迁移到新目录: %s", legacyConfigPath)
+			if err := m.saveLocked(); err != nil {
+				m.logError("迁移旧目录配置失败: %v", err)
+			}
+			m.bumpRevisionLocked()
+			return m.config.Clone()
 		}
-		m.bumpRevisionLocked()
-		return m.config.Clone()
 	}
 
-	m.logInfo("从默认目录加载配置失败，尝试从安装目录加载: %s", installConfigPath)
-
-	// 默认目录失败，尝试从安装目录加载
-	if m.tryLoadFromPathLocked(installConfigPath) {
-		m.config.ConfigPath = installConfigPath
-		m.logInfo("从安装目录加载配置成功: %s", installConfigPath)
-		m.bumpRevisionLocked()
-		return m.config.Clone()
+	// 只为旧版便携安装保留读取兼容。Linux 上即使读取成功，也会迁移到
+	// XDG_CONFIG_HOME，后续保存绝不会再写安装目录。
+	installConfigPath := configFilePath(filepath.Join(m.installDir, "config"))
+	if m.installDir != "" {
+		m.logInfo("尝试从安装目录加载旧配置: %s", installConfigPath)
+		if m.tryLoadFromPathLocked(installConfigPath) {
+			m.config.ConfigPath = defaultConfigPath
+			m.logInfo("从安装目录加载配置成功，将迁移到用户配置目录: %s", installConfigPath)
+			if err := m.saveLocked(); err != nil {
+				m.config.ConfigPath = installConfigPath
+				m.logError("迁移安装目录配置失败: %v", err)
+			}
+			m.bumpRevisionLocked()
+			return m.config.Clone()
+		}
 	}
 
 	m.logError("所有配置目录加载失败，使用默认配置")
@@ -233,43 +236,43 @@ func (m *Manager) Save() error {
 
 // saveLocked 保存配置（调用方需持有 m.mu 写锁）
 func (m *Manager) saveLocked() error {
-	// 首先尝试保存到默认目录
 	defaultConfigDir := m.GetDefaultConfigDir()
-	defaultConfigPath := filepath.Join(defaultConfigDir, "config.json")
+	defaultConfigPath := configFilePath(defaultConfigDir)
+
+	data, err := json.MarshalIndent(m.config, "", "  ")
+	if err != nil {
+		m.logError("序列化配置失败: %v", err)
+		return err
+	}
 
 	m.logDebug("尝试保存配置到默认目录: %s", defaultConfigPath)
 
-	// 确保默认配置目录存在
-	if err := os.MkdirAll(defaultConfigDir, 0755); err != nil {
+	var defaultSaveErr error
+	if defaultConfigDir == "" {
+		defaultSaveErr = fmt.Errorf("用户配置目录不可用")
+		m.logError("保存配置失败: %v", defaultSaveErr)
+	} else if err := os.MkdirAll(defaultConfigDir, 0755); err != nil {
+		defaultSaveErr = err
 		m.logError("创建默认配置目录失败: %v", err)
+	} else if err := os.WriteFile(defaultConfigPath, data, 0644); err != nil {
+		defaultSaveErr = err
+		m.logError("保存配置到默认目录失败: %v", err)
 	} else {
-		data, err := json.MarshalIndent(m.config, "", "  ")
-		if err != nil {
-			m.logError("序列化配置失败: %v", err)
-		} else {
-			if err := os.WriteFile(defaultConfigPath, data, 0644); err != nil {
-				m.logError("保存配置到默认目录失败: %v", err)
-			} else {
-				m.config.ConfigPath = defaultConfigPath
-				m.logInfo("配置保存到默认目录成功: %s", defaultConfigPath)
-				return nil
-			}
-		}
+		m.config.ConfigPath = defaultConfigPath
+		m.logInfo("配置保存到默认目录成功: %s", defaultConfigPath)
+		return nil
 	}
 
-	installConfigDir := filepath.Join(m.installDir, "config")
-	installConfigPath := filepath.Join(installConfigDir, "config.json")
+	installConfigDir := platformInstallConfigWriteDir(m.installDir)
+	if installConfigDir == "" {
+		return fmt.Errorf("保存配置到用户配置目录失败: %w", defaultSaveErr)
+	}
+	installConfigPath := configFilePath(installConfigDir)
 
 	m.logInfo("保存到默认目录失败，尝试保存到安装目录: %s", installConfigPath)
 
 	if err := os.MkdirAll(installConfigDir, 0755); err != nil {
 		m.logError("创建安装配置目录失败: %v", err)
-		return err
-	}
-
-	data, err := json.MarshalIndent(m.config, "", "  ")
-	if err != nil {
-		m.logError("序列化配置失败: %v", err)
 		return err
 	}
 
@@ -288,18 +291,34 @@ func (m *Manager) GetDefaultConfigDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		m.logError("获取用户主目录失败: %v", err)
-		return filepath.Join(m.installDir, "config")
+		homeDir = ""
 	}
 	return appmeta.UserConfigDir(homeDir)
 }
 
 // GetLegacyConfigDir 获取旧版本配置目录
 func (m *Manager) GetLegacyConfigDir() string {
+	dirs := m.GetLegacyConfigDirs()
+	if len(dirs) == 0 {
+		return ""
+	}
+	return dirs[0]
+}
+
+// GetLegacyConfigDirs 获取所有旧版本配置目录，按迁移优先级排序。
+func (m *Manager) GetLegacyConfigDirs() []string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(m.installDir, "config")
+		return nil
 	}
-	return appmeta.LegacyUserConfigDir(homeDir)
+	return appmeta.LegacyUserConfigDirs(homeDir)
+}
+
+func configFilePath(configDir string) string {
+	if configDir == "" {
+		return ""
+	}
+	return filepath.Join(configDir, "config.json")
 }
 
 // Get 获取当前配置（线程安全，返回深拷贝）

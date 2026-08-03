@@ -16,6 +16,7 @@ const (
 	LegacyBridgePipeName = "BS2PRO_TempBridge"
 	ConfigDirName        = ".thrm"
 	LegacyConfigDirName  = ".bs2pro-controller"
+	XDGDirName           = "thrm"
 	NotificationCacheDir = "THRM"
 	LegacyNotifyCacheDir = "BS2PRO-Controller"
 	ProtocolVersion      = "3.0"
@@ -40,10 +41,38 @@ func FirstExistingPath(paths []string) string {
 	return ""
 }
 
-func UserConfigDir(homeDir string) string {
-	return filepath.Join(homeDir, ConfigDirName)
-}
-
 func LegacyUserConfigDir(homeDir string) string {
 	return filepath.Join(homeDir, LegacyConfigDirName)
+}
+
+// LegacyUserConfigDirs returns old per-user configuration directories in
+// migration order. The current platform configuration directory is excluded.
+func LegacyUserConfigDirs(homeDir string) []string {
+	if homeDir == "" {
+		return nil
+	}
+
+	currentDir := filepath.Clean(UserConfigDir(homeDir))
+	candidates := []string{
+		filepath.Join(homeDir, ConfigDirName),
+		LegacyUserConfigDir(homeDir),
+	}
+	legacyDirs := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if candidate == currentDir {
+			continue
+		}
+		duplicate := false
+		for _, existing := range legacyDirs {
+			if existing == candidate {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			legacyDirs = append(legacyDirs, candidate)
+		}
+	}
+	return legacyDirs
 }

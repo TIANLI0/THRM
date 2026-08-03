@@ -139,6 +139,7 @@ func (a *App) ExportDiagnosticPackage() (string, error) {
 	for _, dir := range []string{filepath.Join(filepath.Dir(exe), "logs"), filepath.Join(filepath.Dir(exe), "bridge", "logs")} {
 		_ = addRecentDiagnosticLogs(zw, dir, 8)
 	}
+	_ = addPlatformDiagnosticLogs(zw)
 	if err := closeWithError(nil); err != nil {
 		return "", err
 	}

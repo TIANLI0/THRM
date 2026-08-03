@@ -1,0 +1,22 @@
+pkgbase = thrm-bin
+	pkgdesc = Flydigi BS-series laptop cooler controller (prebuilt)
+	pkgver = 3.6.3
+	pkgrel = 1
+	url = https://github.com/TIANLI0/THRM
+	arch = x86_64
+	license = MIT
+	depends = gdk-pixbuf2
+	depends = glib2
+	depends = glibc
+	depends = gtk3
+	depends = libx11
+	depends = libsoup3
+	depends = systemd-libs
+	depends = webkit2gtk-4.1
+	optdepends = bluez: BS1 BLE support
+	provides = thrm=3.6.3
+	conflicts = thrm
+	options = !strip
+	options = !debug
+
+pkgname = thrm-bin

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=THRM
+Comment=Flydigi BS Series Fan Controller
+Exec=/usr/bin/thrm
+Icon=thrm
+Terminal=false
+Categories=Utility;
+StartupWMClass=thrm

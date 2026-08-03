@@ -31,7 +31,7 @@
 | 系统托盘 | `fyne.io/systray` v1.12 | 托盘图标 |
 | 全局热键 | `golang.design/x/hotkey` v0.6 | 快捷键 |
 | IPC | Windows 命名管道 / Unix 域套接字 | Core ↔ GUI 通信 |
-| 日志 | `go.uber.org/zap` + `lumberjack` | 结构化日志 + 轮转 |
+| 日志 | `go.uber.org/zap` + systemd journal | 结构化系统日志，无 root 写盘依赖 |
 | 系统信息 | `shirou/gopsutil` v4 | 传感器读取 |
 | 通知 | `gen2brain/beeep` | 桌面通知 |
 
@@ -145,7 +145,7 @@ THRM/
 │   │   ├── ipc.go                   # ✅ JSON-line RPC 协议（跨平台）
 │   │   ├── transport_windows.go     # ❌ 不复制（命名管道）
 │   │   └── transport_other.go       # ✅ Unix 域套接字已实现
-│   ├── logger/                      # ✅ 日志（zap + lumberjack）
+│   ├── logger/                      # ✅ 日志（zap + systemd journal）
 │   ├── notifier/                    # ✅ 桌面通知（beeep，跨平台）
 │   ├── plugins/
 │   │   ├── plugin.go                # ✅ 插件接口
@@ -336,7 +336,11 @@ nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader
 | `THRM/internal/config/config.go` | `internal/config/` |
 | `THRM/internal/config/fan_feature_defaults.go` | `internal/config/` |
 
-配置路径使用 `os.UserHomeDir()`，Linux 下自动解析为 `~/.thrm/config.json`。**零修改**。
+Linux 配置遵循 XDG Base Directory 规范：优先
+`$XDG_CONFIG_HOME/thrm/config.json`，未设置时使用
+`~/.config/thrm/config.json`。旧 `~/.thrm` 与 `.bs2pro-controller` 配置会自动迁移。
+温度历史等非配置状态写入 `$XDG_STATE_HOME/thrm`（默认
+`~/.local/state/thrm`），不会回退写安装目录。
 
 ### 任务 1.4：前端
 
@@ -359,7 +363,10 @@ nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader
 |--------|---------|
 | `THRM/internal/logger/` 全部文件 | `internal/logger/` |
 
-zap + lumberjack 均为纯 Go 跨平台库。
+Linux 后端通过 Journal Native Protocol 写入 systemd journal，使用
+`SYSLOG_IDENTIFIER=thrm`（GUI）和 `SYSLOG_IDENTIFIER=thrm-core`（核心）区分进程。
+它不创建 `/var/log` 或安装目录日志，因此普通用户运行不需要 root；journal 不可用时
+回退到 stderr。Windows 后端仍使用 lumberjack 轮转文件。
 
 ### 任务 1.7：风扇曲线和智能控制
 
@@ -1008,7 +1015,7 @@ func (m *Manager) Stop() {
 **改动**：
 
 1. **图标格式**：将 `//go:embed icon.ico` 改为 `//go:embed icon.png`（准备一个 PNG 图标）
-2. **崩溃日志**：需新建 `cmd/core/fatal_log_linux.go`
+2. **崩溃日志**：新建 `cmd/core/fatal_log_linux.go`，保留标准流交给 journal/服务管理器
 
 ```go
 //go:build linux
@@ -1016,35 +1023,22 @@ func (m *Manager) Stop() {
 package main
 
 import (
-    "os"
-    "path/filepath"
-    "time"
+	"os"
+	"runtime/debug"
 )
 
 func setupFatalOutput() (func(), string) {
-    // 获取可执行文件目录
-    exePath, _ := os.Executable()
-    logDir := filepath.Join(filepath.Dir(exePath), "logs")
-    os.MkdirAll(logDir, 0755)
-
-    logFile := filepath.Join(logDir, time.Now().Format("2006-01-02")+"-core.log")
-    f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-    if err != nil {
-        return func() {}, ""
-    }
-
-    // 重定向 stderr 和 stdout
-    oldStderr := os.Stderr
-    oldStdout := os.Stdout
-    os.Stderr = f
-    os.Stdout = f
-
-    return func() {
-        os.Stderr = oldStderr
-        os.Stdout = oldStdout
-        f.Close()
-    }, logFile
+	_ = os.Setenv("GOTRACEBACK", "all")
+	debug.SetTraceback("all")
+	return func() {}, ""
 }
+```
+
+应用捕获到的 panic 通过 Zap 写入 `thrm-core` journal；logger 尚未初始化时由
+stderr 兜底。查看两个进程的日志：
+
+```bash
+journalctl --identifier=thrm --identifier=thrm-core --since today
 ```
 
 3. **信号处理**：`syscall.SIGINT, syscall.SIGTERM` 在 Linux 上不变，无需修改。
@@ -1338,6 +1332,19 @@ sudo udevadm trigger
 echo "Installation complete."
 echo "You can now run 'thrm' from your application menu or terminal."
 ```
+
+### 任务 5.8：Arch Linux 软件包
+
+仓库根目录的 `PKGBUILD` 直接打包 `build/thrm` 与 `build/thrm-core`，因此在 CI
+已经完成构建后不再下载旧 release，也不需要在 Arch 打包环境中安装 Go 或 Bun：
+
+```bash
+makepkg -f
+sudo pacman -U ./thrm-bin-*.pkg.tar.zst
+```
+
+软件包使用 `/usr/bin`、`/usr/lib/udev/rules.d` 与 `/usr/share` 标准布局；运行时
+配置/状态写 XDG 用户目录，日志写 journal，不创建 `/opt/thrm` 或 `/var/log/thrm`。
 
 ---
 

@@ -3,6 +3,7 @@ package appmeta
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -97,9 +98,12 @@ func TestFirstExistingPath_ExistingFile(t *testing.T) {
 }
 
 func TestUserConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	got := UserConfigDir("/home/testuser")
-	// 期望值同样用 filepath.Join 构造：路径分隔符随平台变化。
 	want := filepath.Join("/home/testuser", ConfigDirName)
+	if runtime.GOOS == "linux" {
+		want = filepath.Join("/home/testuser", ".config", XDGDirName)
+	}
 	if got != want {
 		t.Fatalf("UserConfigDir = %q, want %q", got, want)
 	}

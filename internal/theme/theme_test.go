@@ -2,7 +2,10 @@ package theme
 
 import (
 	"embed"
+	"os"
+	"path/filepath"
 	"testing"
+	"testing/fstest"
 )
 
 //go:embed testdata
@@ -53,8 +56,22 @@ func TestSourceConstants(t *testing.T) {
 }
 
 func TestEnsureSeeded(t *testing.T) {
-	m := NewManager("/tmp/install/themes", "/tmp/user/themes", testEmbedFS)
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	userDir := filepath.Join(root, "user", "themes")
+	builtin := fstest.MapFS{
+		"sample/theme.json": &fstest.MapFile{Data: []byte(`{"id":"sample","name":"Sample","base":"dark"}`)},
+		"sample/theme.css":  &fstest.MapFile{Data: []byte(":root {}")},
+	}
+	m := NewManager(installDir, userDir, builtin)
 	m.EnsureSeeded()
+
+	if _, err := os.Stat(filepath.Join(userDir, "sample", manifestName)); err != nil {
+		t.Fatalf("builtin theme was not seeded into the user directory: %v", err)
+	}
+	if _, err := os.Stat(installDir); !os.IsNotExist(err) {
+		t.Fatalf("theme seeding wrote to the installation directory: %v", err)
+	}
 }
 
 func TestMetaFields(t *testing.T) {

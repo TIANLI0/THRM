@@ -166,6 +166,24 @@ sudo apt install ./thrm_<version>_amd64.deb
 
 安装包会同时安装应用、后台核心服务、桌面入口和飞智 HID 设备的 udev 规则。
 
+#### Arch Linux 安装包
+
+Arch、CachyOS、Manjaro 等发行版下载 `.pkg.tar.zst` 后执行：
+
+```bash
+sudo pacman -U ./thrm-bin-<version>-1-x86_64.pkg.tar.zst
+```
+
+该包由仓库根目录的 `PKGBUILD` 通过 `makepkg` 生成，安装当前 CI 已构建好的二进制，
+不会在打包阶段重新下载旧版本或要求系统安装 Go/Bun。包内使用标准路径：
+
+```text
+/usr/bin/thrm
+/usr/bin/thrm-core
+/usr/lib/udev/rules.d/99-flydigi-fan.rules
+/usr/share/applications/thrm.desktop
+```
+
 #### 便携安装包
 
 ```bash
@@ -204,27 +222,46 @@ thrm
 
 ## 配置与数据
 
-默认配置文件：
+Linux 配置遵循 XDG Base Directory 规范：
 
 ```text
-~/.thrm/config.json
+$XDG_CONFIG_HOME/thrm/config.json
 ```
 
-在 Windows 中对应：
+未设置 `XDG_CONFIG_HOME` 时为：
+
+```text
+~/.config/thrm/config.json
+```
+
+窗口状态和自定义主题也位于该配置目录；温度历史属于运行状态，保存在：
+
+```text
+$XDG_STATE_HOME/thrm/telemetry/history.bin
+```
+
+未设置 `XDG_STATE_HOME` 时为 `~/.local/state/thrm/telemetry/history.bin`。
+
+Windows 配置仍位于：
 
 ```text
 %USERPROFILE%\.thrm\config.json
 ```
 
-如果用户目录不可写，THRM 会尝试使用：
+Linux 不会在 `/usr/bin`、`/opt` 或 `/var/log` 中创建可变数据。旧版本的
+`~/.thrm` 和 `.bs2pro-controller` 配置会在首次运行时自动迁移到 XDG 配置目录。
+旧 `/opt/thrm/telemetry/history.bin` 若属于当前用户，也会复制到新的 XDG 状态目录，
+原文件会保留。
+Windows 便携版仍保留安装目录配置回退以兼容原有行为。
 
-```text
-<安装目录>/config/config.json
+Windows 运行日志保存在安装目录的 `logs` 文件夹中；Linux 日志直接写入 systemd journal，不会尝试写入通常需要 root 权限的 `/var/log`。可使用以下命令查看 Linux 日志：
+
+```bash
+journalctl --identifier=thrm --identifier=thrm-core --since today
+journalctl --follow --identifier=thrm --identifier=thrm-core
 ```
 
-旧版本的 `.bs2pro-controller` 配置会在首次运行时自动迁移。
-
-运行日志默认保存在安装目录的 `logs` 文件夹中。遇到问题时，更推荐直接在设置页使用“导出诊断包”，诊断包会包含必要的应用信息、配置和近期日志。
+在不提供 systemd journal 的 Linux 环境中，日志会自动输出到 stderr。遇到问题时，更推荐直接在设置页使用“导出诊断包”，诊断包会包含必要的应用信息、配置和近期文件日志或 journal 日志。
 
 ## 常见问题
 
@@ -384,7 +421,7 @@ Windows 通过命名管道通信，Linux 使用 Unix Domain Socket。
 | BLE          | `tinygo.org/x/bluetooth`                |
 | 系统托盘         | `fyne.io/systray`                       |
 | IPC          | Windows Named Pipe / Unix Domain Socket |
-| 日志           | Zap、Lumberjack                          |
+| 日志           | Zap、Lumberjack（Windows）、systemd journal（Linux） |
 
 ## 目录结构
 
@@ -509,6 +546,15 @@ build/thrm
 build/thrm-core
 ```
 
+已有这两个构建产物后，可直接在 Arch 系发行版上生成 pacman 包，不会再次编译：
+
+```bash
+makepkg -f
+sudo pacman -U ./thrm-bin-*.pkg.tar.zst
+```
+
+若二进制不在 `build/`，可通过 `THRM_ARTIFACT_DIR=/绝对路径 makepkg -f` 指定。
+
 ## 测试与检查
 
 ```bash
@@ -527,6 +573,7 @@ THRM-amd64-installer.exe
 THRM-windows-portable.zip
 THRM-linux-amd64-portable.tar.gz
 thrm_<version>_amd64.deb
+thrm-bin-<version>-1-x86_64.pkg.tar.zst
 ```
 
 </details>

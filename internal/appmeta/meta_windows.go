@@ -19,6 +19,17 @@ const (
 	PawnIOInstallerName    = "PawnIO_setup.exe"
 )
 
+func UserConfigDir(homeDir string) string {
+	if homeDir == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ConfigDirName)
+}
+
+func UserStateDir(homeDir string) string {
+	return UserConfigDir(homeDir)
+}
+
 func CoreExecutableCandidates(baseDir string) []string {
 	return []string{
 		filepath.Join(baseDir, CoreExecutableName),

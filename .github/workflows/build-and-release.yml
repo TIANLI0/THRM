@@ -335,20 +335,8 @@ jobs:
           install -Dm755 build/thrm "$PKGROOT/usr/bin/thrm"
           install -Dm755 build/thrm-core "$PKGROOT/usr/bin/thrm-core"
           [ -f "$ICON_SRC" ] && install -Dm644 "$ICON_SRC" "$PKGROOT/usr/share/icons/hicolor/256x256/apps/thrm.png"
-          [ -f "$RULES_SRC" ] && install -Dm644 "$RULES_SRC" "$PKGROOT/lib/udev/rules.d/99-flydigi-fan.rules"
-
-          install -d "$PKGROOT/usr/share/applications"
-          cat > "$PKGROOT/usr/share/applications/thrm.desktop" << 'EOF'
-          [Desktop Entry]
-          Type=Application
-          Name=THRM
-          Comment=Flydigi BS Series Fan Controller
-          Exec=/usr/bin/thrm
-          Icon=thrm
-          Terminal=false
-          Categories=Utility;
-          StartupWMClass=thrm
-          EOF
+          [ -f "$RULES_SRC" ] && install -Dm644 "$RULES_SRC" "$PKGROOT/usr/lib/udev/rules.d/99-flydigi-fan.rules"
+          install -Dm644 packaging/linux/thrm.desktop "$PKGROOT/usr/share/applications/thrm.desktop"
 
           install -d "$PKGROOT/DEBIAN"
           cat > "$PKGROOT/DEBIAN/control" << EOF
@@ -386,6 +374,47 @@ jobs:
 
           ls -lh "$DIST"
 
+      - name: Package Arch Linux artifact (.pkg.tar.zst)
+        shell: bash
+        env:
+          THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
+        run: |
+          set -euo pipefail
+
+          VER="${THRM_BUILD_VERSION:-}"
+          if [ -z "$VER" ]; then
+            VER=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | sed -E 's/.*"([^"]+)"$/\1/')
+          fi
+          [ -n "$VER" ] || VER="dev"
+
+          case "$VER" in
+            nightly-*) ARCH_VER="0.0.0.r${VER#nightly-}" ;;
+            v*|V*)     ARCH_VER="${VER#[vV]}" ;;
+            *)         ARCH_VER="$VER" ;;
+          esac
+          ARCH_VER=$(printf '%s' "$ARCH_VER" | sed -E 's/[^[:alnum:]_+.]+/./g; s/^\.+//; s/\.+$//')
+          [ -n "$ARCH_VER" ] || ARCH_VER="0.0.0.dev"
+          echo "Arch package version: $ARCH_VER"
+
+          BUILDER_UID=$(id -u)
+          docker run --rm \
+            --env "BUILDER_UID=$BUILDER_UID" \
+            --env "THRM_PKGVER=$ARCH_VER" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            archlinux:base-devel \
+            bash -euc '
+              useradd --create-home --uid "$BUILDER_UID" --user-group builder
+              runuser -u builder -- env \
+                THRM_PKGVER="$THRM_PKGVER" \
+                THRM_ARTIFACT_DIR=/workspace/build \
+                BUILDDIR=/tmp/thrm-makepkg \
+                PKGDEST=/workspace/build/dist \
+                makepkg --clean --force --noconfirm --nodeps
+            '
+
+          ls -lh build/dist/*.pkg.tar.zst
+
       - name: Upload PR artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
@@ -394,6 +423,7 @@ jobs:
           path: |
             build/dist/*.tar.gz
             build/dist/*.deb
+            build/dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 14
 
@@ -405,6 +435,7 @@ jobs:
           path: |
             build/dist/*.tar.gz
             build/dist/*.deb
+            build/dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 7
 
@@ -416,6 +447,7 @@ jobs:
           path: |
             build/dist/*.tar.gz
             build/dist/*.deb
+            build/dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 1
 

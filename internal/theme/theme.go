@@ -33,14 +33,14 @@ type Meta struct {
 
 // Manager 统一管理主题的发现与读取。
 type Manager struct {
-	installDir string // 安装目录下的 themes 目录
-	userDir    string // 用户目录下的 themes 目录（可写兜底）
+	installDir string // 安装目录下的 themes 目录（只读来源）
+	userDir    string // 用户配置目录下的 themes 目录（可写）
 	builtin    fs.FS  // 程序内置的默认主题（已 Sub 到 themes 根，路径形如 thrm/theme.json）
 }
 
 // NewManager 创建主题管理器。
 //   - installThemesDir：安装目录下的 themes 目录（一般与可执行文件同级）。
-//   - userThemesDir：用户目录下的 themes 目录（如 ~/.thrm/themes），用于安装目录不可写时兜底。
+//   - userThemesDir：用户配置目录下的 themes 目录，用于保存可编辑副本。
 //   - builtin：内置默认主题文件系统，根目录下应直接是各主题文件夹（thrm/...）。可为 nil。
 func NewManager(installThemesDir, userThemesDir string, builtin fs.FS) *Manager {
 	return &Manager{
@@ -76,9 +76,8 @@ func normalizeBase(base string) string {
 
 // EnsureSeeded 在首次运行时把内置主题播种到磁盘，方便用户直接编辑。
 //
-// 对每个内置主题：若安装目录与用户目录都不存在该主题，则尝试写入安装目录；
-// 安装目录不可写（如 Program Files 无权限）时退而写入用户目录。全程尽力而为，
-// 失败不影响后续从内置读取。
+// 对每个内置主题：若安装目录与用户目录都不存在该主题，则写入用户目录。
+// 安装目录始终被视为只读；失败不影响后续从内置读取。
 func (m *Manager) EnsureSeeded() {
 	if m.builtin == nil {
 		return
@@ -98,10 +97,7 @@ func (m *Manager) EnsureSeeded() {
 		if m.themeExistsOnDisk(m.installDir, id) || m.themeExistsOnDisk(m.userDir, id) {
 			continue
 		}
-		if err := m.copyBuiltin(id, m.installDir); err != nil {
-			// 安装目录写入失败（多为权限问题），改写用户目录。
-			_ = m.copyBuiltin(id, m.userDir)
-		}
+		_ = m.copyBuiltin(id, m.userDir)
 	}
 }
 
@@ -270,14 +266,14 @@ func (m *Manager) ReadCSS(id string) (string, error) {
 
 // ResolveDir 返回应优先暴露给用户编辑的 themes 目录（用于「打开主题文件夹」）。
 func (m *Manager) ResolveDir() string {
+	if m.userDir != "" {
+		_ = os.MkdirAll(m.userDir, 0o755)
+		return m.userDir
+	}
 	if m.installDir != "" {
 		if _, err := os.Stat(m.installDir); err == nil {
 			return m.installDir
 		}
-	}
-	if m.userDir != "" {
-		_ = os.MkdirAll(m.userDir, 0o755)
-		return m.userDir
 	}
 	return m.installDir
 }

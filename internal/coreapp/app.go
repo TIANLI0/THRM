@@ -3,7 +3,6 @@ package coreapp
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -126,7 +125,8 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 	deviceMgr := device.NewManager(customLogger)
 	tempReader := temperature.NewReader(bridgeMgr, customLogger)
 	configMgr := config.NewManager(installDir, customLogger)
-	historyPath := filepath.Join(installDir, temperature.DefaultHistoryRelativePath)
+	historyPath := temperatureHistoryPath(installDir)
+	migrateLegacyTemperatureHistory(historyPath, installDir, customLogger)
 	historyRetentionHours := types.NormalizeTemperatureHistoryRetentionHours(configMgr.Get().TemperatureHistoryRetentionHours)
 	historyPointsPerHour := int(time.Hour / temperature.DefaultHistorySampleInterval)
 	tempHistory := temperature.NewHistoryRecorder(historyPath, historyPointsPerHour*historyRetentionHours, temperature.DefaultHistorySampleInterval, customLogger)

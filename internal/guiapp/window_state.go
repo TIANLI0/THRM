@@ -39,22 +39,26 @@ func DefaultWindowState() WindowState {
 	}
 }
 
-// windowStatePath 返回窗口状态文件路径，优先用户配置目录，失败时退回安装目录。
+// windowStatePath 返回用户配置目录中的窗口状态文件路径。安装目录在 Linux
+// 软件包中是只读的，因此无法解析用户目录时宁可禁用持久化，也不写可执行文件旁边。
 func windowStatePath() string {
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(appmeta.UserConfigDir(homeDir), windowStateFileName)
+	homeDir, _ := os.UserHomeDir()
+	configDir := appmeta.UserConfigDir(homeDir)
+	if configDir == "" {
+		return ""
 	}
-	if exePath, err := os.Executable(); err == nil {
-		return filepath.Join(filepath.Dir(exePath), "config", windowStateFileName)
-	}
-	return windowStateFileName
+	return filepath.Join(configDir, windowStateFileName)
 }
 
 // LoadWindowState 读取持久化的窗口状态；不存在或损坏时返回默认值。
 func LoadWindowState() WindowState {
 	state := DefaultWindowState()
 
-	data, err := os.ReadFile(windowStatePath())
+	path := windowStatePath()
+	if path == "" {
+		return state
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return state
 	}
@@ -80,6 +84,10 @@ func LoadWindowState() WindowState {
 // saveWindowState 将窗口状态写入磁盘（原子写入，避免半截文件）。
 func saveWindowState(state WindowState) {
 	path := windowStatePath()
+	if path == "" {
+		mainLogger.Error("用户配置目录不可用，无法保存窗口状态")
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		mainLogger.Errorf("创建窗口状态目录失败: %v", err)
 		return

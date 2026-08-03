@@ -5,6 +5,9 @@ build/stage
 build/release-context
 build/thrm
 build/thrm-core
+/pkg/
+/src/
+/*.pkg.tar.*
 node_modules
 frontend/dist
 __pycache__/
