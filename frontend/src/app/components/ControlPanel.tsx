@@ -26,6 +26,7 @@ import {
   RotateCw,
   FileArchive,
   Gauge,
+  MapPin,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { types } from '../../../wailsjs/go/models';
@@ -438,6 +439,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [debugInfoLoading, setDebugInfoLoading] = useState(false);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [rtssLayoutHelpOpen, setRtssLayoutHelpOpen] = useState(false);
   const [debugCommandInput, setDebugCommandInput] = useState('27');
   const [debugCommandResult, setDebugCommandResult] = useState<DeviceDebugCommandResult | null>(null);
   const [debugCommandLoading, setDebugCommandLoading] = useState(false);
@@ -1800,13 +1802,15 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             </div>
 
             <div
-              aria-disabled={!rtssConfig.enabled}
-              className={clsx(
-                'mt-3 rounded-xl border border-border/70 bg-background/45 px-4 py-2 transition-opacity',
-                !rtssConfig.enabled && 'opacity-50',
-              )}
+              className="mt-3 rounded-xl border border-border/70 bg-background/45 px-4 py-2"
             >
-              <div className="flex flex-col gap-2 py-3 md:flex-row md:items-center md:gap-4">
+              <div
+                aria-disabled={!rtssConfig.enabled}
+                className={clsx(
+                  'flex flex-col gap-2 py-3 transition-opacity md:flex-row md:items-center md:gap-4',
+                  !rtssConfig.enabled && 'opacity-50',
+                )}
+              >
                 <div className="min-w-0 flex-1 pr-2">
                   <div className="flex items-center gap-2 text-sm text-foreground">
                     <RotateCw className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1827,6 +1831,38 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                   />
                 </div>
               </div>
+
+              <Collapsible open={rtssLayoutHelpOpen} onOpenChange={setRtssLayoutHelpOpen}>
+                <div className="border-t border-border/60 pt-2">
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 py-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <MapPin className="h-3.5 w-3.5 shrink-0" />
+                        <span>{t('controlPanel.system.rtssLayoutTitle')}</span>
+                      </span>
+                      <ChevronDown
+                        className={clsx('h-3.5 w-3.5 shrink-0 transition-transform duration-200', rtssLayoutHelpOpen && 'rotate-180')}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+
+                  <CollapsibleContent>
+                    <div className="space-y-2 pb-2 pt-1 text-xs leading-relaxed text-muted-foreground">
+                      <p>{t('controlPanel.system.rtssLayoutDescription')}</p>
+                      <ol className="list-decimal space-y-1 pl-5">
+                        <li>{t('controlPanel.system.rtssLayoutStep1')}</li>
+                        <li>{t('controlPanel.system.rtssLayoutStep2')}</li>
+                        <li>{t('controlPanel.system.rtssLayoutStep3')}</li>
+                        <li>{t('controlPanel.system.rtssLayoutStep4')}</li>
+                      </ol>
+                      <p>{t('controlPanel.system.rtssLayoutNote')}</p>
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
             </div>
           </div>
 
