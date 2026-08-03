@@ -681,13 +681,12 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       if (result?.bridgeWarning) {
         toast.warning(t('controlPanel.debug.toasts.bridgeWarning', { warning: result.bridgeWarning }));
       }
-      await fetchDebugInfo();
     } catch (error) {
       toast.error(t('controlPanel.debug.toasts.reinstallFailed', { error: getErrorMessage(error) }));
     } finally {
       setLoading('pawnIOReinstall', false);
     }
-  }, [fetchDebugInfo, t]);
+  }, [t]);
 
   const handleExportDiagnostics = useCallback(async () => {
     setLoading('diagnosticsExport', true);

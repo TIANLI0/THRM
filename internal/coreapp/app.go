@@ -94,8 +94,6 @@ const (
 	systemResumeDetectionCeiling = 45 * time.Second                                             // 系统恢复检测阈值上限
 	systemResumeRecoveryCooldown = 5 * time.Second                                              // 系统恢复后自动重连的冷却时间
 	suspendCleanupGrace          = 2 * time.Second                                              // 挂起清理宽限时间
-	pawnIOInstallerTimeout       = 90 * time.Second                                             // PawnIO 安装程序超时时间
-	pawnIOAlreadyExistsExitCode  = 183                                                          // PawnIO 安装程序退出码，表示已存在安装
 	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO` // PawnIO 注册表路径
 )
 
