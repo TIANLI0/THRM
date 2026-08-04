@@ -184,16 +184,22 @@ function TitleBar({
   onClose: () => void;
 }) {
   return (
-    <div
-      // z-[9999]：保证最小化/最大化/关闭三键始终高于 Dialog 遮罩（z-50）等弹层并可交互
-      className="glacier-titlebar pointer-events-auto absolute right-0 top-0 z-[9999] flex h-10 items-center justify-between bg-background transition-[left] duration-300 ease-out"
-      style={{ ...DRAG_STYLE, left: leftOffset }}
-      onDoubleClick={onToggleMaximise}
-    >
-      <div className="flex h-full min-w-0 flex-1 items-center px-3 pt-1">
-        {leftSlot}
+    <>
+      <div
+        className="glacier-titlebar pointer-events-auto absolute right-0 top-0 z-40 flex h-10 items-center bg-background pr-32 transition-[left] duration-300 ease-out"
+        style={{ ...DRAG_STYLE, left: leftOffset }}
+        onDoubleClick={onToggleMaximise}
+      >
+        <div className="flex h-full min-w-0 flex-1 items-center px-3 pt-1">
+          {leftSlot}
+        </div>
       </div>
-      <div className="flex h-full items-center gap-0.5 pr-1" style={NO_DRAG_STYLE}>
+
+      {/* Keep only native window controls interactive above modal overlays. */}
+      <div
+        className="glacier-titlebar pointer-events-auto absolute right-0 top-0 z-[9999] flex h-10 items-center gap-0.5 bg-transparent pr-1"
+        style={NO_DRAG_STYLE}
+      >
         <TitleBarButton icon={<Minus className="h-3.5 w-3.5" />} label={minimizeLabel} onClick={onMinimise} />
         <TitleBarButton
           icon={isMaximised ? <Copy className="h-3 w-3" /> : <Square className="h-3 w-3" />}
@@ -202,7 +208,7 @@ function TitleBar({
         />
         <TitleBarButton icon={<X className="h-3.5 w-3.5" />} label={closeLabel} onClick={onClose} danger />
       </div>
-    </div>
+    </>
   );
 }
 
