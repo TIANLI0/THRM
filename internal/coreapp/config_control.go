@@ -11,7 +11,6 @@ import (
 	"github.com/TIANLI0/THRM/internal/curveprofiles"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
-	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -58,6 +57,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	}
 	cfg.LegionFnQSupport = oldCfg.LegionFnQSupport
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
+	// 保留时长由专用接口独占维护，以记录器的实际状态为准：GUI 手上的配置副本可能还是
+	// 改动之前的值，采信入参会让"改完保留时长后又动了别的设置"把用户的选择静默回退。
+	cfg.TemperatureHistoryRetentionHours = a.historyRetentionHours(oldCfg)
 	// 前端模型可能未携带按曲线方案记忆的映射字段，避免整表被清空
 	if cfg.SmartControl.LearnedOffsetsByProfile == nil {
 		cfg.SmartControl.LearnedOffsetsByProfile = oldCfg.SmartControl.LearnedOffsetsByProfile
@@ -123,22 +125,32 @@ func (a *CoreApp) SetTemperatureHistoryEnabled(enabled bool) error {
 	return nil
 }
 
+// historyRetentionHours 返回当前生效的保留时长：优先取记录器的实际状态，
+// 记录器缺失时（单测里直接构造的 CoreApp）退回配置里的值。
+func (a *CoreApp) historyRetentionHours(cfg types.AppConfig) int {
+	if a.tempHistory != nil {
+		return a.tempHistory.RetentionHours()
+	}
+	return types.NormalizeTemperatureHistoryRetentionHours(cfg.TemperatureHistoryRetentionHours)
+}
+
 // SetTemperatureHistoryRetentionHours 调整温度历史后台保留时长(小时)并持久化到配置。
 func (a *CoreApp) SetTemperatureHistoryRetentionHours(hours int) error {
-	if hours < 1 {
-		hours = temperature.DefaultHistoryRetentionHours
-	}
-	if hours > temperature.MaxHistoryRetentionHours {
-		hours = temperature.MaxHistoryRetentionHours
-	}
+	hours = types.NormalizeTemperatureHistoryRetentionHours(hours)
 	if err := a.tempHistory.SetRetentionHours(hours); err != nil {
 		return err
 	}
 	a.mutex.Lock()
-	defer a.mutex.Unlock()
 	cfg := a.configManager.Get()
 	cfg.TemperatureHistoryRetentionHours = hours
-	return a.configManager.Update(cfg)
+	err := a.configManager.Update(cfg)
+	a.mutex.Unlock()
+
+	// 广播出去，避免 GUI 手上的配置副本继续拿着旧值显示。
+	if err == nil && a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	return err
 }
 
 // SetFanCurve 设置风扇曲线

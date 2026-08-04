@@ -18,8 +18,8 @@ import (
 const (
 	DefaultHistoryCapacity              = 720
 	DefaultHistorySampleInterval        = 5 * time.Second
-	DefaultHistoryRetentionHours        = 1
-	MaxHistoryRetentionHours            = 24
+	DefaultHistoryRetentionHours        = types.DefaultTemperatureHistoryRetentionHours
+	MaxHistoryRetentionHours            = types.MaxTemperatureHistoryRetentionHours
 	DefaultHistoryRelativePath          = "telemetry/history.bin"
 	historyBinaryMagic                  = "THST"
 	historyBinaryVersionLegacy   uint16 = 1

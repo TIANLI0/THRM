@@ -4,7 +4,6 @@ package temperature
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +17,12 @@ const (
 	helperCommandTimeout = 1200 * time.Millisecond
 	gpuVendorCacheTTL    = 30 * time.Second
 )
+
+// pawnIoRemediationHint 与桥接侧 bridge/TempBridge/Program.cs 的 PawnIoRemediationHint
+// 保持一致。CPU 温度只能由 PawnIO 读取，没有可信的替代来源，因此唯一有意义的指引
+// 就是修复 PawnIO 本身——安装包随 THRM 一起分发，用户不需要自己去下载。
+const pawnIoRemediationHint = "请在 THRM 内点击“重装 PawnIO”（应用已自带安装包），完成后重启 THRM；" +
+	"若仍不可用，请关闭可能独占硬件传感器的其它监控软件后重试"
 
 var (
 	execHelperCommand = execCommandHiddenWithTimeout
@@ -70,7 +75,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		if bridgeTemp.Success {
 			if bridgeTemp.CpuTemp == 0 && (selection.DisableGpu || bridgeTemp.GpuTemp == 0) {
 				temp.BridgeOk = false
-				temp.BridgeMsg = "桥接程序返回空温度（CPU/GPU 均为 0），已尝试备用读取；可重新初始化温度监控或检查 PawnIO/其它硬件监控工具。"
+				temp.BridgeMsg = "桥接程序未返回有效温度（CPU/GPU 均为 0）；" + pawnIoRemediationHint
 				r.logger.Warn("桥接程序返回空温度数据，使用备用方法")
 
 				fallback := r.readFallback(selection.DisableGpu)
@@ -94,7 +99,7 @@ func (r *Reader) Read(selection types.TemperatureSelection) types.TemperatureDat
 		temp.BridgeOk = false
 		temp.BridgeMsg = bridgeTemp.Error
 		if strings.TrimSpace(temp.BridgeMsg) == "" {
-			temp.BridgeMsg = "CPU/GPU 温度读取失败，可重新初始化温度监控；若 CPU 仍为空，请安装/更新 PawnIO 或关闭其它硬件监控工具。"
+			temp.BridgeMsg = "CPU/GPU 温度读取失败；" + pawnIoRemediationHint
 		}
 	}
 	// 桥接程序为 Windows 专用（LibreHardwareMonitor/PawnIO）。在不支持的平台（如 Linux）
@@ -147,6 +152,7 @@ func copyBridgeTemperatureMetadata(temp *types.TemperatureData, bridgeTemp types
 	if temp.ControlTemp == 0 {
 		temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, temp.ControlSource)
 	}
+	temp.CPUTempError = bridgeTemp.CpuTempError
 	temp.CpuModel = bridgeTemp.CpuModel
 	temp.GpuModel = bridgeTemp.GpuModel
 	temp.CpuSensors = bridgeTemp.CpuSensors
@@ -231,46 +237,6 @@ func (r *Reader) readSensorCPUTemp() int {
 			return int(sensor.Temperature)
 		}
 	}
-	return 0
-}
-
-// readCPUTemperature 读取CPU温度：先试廉价的进程内传感器，再退到平台实现。
-func (r *Reader) readCPUTemperature() int {
-	if temp := r.readSensorCPUTemp(); temp > 0 {
-		return temp
-	}
-	return r.readPlatformCPUTemp()
-}
-
-// readWindowsCPUTemp 通过WMI读取Windows CPU温度
-func (r *Reader) readWindowsCPUTemp() int {
-	output, err := execHelperCommand(helperCommandTimeout, "wmic", "/namespace:\\\\root\\wmi", "PATH", "MSAcpi_ThermalZoneTemperature", "get", "CurrentTemperature", "/value")
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			r.logger.Debug("读取Windows CPU温度超时: %v", err)
-		} else {
-			r.logger.Debug("读取Windows CPU温度失败: %v", err)
-		}
-		return 0
-	}
-
-	lines := strings.SplitSeq(string(output), "\n")
-	for line := range lines {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "CurrentTemperature="); ok {
-			tempStr := after
-			tempStr = strings.TrimSpace(tempStr)
-			if tempStr != "" {
-				if temp, err := strconv.Atoi(tempStr); err == nil {
-					celsius := (temp - 2732) / 10
-					if celsius > 0 && celsius < 150 {
-						return celsius
-					}
-				}
-			}
-		}
-	}
-
 	return 0
 }
 

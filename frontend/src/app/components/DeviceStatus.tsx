@@ -10,6 +10,7 @@ import {
   Bluetooth,
   CircleHelp,
   Cpu,
+  Download,
   Zap,
   RotateCw,
   Fan,
@@ -22,7 +23,7 @@ import {
 import { types } from '../../../wailsjs/go/models';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
-import { downsampleHistoryPoints, type TemperatureHistoryPoint } from '../lib/temperature-history';
+import { clipHistoryToRecentWindow, downsampleHistoryPoints, HOME_CHART_WINDOW_MS, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import { getManualGearLabel, getReportedMaxRpm } from '../lib/manualGearPresets';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
@@ -444,7 +445,7 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
 });
 
 const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
-  points,
+  points: retainedPoints,
   enabled,
   source,
   onOpen,
@@ -456,6 +457,8 @@ const TemperatureHistoryPanel = memo(function TemperatureHistoryPanel({
 }) {
   const { t } = useTranslation();
   const sourceLabel = source === 'core' ? t('deviceStatus.history.source.core') : t('deviceStatus.history.source.session');
+  // 首页这张图固定只画最近 1 小时，与详情页的后台保留时长（最长 24 小时）解耦。
+  const points = useMemo(() => clipHistoryToRecentWindow(retainedPoints, HOME_CHART_WINDOW_MS), [retainedPoints]);
   const chart = useMemo(() => {
     const width = 520;
     const height = 168;
@@ -612,7 +615,15 @@ export default function DeviceStatus({
     enabled: temperatureHistoryEnabled,
     source: temperatureHistorySource,
   } = useTemperatureHistory();
-  const hasBridgeWarning = isConnected && temperature?.bridgeOk === false;
+  const [pawnIoReinstalling, setPawnIoReinstalling] = useState(false);
+  // CPU 读不到而 GPU 正常时 bridgeOk 仍为 true——控温靠 GPU 基准依然成立。
+  // 但此时 CPU 显示为空必须给出原因和修复入口，否则用户只能看到一个没有任何
+  // 解释的"无数据"。因此告警条对这两种情况都要出现。
+  const cpuTempError = temperature?.cpuTempError?.trim() || '';
+  const hasBridgeWarning = isConnected && (temperature?.bridgeOk === false || cpuTempError !== '');
+  const warningMessage = temperature?.bridgeOk === false
+    ? (temperature?.bridgeMessage || t('deviceStatus.bridgeWarning.default'))
+    : cpuTempError;
 
   useEffect(() => {
     if (!hasBridgeWarning) {
@@ -919,7 +930,7 @@ export default function DeviceStatus({
             <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="flex-1">
-                <p>{temperature?.bridgeMessage || t('deviceStatus.bridgeWarning.default')}</p>
+                <p>{warningMessage}</p>
                 {bridgeStatus && (
                   <div className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-200/80">
                     {bridgeStateLabel && (
@@ -933,17 +944,40 @@ export default function DeviceStatus({
                     {bridgeStatus.lastError && bridgeStatus.lastError !== temperature?.bridgeMessage && <p>{t('deviceStatus.bridgeWarning.diagnosticsLine', { message: bridgeStatus.lastError })}</p>}
                   </div>
                 )}
-                <button
-                  onClick={async () => {
-                    try {
-                      await apiService.restartPawnIO();
-                    } catch { /* ignore */ }
-                  }}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
-                >
-                  <RotateCw className="h-3 w-3" />
-                  {t('deviceStatus.bridgeWarning.reinitialize')}
-                </button>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await apiService.restartPawnIO();
+                      } catch { /* ignore */ }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    {t('deviceStatus.bridgeWarning.reinitialize')}
+                  </button>
+                  {/* CPU 温度只能由 PawnIO 提供，没有替代来源。安装包随 THRM 分发，
+                      因此把"重装"直接做成一次点击，而不是让用户自己去找下载页。 */}
+                  <button
+                    disabled={pawnIoReinstalling}
+                    onClick={async () => {
+                      setPawnIoReinstalling(true);
+                      try {
+                        await apiService.reinstallPawnIO();
+                        await apiService.restartPawnIO();
+                      } catch { /* 失败原因仍由告警文案与诊断行呈现 */ }
+                      finally {
+                        setPawnIoReinstalling(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
+                  >
+                    <Download className="h-3 w-3" />
+                    {pawnIoReinstalling
+                      ? t('deviceStatus.bridgeWarning.reinstallPawnIoRunning')
+                      : t('deviceStatus.bridgeWarning.reinstallPawnIo')}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

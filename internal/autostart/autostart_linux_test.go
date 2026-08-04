@@ -23,9 +23,107 @@ func (testLogger) GetLogDir() string    { return "" }
 func mockHomeDir(t *testing.T, dir string) func() {
 	t.Helper()
 	orig := os.Getenv("HOME")
+	origConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	os.Setenv("HOME", dir)
+	// 测试机上若设置了 XDG_CONFIG_HOME，条目会落到真实用户目录而不是临时目录。
+	os.Unsetenv("XDG_CONFIG_HOME")
 	return func() {
 		os.Setenv("HOME", orig)
+		os.Setenv("XDG_CONFIG_HOME", origConfigHome)
+	}
+}
+
+// 桌面环境关掉自启动项时不会删文件，而是写 Hidden=true / GNOME 的
+// X-GNOME-Autostart-enabled=false。此时界面必须显示"未开启"。
+func TestAutostartDisabledByDesktopEnvironment(t *testing.T) {
+	home := t.TempDir()
+	restore := mockHomeDir(t, home)
+	defer restore()
+
+	m := NewManager(testLogger{})
+	desktopPath := filepath.Join(home, ".config", "autostart", "thrm.desktop")
+
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "enabled", content: "[Desktop Entry]\nType=Application\nName=THRM\nHidden=false\n", want: true},
+		{name: "hidden", content: "[Desktop Entry]\nType=Application\nName=THRM\nHidden=true\n", want: false},
+		{name: "gnome disabled", content: "[Desktop Entry]\nType=Application\nName=THRM\nX-GNOME-Autostart-enabled=false\n", want: false},
+		{name: "no flags", content: "[Desktop Entry]\nType=Application\nName=THRM\n", want: true},
+	}
+
+	if err := os.MkdirAll(filepath.Dir(desktopPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(desktopPath, []byte(tc.content), 0644); err != nil {
+				t.Fatalf("write desktop entry: %v", err)
+			}
+			if got := m.CheckWindowsAutoStart(); got != tc.want {
+				t.Fatalf("CheckWindowsAutoStart = %v, want %v", got, tc.want)
+			}
+			wantMethod := "none"
+			if tc.want {
+				wantMethod = MethodDesktop
+			}
+			if got := m.GetAutoStartMethod(); got != wantMethod {
+				t.Fatalf("GetAutoStartMethod = %q, want %q", got, wantMethod)
+			}
+		})
+	}
+}
+
+// 桌面环境写过 Hidden=true 之后重新开启，必须把该标记盖回去。
+func TestEnableOverwritesHiddenFlag(t *testing.T) {
+	home := t.TempDir()
+	restore := mockHomeDir(t, home)
+	defer restore()
+
+	m := NewManager(testLogger{})
+	desktopPath := filepath.Join(home, ".config", "autostart", "thrm.desktop")
+	if err := os.MkdirAll(filepath.Dir(desktopPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(desktopPath, []byte("[Desktop Entry]\nHidden=true\n"), 0644); err != nil {
+		t.Fatalf("write desktop entry: %v", err)
+	}
+
+	if err := m.SetWindowsAutoStart(true); err != nil {
+		t.Fatalf("enable error: %v", err)
+	}
+	if !m.CheckWindowsAutoStart() {
+		t.Fatal("re-enabling should clear the Hidden flag")
+	}
+	content, err := os.ReadFile(desktopPath)
+	if err != nil {
+		t.Fatalf("read desktop entry: %v", err)
+	}
+	if !strings.Contains(string(content), "Icon=thrm") {
+		t.Fatal("desktop file missing Icon=thrm")
+	}
+}
+
+// XDG_CONFIG_HOME 优先于 ~/.config。
+func TestAutostartHonorsXDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	restore := mockHomeDir(t, home)
+	defer restore()
+
+	configHome := t.TempDir()
+	os.Setenv("XDG_CONFIG_HOME", configHome)
+
+	m := NewManager(testLogger{})
+	if err := m.SetWindowsAutoStart(true); err != nil {
+		t.Fatalf("enable error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configHome, "autostart", "thrm.desktop")); err != nil {
+		t.Fatalf("entry should be written under XDG_CONFIG_HOME: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "autostart", "thrm.desktop")); !os.IsNotExist(err) {
+		t.Fatal("entry must not be written to ~/.config when XDG_CONFIG_HOME is set")
 	}
 }
 

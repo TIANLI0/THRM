@@ -46,6 +46,7 @@ export interface TemperatureData {
   updateTime: number;  // 更新时间戳
   bridgeOk?: boolean;  // 桥接程序是否正常
   bridgeMessage?: string; // 桥接程序提示
+  cpuTempError?: string; // CPU 温度专属故障说明（GPU 正常时 bridgeOk 仍为 true）
 }
 
 export interface TemperatureSensor {
@@ -79,11 +80,12 @@ export interface AppConfig {
   tempUpdateRate: number;      // 温度更新频率(秒)
   tempSampleCount?: number;
   tempSource?: 'max' | 'cpu' | 'gpu';
+  temperatureHistoryRetentionHours?: number; // 后台温度历史保留时长(小时)，由专用接口维护
+
   cpuSensor?: string;
   cpuSensors?: string[];       // CPU 多传感器选择(多核平均)；为空则按 cpuSensor 单选/自动
   gpuSensor?: string;
   windowBlur?: 'auto' | 'on' | 'acrylic' | 'mica' | 'tabbed' | 'off'; // 窗口材质；on 为旧版兼容值
-  suspendFanOff?: boolean;     // 系统休眠时归零转速并关闭挡位灯/RGB
   rtss?: RTSSConfig;
   configPath: string;          // 配置文件路径
   manualGear: string;          // 手动挡位设置
@@ -259,8 +261,8 @@ export interface DeviceSettings {
   rawFrames?: DeviceDebugFrame[];
 }
 
-// 自启动方式
-export type AutoStartMethod = 'none' | 'task_scheduler' | 'registry';
+// 自启动方式。task_scheduler/registry 为 Windows；desktop 为 Linux 的 XDG autostart 条目。
+export type AutoStartMethod = 'none' | 'task_scheduler' | 'registry' | 'desktop';
 
 // 自启动信息
 export interface AutoStartInfo {

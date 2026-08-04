@@ -1,18 +1,17 @@
-# FanControlLinux - Flydigi BS Series Fan Cooler udev Rules
+# THRM — Flydigi BS series cooler HID access
 # Install: sudo cp scripts/99-flydigi-fan.rules /etc/udev/rules.d/
-# Then: sudo udevadm control --reload-rules && sudo udevadm trigger
+# Then:    sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# 飞智散热器 VID 0x37D7。不按 PID 逐个列举：新型号沿用同一 VID。
 
-# Flydigi BS2 / BS2PRO / BS3 / BS3PRO
-# VID: 0x37D7
+# USB 设备节点：交给 logind 把设备 ACL 授予当前登录会话的用户。
+SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", TAG+="uaccess"
 
-# USB device permissions (grant access to active user session via logind ACL)
-SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1001", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1002", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1003", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="37d7", ATTRS{idProduct}=="1004", TAG+="uaccess"
+# USB HID（hidraw）：ATTRS 会沿父设备链向上匹配，USB 链路上能取到 idVendor。
+# input 组 + 0660 是兜底——uaccess 只在有本地座位的活动会话里生效，SSH / systemd
+# 服务等场景拿不到 ACL。
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="37d7", MODE="0660", GROUP="input", TAG+="uaccess"
 
-# hidraw device permissions (USB and Bluetooth HID)
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="37d7", TAG+="uaccess"
-
-# Bluetooth HID devices may need additional matching
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{hid_id}=="*:000037D7:*", TAG+="uaccess"
+# 蓝牙 HID（uhid）：父设备链上没有 idVendor，只能匹配 HID 内核名，
+# 形如 0005:37D7:1004.000A（0005 = BUS_BLUETOOTH）。
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:37D7:*", MODE="0660", GROUP="input", TAG+="uaccess"

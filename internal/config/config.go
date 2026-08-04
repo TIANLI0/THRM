@@ -243,6 +243,7 @@ func applyMissingTemperatureDefaults(cfg *types.AppConfig, rawConfig map[string]
 	if _, ok := rawConfig["gpuSensor"]; !ok {
 		cfg.GpuSensor = defaults.GpuSensor
 	}
+	cfg.TemperatureHistoryRetentionHours = types.NormalizeTemperatureHistoryRetentionHours(cfg.TemperatureHistoryRetentionHours)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
 	cfg.GpuDevice = types.NormalizeDeviceSelection(cfg.GpuDevice)
 	cfg.CpuSensor = types.NormalizeSensorSelection(cfg.CpuSensor)

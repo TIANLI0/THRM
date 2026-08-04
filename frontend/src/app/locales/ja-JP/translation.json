@@ -93,7 +93,7 @@
   },
   "store": {
     "bridgeWarning": {
-      "default": "CPU/GPU 温度の取得に失敗しました。温度モニタリングの初期化を試してください。CPU 温度が表示されないままの場合は、PawnIO をインストールまたはアップデートするか、他のハードウェアモニタリングソフトを終了してください。"
+      "default": "CPU/GPU 温度の取得に失敗しました。CPU 温度は PawnIO ドライバー経由で取得します。「PawnIO を再インストール」をクリックしてから THRM を再起動してください。それでも解決しない場合は、他のハードウェアモニタリングソフトを終了して再試行してください。"
     },
     "coreService": {
       "unavailable": "Core サービスを利用できません。THRM Core.exe がセキュリティソフトに隔離されていないか確認するか、Core を復元/再インストールしてから再試行してください。",
@@ -214,7 +214,9 @@
       "sharedProcess": "現在のインスタンスは共有プロセスを再利用しています",
       "pipeLine": "名前付きパイプ: {{pipe}}",
       "diagnosticsLine": "診断情報: {{message}}",
-      "reinitialize": "温度モニタリングを初期化"
+      "reinitialize": "温度モニタリングを初期化",
+      "reinstallPawnIo": "PawnIO を再インストール",
+      "reinstallPawnIoRunning": "PawnIO を再インストール中…"
     },
     "controlProtection": "制御と保護",
     "stats": {
@@ -381,6 +383,7 @@
     "learning": {
       "title": "適応学習",
       "paused": "一時停止中",
+      "requiresLearning": "適応学習を有効にしてください",
       "description": "実際の温度が設定値に近づくよう各ポイントの目標回転数を微調整します。オフセットはいつでもリセットできます。",
       "toggleAria": "適応学習を切り替える",
       "biasTitle": "学習傾向",
@@ -408,12 +411,12 @@
           "description": "RPM の低下のみを許可し、学習カーブによる不要な加速をできるだけを防ぎます。"
         }
       },
-      "predictiveTitle": "消費電力予測フィードフォワード",
-      "predictiveDescription": "CPU/GPU の消費電力の急増と温度上昇トレンドに基づき、実測温度がカーブ点を越える前に先行して回転数を上げます。適応学習とは独立しています。",
-      "laptopGuardTitle": "本体ファン連動スローダウン",
-      "laptopGuardDescription": "本体の CPU/GPU ファンが直近ピークに近い間はクーラーの減速幅を制限し、急な温度低下→急減速→温度再上昇という振動を防ぎます。",
-      "laptopGuardToggleAria": "本体ファン連動スローダウンの切り替え",
-      "predictiveToggleAria": "消費電力予測フィードフォワードの切り替え"
+      "predictiveTitle": "早めに回転を上げる",
+      "predictiveDescription": "CPU/GPU の消費電力が急増して温度が上昇しているときは、実測温度がカーブ点を超えるのを待たず、予測温度に合わせて先に回転を上げます。上げる方向のみで、下げる方向には適用しません。学習オフセットは実測温度で計算されます。",
+      "laptopGuardTitle": "ノートPCのファンが高回転の間はゆっくり下げる",
+      "laptopGuardDescription": "ノートPC本体のファンが直近の最高回転に近いあいだ、クーラーの回転は1サンプリングあたり最大 60 RPM しか下げません。温度が少し下がった途端に回転を落とし、温度が戻って再び上げる、という往復を防ぎます。ファン回転数を読み取れる機種でのみ利用できます。",
+      "laptopGuardToggleAria": "ノートPCのファンが高回転の間はゆっくり下げるの切り替え",
+      "predictiveToggleAria": "早めに回転を上げるの切り替え"
     },
     "noiseTest": {
       "title": "ファン騒音テスト",
@@ -788,6 +791,8 @@
       "autoStartTitle": "Windows 起動時に起動",
       "autoStartDescription": "Windows 起動時に自動実行します",
       "autoStartTip": "管理者権限で実行すると毎回の UAC 確認を省略できます",
+      "autoStartTitleLinux": "ログイン時に起動",
+      "autoStartDescriptionLinux": "デスクトップにログインすると自動実行します（XDG 自動起動エントリ）",
       "reconnectTitle": "設定を維持",
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
@@ -803,9 +808,7 @@
       "rtssLayoutStep4": "THRM に戻り、「RTSS オンスクリーン表示」を再度オンにします。",
       "rtssLayoutNote": "レイヤー名は自由に設定できます。THRM Anchor は一例です。他のレイヤーを追加する場合も末尾に残してください。1% は空白を減らすためだけに使用し、回転数の文字を小さくするものではありません。",
       "blurTitle": "ウィンドウ素材",
-      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。",
-      "suspendFanOffTitle": "スリープ時に停止",
-      "suspendFanOffDescription": "システムがスリープ/休止状態になると、ファンを 0 RPM にし、ギアライトと RGB をオフにします。"
+      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。"
     },
     "offline": {
       "message": "デバイスが接続されていないため、一部機能は利用できません"

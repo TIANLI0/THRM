@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
-using System.Management;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text;
@@ -34,6 +33,10 @@ namespace THRM.TempBridge
         public long UpdateTime { get; set; }
         public bool Success { get; set; }
         public string Error { get; set; }
+        // CPU 温度单独的故障说明。GPU 可读而 CPU 读不到时 Success 仍为 true
+        // （GPU 基准的控温依然成立），但界面必须能告诉用户 CPU 为什么是空的、
+        // 以及怎么修——否则只会看到一个没有任何解释的"无数据"。
+        public string CpuTempError { get; set; }
 
         public TemperatureData()
         {
@@ -41,6 +44,7 @@ namespace THRM.TempBridge
             SelectedGpuDevice = "auto";
             CpuModel = string.Empty;
             GpuModel = string.Empty;
+            CpuTempError = string.Empty;
             CpuSensors = Array.Empty<TemperatureSensor>();
             GpuSensors = Array.Empty<TemperatureSensor>();
             CpuPowerSensors = Array.Empty<PowerSensor>();
@@ -170,9 +174,19 @@ namespace THRM.TempBridge
         private const int MaxInitRetries = 3;
         private const int InitRetryDelayMs = 2000;
         private const int ConsecutiveFailuresBeforeReinit = 5;
-        private const int MaxReasonableTemperature = 150;
         private const int MemoryTrimIntervalSeconds = 60;
+
+        // CPU 温度依赖 PawnIO 驱动读取 MSR，没有可用的替代来源（Windows ACPI 温区不是
+        // CPU 核心温度，见 GetTemperatureDataUnsafe 中的说明）。因此读不到时唯一有意义的
+        // 指引就是修复 PawnIO 本身——THRM 自带安装包，可在应用内一键重装，不需要用户
+        // 自己去下载。
+        private const string PawnIoRemediationHint =
+            "CPU 温度依赖 PawnIO 驱动读取，请在 THRM 内点击“重装 PawnIO”（应用已自带安装包），完成后重启 THRM；" +
+            "若仍不可用，请关闭可能独占硬件传感器的其它监控软件（如 HWiNFO、AIDA64、Armoury Crate、LenovoLegionToolkit）后重试";
         private static Computer computer;
+        // UpdateVisitor 是无状态的，且所有遍历都在 lockObject 之下串行执行，
+        // 因此整个进程共用一个实例即可，不必每次采样都新建。
+        private static readonly UpdateVisitor updateVisitor = new UpdateVisitor();
         // 是否启用 GPU 硬件监控。停用时 LibreHardwareMonitor 完全不初始化 GPU
         // 子系统（NVAPI/NVML 等），避免混合显卡笔记本的独显被轮询唤醒。
         private static bool gpuMonitoringEnabled = true;
@@ -455,7 +469,8 @@ namespace THRM.TempBridge
 
             if (computer == null)
             {
-                Console.WriteLine("- LibreHardwareMonitor 未初始化，已尝试使用 Windows 温区兜底读取 CPU 温度");
+                Console.WriteLine("- LibreHardwareMonitor 未初始化，无法读取 CPU 温度");
+                Console.WriteLine("- " + PawnIoRemediationHint);
                 if (!string.IsNullOrWhiteSpace(lastHardwareMonitorError))
                 {
                     Console.WriteLine("- 初始化信息: " + lastHardwareMonitorError);
@@ -546,7 +561,7 @@ namespace THRM.TempBridge
                     };
 
                     computer.Open();
-                    computer.Accept(new UpdateVisitor());
+                    computer.Accept(updateVisitor);
 
                     // Verify we can actually read at least one temperature
                     if (HasAnyTemperatureSensor(computer))
@@ -637,7 +652,7 @@ namespace THRM.TempBridge
         {
             if (!PawnIo.IsInstalled)
             {
-                return "PawnIO 驱动未安装，LibreHardwareMonitor 的部分 CPU 传感器可能不可用；已继续使用 Windows 温区兜底";
+                return "PawnIO 驱动未安装，无法读取 CPU 温度：" + PawnIoRemediationHint;
             }
 
             // Check PawnIO driver service is running; start it only when stopped.
@@ -961,7 +976,7 @@ namespace THRM.TempBridge
             {
                 if (computer != null)
                 {
-                    computer.Accept(new UpdateVisitor());
+                    computer.Accept(updateVisitor);
 
                     foreach (IHardware hardware in computer.Hardware)
                     {
@@ -1006,25 +1021,19 @@ namespace THRM.TempBridge
                 lastHardwareMonitorError = ex.Message;
             }
 
-            if (cpuSensors.Count == 0)
-            {
-                var fallbackCpuSensor = TryReadWindowsCpuTemperatureSensor();
-                if (fallbackCpuSensor != null)
-                {
-                    cpuSensors.Add(fallbackCpuSensor);
-                    if (string.IsNullOrWhiteSpace(cpuModel))
-                    {
-                        cpuModel = "Windows Thermal Zone";
-                    }
-                }
-            }
+            // 这里刻意没有"兜底"读取 CPU 温度。Windows 温区（ACPI _TZ，无论经性能计数器
+            // 还是 WMI MSAcpi_ThermalZoneTemperature 读取）报的是主板/外壳温区，不是 CPU
+            // 核心温度：多数笔记本上它要么恒定不变、要么比真实核心温度低十几度。拿它去驱动
+            // 风扇曲线只会得到错误的转速，还会把"PawnIO 没装好"这个真正的问题伪装成正常读数，
+            // 让用户永远看不到可以一键修复的提示。读不到就如实报错。
 
             var selectedGpu = SelectGpuCandidate(gpuCandidates, selection.GpuDevice, selection.GpuSensor);
             var gpuSensors = selectedGpu != null ? selectedGpu.Sensors : new System.Collections.Generic.List<TemperatureSensor>();
             var gpuPowerSensors = selectedGpu != null ? selectedGpu.PowerSensors : new System.Collections.Generic.List<PowerSensor>();
             gpuModel = selectedGpu != null ? selectedGpu.Model : string.Empty;
 
-            int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core", "Windows" });
+            // "Windows" 曾用于匹配已移除的 "Windows Thermal Zone" 兜底传感器，不再需要。
+            int cpuTemp = SelectTemperature(cpuSensors, selection.CpuSensor, new[] { "Average", "Package", "Tctl", "Tdie", "Core" });
             int gpuTemp = SelectTemperature(gpuSensors, selection.GpuSensor, new[] { "Average", "GPU Core", "Core", "Edge", "Junction", "Hot Spot", "Temperature" });
             double cpuPower = SelectPower(cpuPowerSensors, new[] { "CPU Package", "Package", "Package Power", "CPU PPT", "PPT" }, allowFallbackToFirst: false);
             double gpuPower = SelectPower(gpuPowerSensors, new[] { "GPU Power", "Board Power", "Total Graphics Power", "Power" }, allowFallbackToFirst: true);
@@ -1051,6 +1060,11 @@ namespace THRM.TempBridge
                 PowerSensors = candidate.PowerSensors != null ? candidate.PowerSensors.ToArray() : Array.Empty<PowerSensor>()
             }).ToArray();
 
+            // CPU 读不到就单独上报，哪怕 GPU 正常、整体 Success 仍为 true。
+            // 没有这一条，"GPU 可读 + CPU 为空"会被当成完全正常的一次采样，
+            // 用户只看到 CPU 显示"无数据"，却得不到任何原因和修复入口。
+            result.CpuTempError = cpuTemp == 0 ? BuildCpuTemperatureError(hardwareError) : string.Empty;
+
             if (cpuTemp == 0 && gpuTemp == 0)
             {
                 result.Success = false;
@@ -1065,6 +1079,16 @@ namespace THRM.TempBridge
             return result;
         }
 
+        static string BuildCpuTemperatureError(string hardwareError)
+        {
+            string detail = !string.IsNullOrWhiteSpace(hardwareError) ? hardwareError : lastHardwareMonitorError;
+            if (!string.IsNullOrWhiteSpace(detail))
+            {
+                return "未读取到 CPU 温度（硬件监控信息: " + detail + "）；" + PawnIoRemediationHint;
+            }
+            return "未读取到 CPU 温度；" + PawnIoRemediationHint;
+        }
+
         static string BuildTemperatureReadError(string hardwareError)
         {
             var parts = new System.Collections.Generic.List<string>();
@@ -1076,158 +1100,8 @@ namespace THRM.TempBridge
                 parts.Add("硬件监控信息: " + detail);
             }
 
-            parts.Add("已尝试 Windows 温区兜底；可重新初始化温度监控，或安装/更新 PawnIO 并关闭可能独占硬件传感器的软件");
+            parts.Add(PawnIoRemediationHint);
             return string.Join("；", parts.ToArray());
-        }
-
-        static TemperatureSensor TryReadWindowsCpuTemperatureSensor()
-        {
-            int temp = TryReadPerformanceCounterCpuTemperature();
-            if (temp > 0)
-            {
-                return new TemperatureSensor
-                {
-                    Key = "cpu/windows/thermal-zone",
-                    Name = "Windows Thermal Zone",
-                    Value = temp,
-                };
-            }
-
-            temp = TryReadWmiCpuTemperature();
-            if (temp > 0)
-            {
-                return new TemperatureSensor
-                {
-                    Key = "cpu/windows/wmi-thermal-zone",
-                    Name = "Windows WMI Thermal Zone",
-                    Value = temp,
-                };
-            }
-
-            return null;
-        }
-
-        static int TryReadPerformanceCounterCpuTemperature()
-        {
-            const string categoryName = "Thermal Zone Information";
-            const string counterName = "Temperature";
-            string[] preferredInstances = new[] { @"\_TZ.THRM", "_TZ.THRM", "THRM" };
-
-            foreach (string instance in preferredInstances)
-            {
-                int temp = TryReadTemperatureCounter(categoryName, counterName, instance);
-                if (temp > 0)
-                {
-                    return temp;
-                }
-            }
-
-            try
-            {
-                if (!PerformanceCounterCategory.Exists(categoryName))
-                {
-                    return 0;
-                }
-
-                var category = new PerformanceCounterCategory(categoryName);
-                foreach (string instance in category.GetInstanceNames())
-                {
-                    int temp = TryReadTemperatureCounter(categoryName, counterName, instance);
-                    if (temp > 0)
-                    {
-                        return temp;
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            return 0;
-        }
-
-        static int TryReadTemperatureCounter(string categoryName, string counterName, string instanceName)
-        {
-            try
-            {
-                using (var counter = new PerformanceCounter(categoryName, counterName, instanceName, true))
-                {
-                    return NormalizeCounterTemperature(counter.NextValue());
-                }
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        static int TryReadWmiCpuTemperature()
-        {
-            int best = 0;
-            try
-            {
-                using (var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"))
-                {
-                    foreach (ManagementObject obj in searcher.Get())
-                    {
-                        using (obj)
-                        {
-                            object value = obj["CurrentTemperature"];
-                            if (value == null)
-                            {
-                                continue;
-                            }
-
-                            int temp = NormalizeWmiTemperature(Convert.ToDouble(value));
-                            if (temp > best)
-                            {
-                                best = temp;
-                            }
-                        }
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            return best;
-        }
-
-        static int NormalizeCounterTemperature(double raw)
-        {
-            if (raw <= 0)
-            {
-                return 0;
-            }
-
-            double celsius = raw;
-            if (raw > 1000)
-            {
-                celsius = (raw / 10.0) - 273.15;
-            }
-            else if (raw > 200)
-            {
-                celsius = raw - 273.15;
-            }
-
-            return NormalizeCelsius(celsius);
-        }
-
-        static int NormalizeWmiTemperature(double raw)
-        {
-            if (raw <= 0)
-            {
-                return 0;
-            }
-
-            return NormalizeCelsius((raw / 10.0) - 273.15);
-        }
-
-        static int NormalizeCelsius(double celsius)
-        {
-            int rounded = (int)Math.Round(celsius);
-            return rounded > 0 && rounded < MaxReasonableTemperature ? rounded : 0;
         }
 
         static TemperatureData GetTemperatureData(TemperatureSelection selection)

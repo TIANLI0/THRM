@@ -33,6 +33,44 @@ func TestWaitForTraySettle_NoPanic(t *testing.T) {
 	}()
 }
 
+// 注册时通知区域为 0（非 Windows，或注册那一刻通知区域已消失）时监视协程直接退出，
+// 不能空转，也不能因为"当前句柄 != 0"就误判成重建。
+func TestWatchNotifyAreaRebuild_ReturnsWithoutHandle(t *testing.T) {
+	m := NewManager(testLogger{}, []byte{0x89, 0x50, 0x4e, 0x47})
+	done := make(chan struct{})
+
+	finished := make(chan struct{})
+	go func() {
+		m.watchNotifyAreaRebuild(done, 0)
+		close(finished)
+	}()
+
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("watchNotifyAreaRebuild 在没有注册句柄时应立即返回")
+	}
+}
+
+// 实例停止信号一到，监视协程必须退出，否则每次托盘重建都会多留一个协程。
+func TestWatchNotifyAreaRebuild_StopsOnInstanceDone(t *testing.T) {
+	m := NewManager(testLogger{}, []byte{0x89, 0x50, 0x4e, 0x47})
+	instanceDone := make(chan struct{})
+
+	finished := make(chan struct{})
+	go func() {
+		m.watchNotifyAreaRebuild(instanceDone, 0x1234)
+		close(finished)
+	}()
+
+	close(instanceDone)
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchNotifyAreaRebuild 未响应实例停止信号")
+	}
+}
+
 func TestNewManager_CreatesInstance(t *testing.T) {
 	iconData := []byte{0x89, 0x50, 0x4e, 0x47}
 	m := NewManager(testLogger{}, iconData)

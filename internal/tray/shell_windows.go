@@ -10,10 +10,19 @@ import (
 )
 
 var (
-	modUser32         = windows.NewLazySystemDLL("user32.dll")
-	procFindWindowW   = modUser32.NewProc("FindWindowW")
-	procFindWindowExW = modUser32.NewProc("FindWindowExW")
+	modUser32          = windows.NewLazySystemDLL("user32.dll")
+	procFindWindowW    = modUser32.NewProc("FindWindowW")
+	procFindWindowExW  = modUser32.NewProc("FindWindowExW")
+	modKernel32        = windows.NewLazySystemDLL("kernel32.dll")
+	procGetTickCount64 = modKernel32.NewProc("GetTickCount64")
 )
+
+// systemUptime 返回系统启动至今的时长，用于区分登录阶段与日常运行。
+// 取不到时返回 0，按登录阶段处理（多等一会儿总比丢图标好）。
+func systemUptime() time.Duration {
+	ticks, _, _ := procGetTickCount64.Call()
+	return time.Duration(ticks) * time.Millisecond
+}
 
 // findTopWindow 查找指定类名的顶层窗口句柄，未找到返回 0。
 func findTopWindow(class string) uintptr {
@@ -43,11 +52,17 @@ func findChildWindow(parent uintptr, class string) uintptr {
 // TaskbarCreated 之后才创建，systray 的自动重添机制也无从触发。
 // 因此这里进一步要求通知区域窗口 TrayNotifyWnd 也已存在。
 func isShellReady() bool {
+	return notifyAreaWindow() != 0
+}
+
+// notifyAreaWindow 返回任务栏通知区域(TrayNotifyWnd)的窗口句柄，未就绪时返回 0。
+// 通知区域被重建时会新建该窗口，因此句柄变化即代表重建过。
+func notifyAreaWindow() uintptr {
 	tray := findTopWindow("Shell_TrayWnd")
 	if tray == 0 {
-		return false
+		return 0
 	}
-	return findChildWindow(tray, "TrayNotifyWnd") != 0
+	return findChildWindow(tray, "TrayNotifyWnd")
 }
 
 // waitForShellReady 在启动系统托盘前等待外壳就绪。

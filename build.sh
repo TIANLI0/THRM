@@ -4,7 +4,7 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 
-echo "=== FanControlLinux Build ==="
+echo "=== THRM Linux Build ==="
 
 # Resolve build version: THRM_BUILD_VERSION env override -> wails.json productVersion -> "dev".
 VERSION="${THRM_BUILD_VERSION:-}"

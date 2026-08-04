@@ -29,6 +29,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { Environment } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type ThemeMeta } from '../types/app';
@@ -463,6 +464,20 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [curveProfiles, setCurveProfiles] = useState<CurveProfile[]>([]);
   const [curveProfileLoading, setCurveProfileLoading] = useState(false);
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
+  // 平台取自 Wails 运行时而不是 userAgent：WebKitGTK 的 UA 里没有可靠的平台标识。
+  const [isWindowsPlatform, setIsWindowsPlatform] = useState(false);
+
+  useEffect(() => {
+    let disposed = false;
+    void Environment()
+      .then((env) => {
+        if (!disposed) setIsWindowsPlatform(env.platform === 'windows');
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const isBs1 = deviceModel === 'BS1';
@@ -632,12 +647,19 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const handleWindowsAutoStartChange = useCallback(async (enabled: boolean) => {
     setLoading('windowsAutoStart', true);
     try {
-      const isAdmin = await apiService.isRunningAsAdmin();
-      if (enabled) await apiService.setAutoStartWithMethod(true, isAdmin ? 'task_scheduler' : 'registry');
-      else await apiService.setAutoStartWithMethod(false, '');
+      if (enabled) {
+        // 注册表/计划任务只有 Windows 有；Linux 走 XDG autostart 条目。
+        let method = 'desktop';
+        if (isWindowsPlatform) {
+          method = (await apiService.isRunningAsAdmin()) ? 'task_scheduler' : 'registry';
+        }
+        await apiService.setAutoStartWithMethod(true, method);
+      } else {
+        await apiService.setAutoStartWithMethod(false, '');
+      }
       onConfigChange(types.AppConfig.createFrom({ ...config, windowsAutoStart: enabled }));
     } catch (e) { toast.error(t('controlPanel.alerts.autoStartFailed', { error: getErrorMessage(e) })); } finally { setLoading('windowsAutoStart', false); }
-  }, [config, onConfigChange, t]);
+  }, [config, onConfigChange, isWindowsPlatform, t]);
 
   const handleIgnoreDeviceOnReconnectChange = useCallback(async (enabled: boolean) => {
     try {
@@ -804,17 +826,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       onConfigChange(newCfg);
     } catch { /* noop */ } finally {
       setLoading('windowBlur', false);
-    }
-  }, [config, onConfigChange]);
-
-  const handleSuspendFanOffChange = useCallback(async (enabled: boolean) => {
-    setLoading('suspendFanOff', true);
-    try {
-      const newCfg = types.AppConfig.createFrom({ ...config, suspendFanOff: enabled });
-      await apiService.updateConfig(newCfg);
-      onConfigChange(newCfg);
-    } catch { /* noop */ } finally {
-      setLoading('suspendFanOff', false);
     }
   }, [config, onConfigChange]);
 
@@ -1679,6 +1690,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             </div>
           </SettingRow>
 
+          {/* 窗口材质是 Windows 桌面合成器的效果，Linux 上没有对应实现 */}
+          {isWindowsPlatform && (
+            <SettingRow
+              icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'auto') !== 'off' ? 'text-primary' : '')} />}
+              title={t('controlPanel.system.blurTitle')}
+              description={t('controlPanel.system.blurDescription')}
+            >
+              <div className="w-36">
+                <Select
+                  value={((config as any).windowBlur === 'on' ? 'mica' : ((config as any).windowBlur || 'auto')) as string}
+                  onChange={(v: string | number) => handleWindowBlurChange(String(v))}
+                  options={windowBlurOptions}
+                  size="sm"
+                />
+              </div>
+            </SettingRow>
+          )}
+
           <SettingRow
             icon={<Languages className="h-4 w-4" />}
             title={t('controlPanel.system.languageTitle')}
@@ -1752,9 +1781,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
           <SettingRow
             icon={<Monitor className={clsx('h-4 w-4', config.windowsAutoStart ? 'text-emerald-500' : '')} />}
-            title={t('controlPanel.system.autoStartTitle')}
-            description={t('controlPanel.system.autoStartDescription')}
-            tip={t('controlPanel.system.autoStartTip')}
+            title={isWindowsPlatform ? t('controlPanel.system.autoStartTitle') : t('controlPanel.system.autoStartTitleLinux')}
+            description={isWindowsPlatform ? t('controlPanel.system.autoStartDescription') : t('controlPanel.system.autoStartDescriptionLinux')}
+            tip={isWindowsPlatform ? t('controlPanel.system.autoStartTip') : undefined}
           >
             <ToggleSwitch
               enabled={config.windowsAutoStart}
@@ -1865,35 +1894,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               </Collapsible>
             </div>
           </div>
-
-          <SettingRow
-            icon={<Sparkles className={clsx('h-4 w-4', ((config as any).windowBlur || 'auto') !== 'off' ? 'text-primary' : '')} />}
-            title={t('controlPanel.system.blurTitle')}
-            description={t('controlPanel.system.blurDescription')}
-          >
-            <div className="w-36">
-              <Select
-                value={((config as any).windowBlur === 'on' ? 'mica' : ((config as any).windowBlur || 'auto')) as string}
-                onChange={(v: string | number) => handleWindowBlurChange(String(v))}
-                options={windowBlurOptions}
-                size="sm"
-              />
-            </div>
-          </SettingRow>
-
-          <SettingRow
-            icon={<Power className={clsx('h-4 w-4', ((config as any).suspendFanOff ?? false) ? 'text-emerald-500' : '')} />}
-            title={t('controlPanel.system.suspendFanOffTitle')}
-            description={t('controlPanel.system.suspendFanOffDescription')}
-          >
-            <ToggleSwitch
-              enabled={(config as any).suspendFanOff ?? false}
-              onChange={handleSuspendFanOffChange}
-              loading={loadingStates.suspendFanOff}
-              size="sm"
-              color="green"
-            />
-          </SettingRow>
         </Section>
 
         {/* ═══════════ Offline tip ═══════════ */}

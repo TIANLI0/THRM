@@ -14,6 +14,11 @@ import (
 // 这就是主读取路径，缓存会让控温依据变旧。
 const platformCPUTempIsExpensive = false
 
+// platformHasCPUTempFallback 报告本平台是否存在可信的进程内 CPU 温度来源。
+// Linux 读的是 hwmon 的 coretemp/k10temp/zenpower 与 CPU 温区，都是真实的核心温度，
+// 且这里没有 TempBridge，它本身就是主读取路径。
+const platformHasCPUTempFallback = true
+
 func (r *Reader) readPlatformCPUTemp() int {
 	if temp := readLinuxCPUTempFromHwmon(); temp > 0 {
 		return temp

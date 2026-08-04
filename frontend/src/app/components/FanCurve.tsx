@@ -1391,6 +1391,9 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     void updateSmartControlConfig({ learning: enabled });
   }, [updateSmartControlConfig]);
 
+  // 提前升速与缓慢降速由核心侧按 learning 一并门控，界面据此禁用两个子开关。
+  const learningEnabled = !!smartControl.learning;
+
   const handlePredictiveBoostToggle = useCallback((enabled: boolean) => {
     void updateSmartControlConfig({ predictiveBoost: enabled } as Partial<types.SmartControlConfig>);
   }, [updateSmartControlConfig]);
@@ -1916,13 +1919,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.predictiveTitle')}</div>
-                  {!smartControl.predictiveBoost && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
+                  {!learningEnabled
+                    ? <Badge variant="info">{t('fanCurve.learning.requiresLearning')}</Badge>
+                    : !smartControl.predictiveBoost && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
                 </div>
                 <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.learning.predictiveDescription')}</div>
               </div>
               <ToggleSwitch
                 enabled={!!smartControl.predictiveBoost}
                 onChange={handlePredictiveBoostToggle}
+                disabled={!learningEnabled}
                 loading={learningConfigLoading}
                 size="sm"
                 color="blue"
@@ -1930,19 +1936,22 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               />
             </div>
 
-            {/* 本机风扇联动缓降：仅在能读到本机 CPU/GPU 风扇转速的机型上展示 */}
+            {/* 缓慢降速依赖笔记本自身风扇转速，仅在读得到的机型上展示 */}
             {((temperature?.cpuFanRpm ?? 0) > 0 || (temperature?.gpuFanRpm ?? 0) > 0) && (
               <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/55 p-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.laptopGuardTitle')}</div>
-                    {!(smartControl as any).laptopFanGuard && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
+                    {!learningEnabled
+                      ? <Badge variant="info">{t('fanCurve.learning.requiresLearning')}</Badge>
+                      : !(smartControl as any).laptopFanGuard && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
                   </div>
                   <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.learning.laptopGuardDescription')}</div>
                 </div>
                 <ToggleSwitch
                   enabled={!!(smartControl as any).laptopFanGuard}
                   onChange={handleLaptopFanGuardToggle}
+                  disabled={!learningEnabled}
                   loading={learningConfigLoading}
                   size="sm"
                   color="blue"

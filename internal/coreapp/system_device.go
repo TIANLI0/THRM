@@ -419,14 +419,6 @@ func (a *CoreApp) onSystemSuspend() {
 	// are blocked by systemSuspended above, so the suspend power-off/disconnect
 	// sequence cannot be followed by a stale realtime RPM write.
 	a.waitForDeviceControlIdle()
-	suspendFanOff := a.configManager.Get().SuspendFanOff
-	// Windows may enter sleep as soon as this callback returns. Execute the
-	// user-requested fan/light shutdown synchronously while the HID handle is
-	// still valid; the remaining disconnect and bridge cleanup can continue in
-	// the bounded background phase below.
-	if suspendFanOff {
-		a.safeRun("suspend-power-off", a.powerOffDeviceForSuspend)
-	}
 	a.stopTemperatureMonitoring()
 
 	done := make(chan struct{})
@@ -471,30 +463,6 @@ func (a *CoreApp) onSystemSuspend() {
 
 func (a *CoreApp) isCurrentSuspendGeneration(generation uint64) bool {
 	return a.systemSuspended.Load() && a.suspendGeneration.Load() == generation && !a.stopping.Load()
-}
-
-// powerOffDeviceForSuspend 在系统挂起前将风扇降到 0 转速，并(非 BS1)关闭挡位灯与 RGB。
-// 唤醒重连后由 ConnectDevice/reapplyConfigAfterReconnect 重新应用转速、挡位灯与灯带配置。
-func (a *CoreApp) powerOffDeviceForSuspend() {
-	if !a.deviceManager.IsConnected() {
-		return
-	}
-
-	a.logInfo("系统挂起前：风扇转速归零并关闭挡位灯/RGB")
-	if !a.deviceManager.SetFanSpeed(0) {
-		a.logError("挂起前归零转速失败")
-	}
-
-	// BS1 不支持挡位灯与 RGB 关闭。
-	if a.deviceManager.IsBS1() {
-		return
-	}
-	if !a.deviceManager.SetGearLight(false) {
-		a.logError("挂起前关闭挡位灯失败")
-	}
-	if !a.deviceManager.SetRGBOff() {
-		a.logError("挂起前关闭 RGB 失败")
-	}
 }
 
 // onSystemResume 收到系统唤醒通知时调用，触发设备与监控的恢复。

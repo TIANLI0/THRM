@@ -1,5 +1,5 @@
 #!/bin/bash
-# test_validate.sh — FanControlLinux Steps 1-3 Structure & Dependency Validation
+# test_validate.sh — THRM Linux Steps 1-3 Structure & Dependency Validation
 set -uo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

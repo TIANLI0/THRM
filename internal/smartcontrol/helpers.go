@@ -6,6 +6,19 @@ func getCurveEdgeRPMBounds(curve []types.FanCurvePoint) (int, int) {
 	return GetCurveRPMBounds(curve)
 }
 
+// 以下两个子开关都会改写控温环的输出，因此归在自适应学习之下：学习关闭时用户要的是
+// 纯曲线查表，再暗中改写目标转速只会让曲线与实际转速对不上。开关状态本身仍然保留。
+
+// PredictiveBoostActive 判断"提前升速"当前是否应生效。
+func PredictiveBoostActive(cfg types.SmartControlConfig) bool {
+	return cfg.Learning && cfg.PredictiveBoost
+}
+
+// LaptopFanGuardActive 判断"笔记本风扇高转时缓慢降速"当前是否应生效。
+func LaptopFanGuardActive(cfg types.SmartControlConfig) bool {
+	return cfg.Learning && cfg.LaptopFanGuard
+}
+
 // GetCurveRPMBounds 返回用户曲线的最小/最大 RPM 边界。
 func GetCurveRPMBounds(curve []types.FanCurvePoint) (int, int) {
 	if len(curve) == 0 {
