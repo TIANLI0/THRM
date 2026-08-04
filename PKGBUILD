@@ -26,11 +26,11 @@ options=('!strip' '!debug')
 # imports every payload into $srcdir before package() runs, including in a
 # clean chroot.
 source=(
-  'thrm::build/thrm'
-  'thrm-core::build/thrm-core'
-  '99-flydigi-fan.rules::scripts/99-flydigi-fan.rules'
-  'thrm.desktop::packaging/linux/thrm.desktop'
-  'thrm.png::frontend/public/brand/appicon.png'
+  "thrm::file://${startdir}/build/thrm"
+  "thrm-core::file://${startdir}/build/thrm-core"
+  "99-flydigi-fan.rules::file://${startdir}/scripts/99-flydigi-fan.rules"
+  "thrm.desktop::file://${startdir}/packaging/linux/thrm.desktop"
+  "thrm.png::file://${startdir}/frontend/public/brand/appicon.png"
   'LICENSE'
 )
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
