@@ -136,9 +136,8 @@ func (a *App) ExportDiagnosticPackage() (string, error) {
 	}
 
 	exe, _ := os.Executable()
-	for _, dir := range []string{filepath.Join(filepath.Dir(exe), "logs"), filepath.Join(filepath.Dir(exe), "bridge", "logs")} {
-		_ = addRecentDiagnosticLogs(zw, dir, 8)
-	}
+	_ = addRecentDiagnosticLogs(zw, filepath.Join(filepath.Dir(exe), "logs"), "app", 8)
+	_ = addRecentDiagnosticLogs(zw, filepath.Join(filepath.Dir(exe), "bridge", "logs"), "bridge", 8)
 	_ = addPlatformDiagnosticLogs(zw)
 	if err := closeWithError(nil); err != nil {
 		return "", err
@@ -146,7 +145,7 @@ func (a *App) ExportDiagnosticPackage() (string, error) {
 	return path, nil
 }
 
-func addRecentDiagnosticLogs(zw *zip.Writer, dir string, limit int) error {
+func addRecentDiagnosticLogs(zw *zip.Writer, dir, prefix string, limit int) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -165,7 +164,7 @@ func addRecentDiagnosticLogs(zw *zip.Writer, dir string, limit int) error {
 		if openErr != nil {
 			continue
 		}
-		dst, createErr := zw.Create(filepath.Join("logs", filepath.Base(dir)+"-"+item.Name()))
+		dst, createErr := zw.Create(filepath.Join("logs", prefix+"-"+item.Name()))
 		if createErr == nil {
 			_, createErr = io.Copy(dst, io.LimitReader(src, 2<<20))
 		}

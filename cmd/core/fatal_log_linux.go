@@ -3,12 +3,10 @@
 package main
 
 import (
-	"os"
 	"runtime/debug"
 )
 
 func setupFatalOutput() (func(), string) {
-	_ = os.Setenv("GOTRACEBACK", "all")
 	debug.SetTraceback("all")
 
 	// Linux 正常日志与捕获到的 panic 都由 journal 后端处理。保留 stdout/stderr

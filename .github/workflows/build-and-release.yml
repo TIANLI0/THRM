@@ -299,10 +299,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          VER="${THRM_BUILD_VERSION:-}"
-          if [ -z "$VER" ]; then
-            VER=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | sed -E 's/.*"([^"]+)"$/\1/')
+          PRODUCT_VER=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | sed -E 's/.*"([^"]+)"$/\1/')
+          PKGBUILD_VER=$(sed -n 's/^pkgver=//p' PKGBUILD)
+          if [ "$PKGBUILD_VER" != "$PRODUCT_VER" ]; then
+            echo "PKGBUILD pkgver ($PKGBUILD_VER) must match wails.json ($PRODUCT_VER)" >&2
+            exit 1
           fi
+          VER="${THRM_BUILD_VERSION:-$PRODUCT_VER}"
           [ -n "$VER" ] || VER="dev"
           echo "Packaging version: $VER"
 
@@ -395,19 +398,21 @@ jobs:
           ARCH_VER=$(printf '%s' "$ARCH_VER" | sed -E 's/[^[:alnum:]_+.]+/./g; s/^\.+//; s/\.+$//')
           [ -n "$ARCH_VER" ] || ARCH_VER="0.0.0.dev"
           echo "Arch package version: $ARCH_VER"
+          sed -i "s/^pkgver=.*/pkgver=$ARCH_VER/" PKGBUILD
 
           BUILDER_UID=$(id -u)
           docker run --rm \
             --env "BUILDER_UID=$BUILDER_UID" \
-            --env "THRM_PKGVER=$ARCH_VER" \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             archlinux:base-devel \
             bash -euc '
-              useradd --create-home --uid "$BUILDER_UID" --user-group builder
-              runuser -u builder -- env \
-                THRM_PKGVER="$THRM_PKGVER" \
-                THRM_ARTIFACT_DIR=/workspace/build \
+              builder=$(getent passwd "$BUILDER_UID" | cut -d: -f1)
+              if [ -z "$builder" ]; then
+                useradd --create-home --uid "$BUILDER_UID" --user-group builder
+                builder=builder
+              fi
+              runuser -u "$builder" -- env \
                 BUILDDIR=/tmp/thrm-makepkg \
                 PKGDEST=/workspace/build/dist \
                 makepkg --clean --force --noconfirm --nodeps

@@ -6,8 +6,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
+
+	"github.com/TIANLI0/THRM/internal/appmeta"
 )
 
 const (
@@ -35,6 +39,11 @@ func (w *cappedBuffer) Write(data []byte) (int, error) {
 }
 
 func addPlatformDiagnosticLogs(archive *zip.Writer) error {
+	homeDir, _ := os.UserHomeDir()
+	if stateDir := appmeta.UserStateDir(homeDir); stateDir != "" {
+		_ = addRecentDiagnosticLogs(archive, filepath.Join(stateDir, "logs"), "fallback", 8)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), diagnosticJournalTimeout)
 	defer cancel()
 

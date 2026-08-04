@@ -1,7 +1,7 @@
 # Maintainer: TIANLI0 <wutianli@tianli0.top>
 
 pkgname=thrm-bin
-pkgver="${THRM_PKGVER:-3.6.3}"
+pkgver=3.6.3
 pkgrel=1
 pkgdesc='Flydigi BS-series laptop cooler controller (prebuilt)'
 arch=('x86_64')
@@ -22,33 +22,28 @@ provides=("thrm=${pkgver}")
 conflicts=('thrm')
 options=('!strip' '!debug')
 
-# This PKGBUILD packages the binaries already produced by build.sh/CI. It does
-# not download a stale release or require Go/Bun on the Arch packaging host.
-source=()
-sha256sums=()
+# This PKGBUILD packages the binaries already produced by build.sh/CI. makepkg
+# imports every payload into $srcdir before package() runs, including in a
+# clean chroot.
+source=(
+  'thrm::build/thrm'
+  'thrm-core::build/thrm-core'
+  '99-flydigi-fan.rules::scripts/99-flydigi-fan.rules'
+  'thrm.desktop::packaging/linux/thrm.desktop'
+  'thrm.png::frontend/public/brand/appicon.png'
+  'LICENSE'
+)
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
-  local artifact_dir="${THRM_ARTIFACT_DIR:-${startdir}/build}"
-  if [[ "${artifact_dir}" != /* ]]; then
-    artifact_dir="${startdir}/${artifact_dir}"
-  fi
-
-  local artifact
-  for artifact in thrm thrm-core; do
-    if [[ ! -x "${artifact_dir}/${artifact}" ]]; then
-      error "missing executable build artifact: ${artifact_dir}/${artifact}"
-      return 1
-    fi
-  done
-
-  install -Dm755 "${artifact_dir}/thrm" "${pkgdir}/usr/bin/thrm"
-  install -Dm755 "${artifact_dir}/thrm-core" "${pkgdir}/usr/bin/thrm-core"
-  install -Dm644 "${startdir}/scripts/99-flydigi-fan.rules" \
+  install -Dm755 "${srcdir}/thrm" "${pkgdir}/usr/bin/thrm"
+  install -Dm755 "${srcdir}/thrm-core" "${pkgdir}/usr/bin/thrm-core"
+  install -Dm644 "${srcdir}/99-flydigi-fan.rules" \
     "${pkgdir}/usr/lib/udev/rules.d/99-flydigi-fan.rules"
-  install -Dm644 "${startdir}/packaging/linux/thrm.desktop" \
+  install -Dm644 "${srcdir}/thrm.desktop" \
     "${pkgdir}/usr/share/applications/thrm.desktop"
-  install -Dm644 "${startdir}/frontend/public/brand/appicon.png" \
+  install -Dm644 "${srcdir}/thrm.png" \
     "${pkgdir}/usr/share/icons/hicolor/256x256/apps/thrm.png"
-  install -Dm644 "${startdir}/LICENSE" \
+  install -Dm644 "${srcdir}/LICENSE" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

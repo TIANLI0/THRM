@@ -366,7 +366,8 @@ Linux 配置遵循 XDG Base Directory 规范：优先
 Linux 后端通过 Journal Native Protocol 写入 systemd journal，使用
 `SYSLOG_IDENTIFIER=thrm`（GUI）和 `SYSLOG_IDENTIFIER=thrm-core`（核心）区分进程。
 它不创建 `/var/log` 或安装目录日志，因此普通用户运行不需要 root；journal 不可用时
-回退到 stderr。Windows 后端仍使用 lumberjack 轮转文件。
+回退到 stderr 与 `$XDG_STATE_HOME/thrm/logs` 的轮转文件。Windows 后端仍使用
+lumberjack 轮转文件。
 
 ### 任务 1.7：风扇曲线和智能控制
 
@@ -1022,20 +1023,16 @@ func (m *Manager) Stop() {
 
 package main
 
-import (
-	"os"
-	"runtime/debug"
-)
+import "runtime/debug"
 
 func setupFatalOutput() (func(), string) {
-	_ = os.Setenv("GOTRACEBACK", "all")
 	debug.SetTraceback("all")
 	return func() {}, ""
 }
 ```
 
-应用捕获到的 panic 通过 Zap 写入 `thrm-core` journal；logger 尚未初始化时由
-stderr 兜底。查看两个进程的日志：
+应用捕获到的 panic 通过 Zap 写入 `thrm-core` journal 或 XDG fallback 日志；logger
+尚未初始化时由 stderr 兜底。查看两个进程的 journal 日志：
 
 ```bash
 journalctl --identifier=thrm --identifier=thrm-core --since today
@@ -1344,7 +1341,7 @@ sudo pacman -U ./thrm-bin-*.pkg.tar.zst
 ```
 
 软件包使用 `/usr/bin`、`/usr/lib/udev/rules.d` 与 `/usr/share` 标准布局；运行时
-配置/状态写 XDG 用户目录，日志写 journal，不创建 `/opt/thrm` 或 `/var/log/thrm`。
+配置/状态写 XDG 用户目录，日志优先写 journal，不创建 `/opt/thrm` 或 `/var/log/thrm`。
 
 ---
 

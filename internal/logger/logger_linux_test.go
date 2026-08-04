@@ -82,9 +82,13 @@ func TestLinuxLoggerUsesJournalWithoutCreatingInstallLogs(t *testing.T) {
 	}
 }
 
-func TestDefaultLogDirLinuxIsEmpty(t *testing.T) {
-	if got := defaultLogDir("/usr/bin"); got != "" {
-		t.Fatalf("defaultLogDir() = %q, want empty for journal logging", got)
+func TestDefaultLogDirLinuxUsesXDGStateHome(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	want := filepath.Join(stateHome, "thrm", "logs")
+	if got := defaultLogDir("/usr/bin"); got != want {
+		t.Fatalf("defaultLogDir() = %q, want %q", got, want)
 	}
 }
 
@@ -109,6 +113,9 @@ func TestLinuxLoggerDebugModeCanBeToggled(t *testing.T) {
 }
 
 func TestLinuxLoggerFallsBackWhenJournalIsUnavailable(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", stateHome)
 	original := openJournalSink
 	openJournalSink = func(string) (journalSink, error) {
 		return nil, errors.New("journal unavailable")
@@ -119,9 +126,18 @@ func TestLinuxLoggerFallsBackWhenJournalIsUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("journal failure must not prevent startup: %v", err)
 	}
-	defer log.Close()
-	if log.GetLogDir() != "" {
-		t.Fatalf("fallback logger must not use /var/log or install dir: %q", log.GetLogDir())
+	wantDir := filepath.Join(stateHome, "thrm", "logs")
+	if log.GetLogDir() != wantDir {
+		t.Fatalf("fallback log dir = %q, want %q", log.GetLogDir(), wantDir)
+	}
+	log.Info("fallback marker")
+	log.Close()
+	data, err := os.ReadFile(filepath.Join(wantDir, CoreIdentifier+".log"))
+	if err != nil {
+		t.Fatalf("read fallback log: %v", err)
+	}
+	if !strings.Contains(string(data), "fallback marker") {
+		t.Fatalf("fallback log is missing marker: %s", data)
 	}
 }
 

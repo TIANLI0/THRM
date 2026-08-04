@@ -266,14 +266,14 @@ func (m *Manager) ReadCSS(id string) (string, error) {
 
 // ResolveDir 返回应优先暴露给用户编辑的 themes 目录（用于「打开主题文件夹」）。
 func (m *Manager) ResolveDir() string {
-	if m.userDir != "" {
-		_ = os.MkdirAll(m.userDir, 0o755)
-		return m.userDir
-	}
 	if m.installDir != "" {
 		if _, err := os.Stat(m.installDir); err == nil {
 			return m.installDir
 		}
+	}
+	if m.userDir != "" {
+		_ = os.MkdirAll(m.userDir, 0o755)
+		return m.userDir
 	}
 	return m.installDir
 }

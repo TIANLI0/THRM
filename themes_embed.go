@@ -32,7 +32,7 @@ func newThemeManager() *theme.Manager {
 		installThemesDir = filepath.Join(filepath.Dir(exePath), "themes")
 	}
 
-	// 用户配置目录下的 themes 是唯一的播种/编辑目标。
+	// 用户配置目录下的 themes 是默认的播种/编辑目标。
 	userThemesDir := ""
 	home, _ := os.UserHomeDir()
 	if userConfigDir := appmeta.UserConfigDir(home); userConfigDir != "" {

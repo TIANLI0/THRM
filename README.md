@@ -254,14 +254,14 @@ Linux 不会在 `/usr/bin`、`/opt` 或 `/var/log` 中创建可变数据。旧�
 原文件会保留。
 Windows 便携版仍保留安装目录配置回退以兼容原有行为。
 
-Windows 运行日志保存在安装目录的 `logs` 文件夹中；Linux 日志直接写入 systemd journal，不会尝试写入通常需要 root 权限的 `/var/log`。可使用以下命令查看 Linux 日志：
+Windows 运行日志保存在安装目录的 `logs` 文件夹中；Linux 优先写入 systemd journal，不会尝试写入通常需要 root 权限的 `/var/log`。可使用以下命令查看 Linux 日志：
 
 ```bash
 journalctl --identifier=thrm --identifier=thrm-core --since today
 journalctl --follow --identifier=thrm --identifier=thrm-core
 ```
 
-在不提供 systemd journal 的 Linux 环境中，日志会自动输出到 stderr。遇到问题时，更推荐直接在设置页使用“导出诊断包”，诊断包会包含必要的应用信息、配置和近期文件日志或 journal 日志。
+在不提供 systemd journal 的 Linux 环境中，日志会输出到 stderr，并轮转写入 `$XDG_STATE_HOME/thrm/logs`（默认 `~/.local/state/thrm/logs`）。设置页的“导出诊断包”会一并收集这些文件或 journal 日志。
 
 ## 常见问题
 
@@ -421,7 +421,7 @@ Windows 通过命名管道通信，Linux 使用 Unix Domain Socket。
 | BLE          | `tinygo.org/x/bluetooth`                |
 | 系统托盘         | `fyne.io/systray`                       |
 | IPC          | Windows Named Pipe / Unix Domain Socket |
-| 日志           | Zap、Lumberjack（Windows）、systemd journal（Linux） |
+| 日志           | Zap、Lumberjack、systemd journal             |
 
 ## 目录结构
 
@@ -552,8 +552,6 @@ build/thrm-core
 makepkg -f
 sudo pacman -U ./thrm-bin-*.pkg.tar.zst
 ```
-
-若二进制不在 `build/`，可通过 `THRM_ARTIFACT_DIR=/绝对路径 makepkg -f` 指定。
 
 ## 测试与检查
 

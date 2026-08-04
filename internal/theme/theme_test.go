@@ -42,10 +42,26 @@ func TestReadCSS_NotFound(t *testing.T) {
 }
 
 func TestResolveDir(t *testing.T) {
-	m := NewManager("/tmp/install/themes", "/tmp/user/themes", testEmbedFS)
-	dir := m.ResolveDir()
-	if dir == "" {
-		t.Error("ResolveDir should not be empty")
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	userDir := filepath.Join(root, "user", "themes")
+	installedThemeDir := filepath.Join(installDir, "sample")
+	if err := os.MkdirAll(installedThemeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installedThemeDir, manifestName), []byte(`{"id":"sample"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(installDir, userDir, fstest.MapFS{
+		"sample/theme.json": &fstest.MapFile{Data: []byte(`{"id":"sample"}`)},
+	})
+	m.EnsureSeeded()
+	if got := m.ResolveDir(); got != installDir {
+		t.Fatalf("ResolveDir() = %q, want existing install directory %q", got, installDir)
+	}
+	if _, err := os.Stat(userDir); !os.IsNotExist(err) {
+		t.Fatalf("ResolveDir created an empty user directory: %v", err)
 	}
 }
 
