@@ -171,6 +171,7 @@ func TestRequestTypeConstants_Distinct(t *testing.T) {
 		ReqSetFanCurve, ReqGetFanCurve, ReqGetFanCurveProfiles,
 		ReqSetActiveFanCurveProfile, ReqSaveFanCurveProfile, ReqDeleteFanCurveProfile,
 		ReqExportFanCurveProfiles, ReqImportFanCurveProfiles, ReqResetLearnedOffsets,
+		ReqPreviewRTSSPosition,
 		ReqSetAutoControl, ReqSetManualGear, ReqGetAvailableGears,
 		ReqSetCustomSpeed, ReqSetGearLight, ReqSetPowerOnStart,
 		ReqSetSmartStartStop, ReqSetBrightness, ReqSetLightStrip,

@@ -50,13 +50,27 @@ type sharedMemoryLayout struct {
 }
 
 type sharedMemorySink struct {
-	mapHandle windows.Handle
-	viewBase  uintptr
-	view      []byte
-	entry     int
+	mapHandle    windows.Handle
+	viewBase     uintptr
+	view         []byte
+	entry        int
+	positionMode string
+	positionX    int
+	positionY    int
 }
 
-func newSharedMemorySink() osdSink { return &sharedMemorySink{entry: -1} }
+func newSharedMemorySink() osdSink {
+	return &sharedMemorySink{entry: -1, positionMode: "anchor"}
+}
+
+func (s *sharedMemorySink) SetPosition(mode string, x, y int) {
+	if mode != "custom" {
+		mode = "anchor"
+	}
+	s.positionMode = mode
+	s.positionX = x
+	s.positionY = y
+}
 
 func (s *sharedMemorySink) Update(rpm uint16) bool {
 	if !s.ensureMapped() {
@@ -84,7 +98,7 @@ func (s *sharedMemorySink) Update(rpm uint16) bool {
 	}
 
 	entry := s.entryBytes(layout, s.entry)
-	writeOSDText(entry, layout.version, formatOSDText(rpm))
+	writeOSDText(entry, layout.version, formatOSDTextAt(rpm, s.positionMode, s.positionX, s.positionY))
 	atomic.AddUint32((*uint32)(unsafe.Pointer(&s.view[osdFrameOffset])), 1)
 	return true
 }
@@ -101,9 +115,17 @@ func writeOSDText(entry []byte, version uint32, text string) {
 }
 
 func formatOSDText(rpm uint16) string {
+	return formatOSDTextAt(rpm, "anchor", 0, 0)
+}
+
+func formatOSDTextAt(rpm uint16, positionMode string, x, y int) string {
+	position := ""
+	if positionMode == "custom" {
+		position = fmt.Sprintf("<P=%d,%d>", x, y)
+	}
 	// RTSS concatenates client slots into one hypertext stream. Reset styles so
 	// THRM does not inherit the preceding client's color or font size.
-	return fmt.Sprintf("<C><S>Cooler Fan: %d RPM", rpm)
+	return fmt.Sprintf("%s<C><S>Cooler Fan: %d RPM", position, rpm)
 }
 
 func (s *sharedMemorySink) findEntry(layout sharedMemoryLayout) int {

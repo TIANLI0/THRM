@@ -21,17 +21,17 @@ func TestApplyMissingRTSSDefaults(t *testing.T) {
 		{
 			name: "missing interval",
 			raw:  `{"rtss":{"enabled":true}}`,
-			want: types.RTSSConfig{Enabled: true, UpdateIntervalMS: 500},
+			want: types.RTSSConfig{Enabled: true, UpdateIntervalMS: 1000, PositionMode: types.RTSSPositionModeAnchor},
 		},
 		{
 			name: "valid explicit values",
 			raw:  `{"rtss":{"enabled":false,"updateIntervalMs":250}}`,
-			want: types.RTSSConfig{Enabled: false, UpdateIntervalMS: 250},
+			want: types.RTSSConfig{Enabled: false, UpdateIntervalMS: 250, PositionMode: types.RTSSPositionModeAnchor},
 		},
 		{
 			name: "invalid interval",
 			raw:  `{"rtss":{"enabled":true,"updateIntervalMs":750}}`,
-			want: types.RTSSConfig{Enabled: true, UpdateIntervalMS: 500},
+			want: types.RTSSConfig{Enabled: true, UpdateIntervalMS: 1000, PositionMode: types.RTSSPositionModeAnchor},
 		},
 		{
 			name: "null config",

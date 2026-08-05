@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	DefaultUpdateInterval    = 500 * time.Millisecond
+	DefaultUpdateInterval    = time.Second
 	retryInterval            = 2 * time.Second
 	unchangedRefreshInterval = 5 * time.Second
 )
@@ -35,12 +35,16 @@ type Publisher struct {
 	sink osdSink
 	now  func() time.Time
 
-	enabled     bool
-	interval    time.Duration
-	nextAttempt time.Time
-	lastSuccess time.Time
-	lastRPM     uint16
-	hasLastRPM  bool
+	enabled       bool
+	interval      time.Duration
+	positionMode  string
+	positionX     int
+	positionY     int
+	positionDirty bool
+	nextAttempt   time.Time
+	lastSuccess   time.Time
+	lastRPM       uint16
+	hasLastRPM    bool
 }
 
 func New() *Publisher {
@@ -49,10 +53,52 @@ func New() *Publisher {
 
 func newPublisher(sink osdSink, now func() time.Time) *Publisher {
 	return &Publisher{
-		sink:     sink,
-		now:      now,
-		interval: DefaultUpdateInterval,
+		sink:         sink,
+		now:          now,
+		interval:     DefaultUpdateInterval,
+		positionMode: "anchor",
 	}
+}
+
+// SetPosition selects the sole source of RTSS cursor positioning. Anchor mode
+// preserves the existing OverlayEditor behavior; custom mode emits an explicit
+// <P=x,y> prefix before THRM's text.
+func (p *Publisher) SetPosition(mode string, x, y int) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if mode != "custom" {
+		mode = "anchor"
+	}
+	if p.positionMode == mode && p.positionX == x && p.positionY == y {
+		return
+	}
+	p.positionMode = mode
+	p.positionX = x
+	p.positionY = y
+	p.positionDirty = true
+	p.nextAttempt = time.Time{}
+	if sink, ok := p.sink.(interface{ SetPosition(string, int, int) }); ok {
+		sink.SetPosition(mode, x, y)
+	}
+	if !p.enabled || !p.hasLastRPM {
+		return
+	}
+
+	// Position previews must redraw independently of the user-selected RPM
+	// refresh interval, otherwise multiple small moves collapse into one jump.
+	now := p.now()
+	if !p.sink.Update(p.lastRPM) {
+		// A short RTSS lock collision must not freeze an active drag. Keep the
+		// last RPM and retry on the next preview or device report.
+		p.nextAttempt = time.Time{}
+		return
+	}
+	p.positionDirty = false
+	p.lastSuccess = now
+	p.nextAttempt = now.Add(p.interval)
 }
 
 // Configure applies the user-facing RTSS settings immediately. Disabling the
@@ -94,7 +140,7 @@ func (p *Publisher) Publish(rpm uint16) bool {
 	if !p.nextAttempt.IsZero() && now.Before(p.nextAttempt) {
 		return false
 	}
-	if p.hasLastRPM && rpm == p.lastRPM && now.Sub(p.lastSuccess) < unchangedRefreshInterval {
+	if !p.positionDirty && p.hasLastRPM && rpm == p.lastRPM && now.Sub(p.lastSuccess) < unchangedRefreshInterval {
 		p.nextAttempt = now.Add(p.interval)
 		return false
 	}
@@ -107,6 +153,7 @@ func (p *Publisher) Publish(rpm uint16) bool {
 
 	p.lastRPM = rpm
 	p.hasLastRPM = true
+	p.positionDirty = false
 	p.lastSuccess = now
 	p.nextAttempt = now.Add(p.interval)
 	return true

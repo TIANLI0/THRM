@@ -77,6 +77,55 @@ func TestPublisherThrottlesAndRefreshesUnchangedRPM(t *testing.T) {
 	}
 }
 
+func TestPublisherSetPositionRedrawsLastRPMImmediately(t *testing.T) {
+	now := time.Unix(100, 0)
+	sink := &fakeSink{succeed: true}
+	publisher := newPublisher(sink, func() time.Time { return now })
+	publisher.Configure(true, 2*time.Second)
+
+	if !publisher.Publish(1500) {
+		t.Fatal("first update was not written")
+	}
+	now = now.Add(20 * time.Millisecond)
+	publisher.SetPosition("custom", 12, -8)
+
+	want := []uint16{1500, 1500}
+	if len(sink.updates) != len(want) {
+		t.Fatalf("updates = %v, want an immediate position redraw", sink.updates)
+	}
+	for i := range want {
+		if sink.updates[i] != want[i] {
+			t.Fatalf("updates = %v, want %v", sink.updates, want)
+		}
+	}
+
+	publisher.SetPosition("custom", 12, -8)
+	if len(sink.updates) != len(want) {
+		t.Fatalf("unchanged position caused another redraw: %v", sink.updates)
+	}
+}
+
+func TestPublisherRetriesPositionRedrawAfterTransientFailure(t *testing.T) {
+	now := time.Unix(100, 0)
+	sink := &fakeSink{succeed: true}
+	publisher := newPublisher(sink, func() time.Time { return now })
+	publisher.Configure(true, 2*time.Second)
+	publisher.Publish(1500)
+
+	now = now.Add(20 * time.Millisecond)
+	sink.succeed = false
+	publisher.SetPosition("custom", 12, -8)
+
+	now = now.Add(20 * time.Millisecond)
+	sink.succeed = true
+	if !publisher.Publish(1500) {
+		t.Fatal("dirty position was not retried on the next device report")
+	}
+	if len(sink.updates) != 3 {
+		t.Fatalf("updates = %v, want initial write, failed preview, and retry", sink.updates)
+	}
+}
+
 func TestPublisherBacksOffWhenRTSSIsUnavailable(t *testing.T) {
 	now := time.Unix(100, 0)
 	sink := &fakeSink{succeed: false}

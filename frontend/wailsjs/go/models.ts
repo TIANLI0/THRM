@@ -23,6 +23,41 @@ export namespace guiapp {
 
 }
 
+export namespace rtss {
+
+	export class LayoutStatus {
+	    supported: boolean;
+	    installed: boolean;
+	    installPath: string;
+	    configPath: string;
+	    layoutPath: string;
+	    layoutName: string;
+	    backupPath: string;
+	    anchorState: string;
+	    anchorIndex: number;
+	    layerCount: number;
+
+	    static createFrom(source: any = {}) {
+	        return new LayoutStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.installed = source["installed"];
+	        this.installPath = source["installPath"];
+	        this.configPath = source["configPath"];
+	        this.layoutPath = source["layoutPath"];
+	        this.layoutName = source["layoutName"];
+	        this.backupPath = source["backupPath"];
+	        this.anchorState = source["anchorState"];
+	        this.anchorIndex = source["anchorIndex"];
+	        this.layerCount = source["layerCount"];
+	    }
+	}
+
+}
+
 export namespace theme {
 	
 	export class Meta {
@@ -284,6 +319,26 @@ export namespace types {
 	        this.emergencyBypassTemp = source["emergencyBypassTemp"];
 	    }
 	}
+	export class RTSSConfig {
+	    enabled: boolean;
+	    updateIntervalMs: number;
+	    positionMode: string;
+	    positionX: number;
+	    positionY: number;
+
+	    static createFrom(source: any = {}) {
+	        return new RTSSConfig(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.updateIntervalMs = source["updateIntervalMs"];
+	        this.positionMode = source["positionMode"];
+	        this.positionX = source["positionX"];
+	        this.positionY = source["positionY"];
+	    }
+	}
 	export class FanCurveProfile {
 	    id: string;
 	    name: string;
@@ -393,20 +448,6 @@ export namespace types {
 		    }
 		    return a;
 		}
-	}
-	export class RTSSConfig {
-	    enabled: boolean;
-	    updateIntervalMs: number;
-
-	    static createFrom(source: any = {}) {
-	        return new RTSSConfig(source);
-	    }
-
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.enabled = source["enabled"];
-	        this.updateIntervalMs = source["updateIntervalMs"];
-	    }
 	}
 	export class AppConfig {
 	    legionFnQ: LegionFnQConfig;
@@ -825,9 +866,9 @@ export namespace types {
 		    return a;
 		}
 	}
-	
-	
-	
+
+
+
 	export class FanCurveProfilesPayload {
 	    profiles: FanCurveProfile[];
 	    activeId: string;
@@ -1060,4 +1101,3 @@ export namespace types {
 	
 
 }
-

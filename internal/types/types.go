@@ -532,28 +532,68 @@ type SmartControlConfig struct {
 	NoiseProfileUpdatedAt int64               `json:"noiseProfileUpdatedAt"` // 噪音测试完成时间(Unix 秒)
 }
 
-const DefaultRTSSUpdateIntervalMS = 500
+const DefaultRTSSUpdateIntervalMS = 1000
+
+const (
+	RTSSPositionModeAnchor = "anchor"
+	RTSSPositionModeCustom = "custom"
+	defaultRTSSPositionX   = 0
+	defaultRTSSPositionY   = 0
+	minRTSSPosition        = -1000
+	maxRTSSPosition        = 1000
+)
 
 type RTSSConfig struct {
-	Enabled          bool `json:"enabled"`
-	UpdateIntervalMS int  `json:"updateIntervalMs"`
+	Enabled          bool   `json:"enabled"`
+	UpdateIntervalMS int    `json:"updateIntervalMs"`
+	PositionMode     string `json:"positionMode"`
+	PositionX        int    `json:"positionX"`
+	PositionY        int    `json:"positionY"`
 }
 
 func GetDefaultRTSSConfig() RTSSConfig {
 	return RTSSConfig{
 		Enabled:          false,
 		UpdateIntervalMS: DefaultRTSSUpdateIntervalMS,
+		PositionMode:     RTSSPositionModeAnchor,
+		PositionX:        defaultRTSSPositionX,
+		PositionY:        defaultRTSSPositionY,
 	}
 }
 
 func NormalizeRTSSConfig(cfg RTSSConfig) (RTSSConfig, bool) {
+	changed := false
 	switch cfg.UpdateIntervalMS {
 	case 250, 500, 1000, 2000:
-		return cfg, false
 	default:
 		cfg.UpdateIntervalMS = DefaultRTSSUpdateIntervalMS
-		return cfg, true
+		changed = true
 	}
+	if cfg.PositionMode == "" {
+		// Existing installations used the OverlayEditor anchor implicitly.
+		// Keep that behavior when the new setting is absent.
+		cfg.PositionMode = RTSSPositionModeAnchor
+		changed = true
+	}
+	if cfg.PositionMode != RTSSPositionModeAnchor && cfg.PositionMode != RTSSPositionModeCustom {
+		cfg.PositionMode = RTSSPositionModeAnchor
+		changed = true
+	}
+	if cfg.PositionX < minRTSSPosition {
+		cfg.PositionX = minRTSSPosition
+		changed = true
+	} else if cfg.PositionX > maxRTSSPosition {
+		cfg.PositionX = maxRTSSPosition
+		changed = true
+	}
+	if cfg.PositionY < minRTSSPosition {
+		cfg.PositionY = minRTSSPosition
+		changed = true
+	} else if cfg.PositionY > maxRTSSPosition {
+		cfg.PositionY = maxRTSSPosition
+		changed = true
+	}
+	return cfg, changed
 }
 
 // AppConfig 应用配置

@@ -35,3 +35,16 @@ func (a *App) UpdateConfig(cfg AppConfig) error {
 	}
 	return nil
 }
+
+// PreviewRTSSPosition moves the live OSD without writing the application
+// configuration. The final position is persisted through UpdateConfig.
+func (a *App) PreviewRTSSPosition(mode string, x, y int) error {
+	resp, err := a.sendRequest(ipc.ReqPreviewRTSSPosition, ipc.PreviewRTSSPositionParams{Mode: mode, X: x, Y: y})
+	if err != nil {
+		return err
+	}
+	if !resp.Success {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	return nil
+}

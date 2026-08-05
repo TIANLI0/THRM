@@ -798,16 +798,38 @@
       "reconnectDescription": "重连后继续使用 APP 配置",
       "reconnectTip": "推荐开启，防止断连后进入设备默认模式",
       "rtssTitle": "RTSS 屏幕显示",
-      "rtssDescription": "将散热器实时转速发送到 RivaTuner Statistics Server 的游戏内叠加层。",
+      "rtssDescription": "开启后直接在 RTSS 叠加层显示散热器转速，默认位于现有显示项目下方。",
       "rtssIntervalTitle": "RTSS 刷新频率",
       "rtssIntervalDescription": "限制共享内存写入频率，不影响散热器自身的数据采样和温控响应。",
-      "rtssLayoutTitle": "转速与其他项目一起移动或上方有空白？",
-      "rtssLayoutDescription": "仅在使用 OverlayEditor 自定义布局并出现上述情况时需要设置。",
-      "rtssLayoutStep1": "先关闭 THRM 的“RTSS 屏幕显示”开关。",
-      "rtssLayoutStep2": "打开 RTSS OverlayEditor，在当前布局的图层列表末尾添加一个文字图层。",
-      "rtssLayoutStep3": "保持图层文字为空，将字号设置为 1%，移动到希望显示转速的位置，然后保存布局。",
-      "rtssLayoutStep4": "返回 THRM，重新打开“RTSS 屏幕显示”开关。",
-      "rtssLayoutNote": "图层名称可以自定，例如 THRM Anchor。以后添加其他图层时，请继续让它保持在列表末尾。1% 只用于减小空白占位，不会缩小散热器转速文字。",
+      "rtssPositionTitle": "转速显示位置（可选）",
+      "rtssPositionDescription": {
+        "intro": "需要调整位置时，可以在 THRM 中移动，或通过 RTSS OverlayEditor 定位。两种方式可以随时切换。",
+        "anchor": "默认显示不需要定位图层；配置后可以在 OverlayEditor 中单独拖动转速位置。",
+        "custom": "使用方向按钮或键盘移动位置，不需要修改 RTSS 布局。"
+      },
+      "rtssPositionControls": "调整转速显示位置",
+      "rtssMoveUp": "向上移动",
+      "rtssMoveDown": "向下移动",
+      "rtssMoveLeft": "向左移动",
+      "rtssMoveRight": "向右移动",
+      "rtssResetPosition": "恢复默认位置",
+      "rtssPositionValue": "当前位置：X {{x}}，Y {{y}}",
+      "rtssPositionSaveFailed": "保存 RTSS 显示位置失败：{{error}}",
+      "rtssLayoutDetected": "当前布局：{{layout}}",
+      "rtssLayoutNotDetected": "尚未检测到 RTSS 当前布局",
+      "rtssRefreshLayoutStatus": "重新检测 RTSS 布局",
+      "rtssAnchorReady": "定位图层已配置，可以在 OverlayEditor 中拖动转速位置",
+      "rtssAnchorNotConfigured": "定位图层尚未配置，不影响默认转速显示。",
+      "rtssCreateAnchor": "配置定位图层",
+      "rtssReviewAnchor": "检查定位图层",
+      "rtssAnchorDialogTitle": "配置 RTSS 定位图层",
+      "rtssAnchorConfirm": "请先关闭 RTSS OverlayEditor。THRM 将备份当前布局，然后创建、标记或移动一个 1% 的空文字定位图层到列表末尾。",
+      "rtssAnchorCurrentLayout": "当前布局：{{layout}}",
+      "rtssAnchorContinue": "继续配置",
+      "rtssAnchorSuccessTitle": "定位图层配置完成",
+      "rtssAnchorSuccessDescription": "备份文件已保存。需要恢复布局时，可以使用以下文件。",
+      "rtssAnchorBackupLabel": "布局备份文件",
+      "rtssBackupUnknown": "备份路径未知",
       "blurTitle": "窗口材质",
       "blurDescription": "选择亚克力、云母或云母 Alt 材质，修改后需重启应用生效。"
     },
@@ -953,6 +975,10 @@
         "500": "500 毫秒",
         "1000": "1 秒",
         "2000": "2 秒"
+      },
+      "rtssPositionMode": {
+        "anchor": "在 RTSS 中调整",
+        "custom": "在 THRM 中调整"
       }
     }
   }

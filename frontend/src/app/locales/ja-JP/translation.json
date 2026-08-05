@@ -797,16 +797,38 @@
       "reconnectDescription": "再接続後もアプリ設定を引き続き使用します",
       "reconnectTip": "切断後にデバイス既定モードへ戻るのを防ぐため、有効化を推奨します",
       "rtssTitle": "RTSS オンスクリーン表示",
-      "rtssDescription": "クーラーのリアルタイム回転数を RivaTuner Statistics Server のゲーム内オーバーレイへ送信します。",
+      "rtssDescription": "有効にするとクーラーの回転数を RTSS オーバーレイに表示し、既定では既存項目の下に配置します。",
       "rtssIntervalTitle": "RTSS 更新間隔",
       "rtssIntervalDescription": "共有メモリの更新頻度のみを制限し、デバイスの取得間隔やファン制御の応答性には影響しません。",
-      "rtssLayoutTitle": "回転数が他の項目と一緒に動く、または上に空白がある場合",
-      "rtssLayoutDescription": "OverlayEditor のカスタムレイアウトでこの問題が発生した場合のみ設定してください。",
-      "rtssLayoutStep1": "THRM の「RTSS オンスクリーン表示」をオフにします。",
-      "rtssLayoutStep2": "RTSS OverlayEditor を開き、現在のレイアウトのレイヤー一覧の末尾にテキストレイヤーを追加します。",
-      "rtssLayoutStep3": "テキストを空にしたまま文字サイズを 1% に設定し、回転数を表示したい位置へ移動してレイアウトを保存します。",
-      "rtssLayoutStep4": "THRM に戻り、「RTSS オンスクリーン表示」を再度オンにします。",
-      "rtssLayoutNote": "レイヤー名は自由に設定できます。THRM Anchor は一例です。他のレイヤーを追加する場合も末尾に残してください。1% は空白を減らすためだけに使用し、回転数の文字を小さくするものではありません。",
+      "rtssPositionTitle": "回転数の表示位置（任意）",
+      "rtssPositionDescription": {
+        "intro": "位置を変更する場合は、THRM で移動するか RTSS OverlayEditor で指定します。いつでも切り替えられます。",
+        "anchor": "既定の表示には位置レイヤーは不要です。設定すると OverlayEditor で回転数の位置を個別に移動できます。",
+        "custom": "RTSS レイアウトを変更せず、矢印ボタンまたはキーボードで位置を移動します。"
+      },
+      "rtssPositionControls": "回転数の表示位置を調整",
+      "rtssMoveUp": "上へ移動",
+      "rtssMoveDown": "下へ移動",
+      "rtssMoveLeft": "左へ移動",
+      "rtssMoveRight": "右へ移動",
+      "rtssResetPosition": "位置をリセット",
+      "rtssPositionValue": "位置: X {{x}}、Y {{y}}",
+      "rtssPositionSaveFailed": "RTSS の表示位置を保存できませんでした：{{error}}",
+      "rtssLayoutDetected": "現在のレイアウト: {{layout}}",
+      "rtssLayoutNotDetected": "RTSS の現在のレイアウトを検出できません",
+      "rtssRefreshLayoutStatus": "RTSS レイアウトを再検出",
+      "rtssAnchorReady": "位置レイヤーを設定済みです。OverlayEditor で回転数の位置を移動できます",
+      "rtssAnchorNotConfigured": "位置レイヤーは未設定ですが、既定の表示には影響しません。",
+      "rtssCreateAnchor": "位置レイヤーを設定",
+      "rtssReviewAnchor": "位置レイヤーを確認",
+      "rtssAnchorDialogTitle": "RTSS 位置レイヤーの設定",
+      "rtssAnchorConfirm": "先に RTSS OverlayEditor を閉じてください。現在のレイアウトをバックアップして、1% の空文字位置レイヤーを作成、識別、または末尾へ移動します。",
+      "rtssAnchorCurrentLayout": "現在のレイアウト：{{layout}}",
+      "rtssAnchorContinue": "設定を続ける",
+      "rtssAnchorSuccessTitle": "位置レイヤーを設定しました",
+      "rtssAnchorSuccessDescription": "レイアウトのバックアップを保存しました。復元が必要な場合は、次のファイルを使用してください。",
+      "rtssAnchorBackupLabel": "レイアウトのバックアップファイル",
+      "rtssBackupUnknown": "バックアップパス不明",
       "blurTitle": "ウィンドウ素材",
       "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。"
     },
@@ -952,6 +974,10 @@
         "500": "500 ミリ秒",
         "1000": "1 秒",
         "2000": "2 秒"
+      },
+      "rtssPositionMode": {
+        "anchor": "RTSS で調整",
+        "custom": "THRM で調整"
       }
     }
   }

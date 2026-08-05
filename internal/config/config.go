@@ -149,6 +149,15 @@ func applyMissingRTSSDefaults(cfg *types.AppConfig, rawConfig map[string]json.Ra
 	if _, ok := rtssConfig["updateIntervalMs"]; !ok {
 		cfg.RTSS.UpdateIntervalMS = defaults.UpdateIntervalMS
 	}
+	if _, ok := rtssConfig["positionMode"]; !ok {
+		cfg.RTSS.PositionMode = defaults.PositionMode
+	}
+	if _, ok := rtssConfig["positionX"]; !ok {
+		cfg.RTSS.PositionX = defaults.PositionX
+	}
+	if _, ok := rtssConfig["positionY"]; !ok {
+		cfg.RTSS.PositionY = defaults.PositionY
+	}
 	cfg.RTSS, _ = types.NormalizeRTSSConfig(cfg.RTSS)
 }
 

@@ -120,6 +120,16 @@ func TestFormatOSDTextResetsInheritedStyles(t *testing.T) {
 	if got, want := formatOSDText(1500), "<C><S>Cooler Fan: 1500 RPM"; got != want {
 		t.Fatalf("formatOSDText = %q, want %q", got, want)
 	}
+	if got, want := formatOSDTextAt(1500, "custom", -3, 7), "<P=-3,7><C><S>Cooler Fan: 1500 RPM"; got != want {
+		t.Fatalf("custom formatOSDText = %q, want %q", got, want)
+	}
+}
+
+func TestExecutableDirectory(t *testing.T) {
+	got := executableDirectory(`"D:\app\RivaTuner Statistics Server\uninstall.exe" /S`)
+	if want := `D:\app\RivaTuner Statistics Server`; got != want {
+		t.Fatalf("executableDirectory = %q, want %q", got, want)
+	}
 }
 
 func TestWriteOSDTextUsesVersionSpecificBuffer(t *testing.T) {

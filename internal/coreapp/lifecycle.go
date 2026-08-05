@@ -90,6 +90,7 @@ func (a *CoreApp) Start() error {
 	a.syncManualGearLevelMemory(cfg)
 	if a.rtssPublisher != nil {
 		a.rtssPublisher.Configure(cfg.RTSS.Enabled, time.Duration(cfg.RTSS.UpdateIntervalMS)*time.Millisecond)
+		a.rtssPublisher.SetPosition(cfg.RTSS.PositionMode, cfg.RTSS.PositionX, cfg.RTSS.PositionY)
 	}
 	a.logInfo("配置加载完成，配置路径: %s", cfg.ConfigPath)
 

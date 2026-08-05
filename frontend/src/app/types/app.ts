@@ -102,6 +102,9 @@ export interface AppConfig {
 export interface RTSSConfig {
   enabled: boolean;
   updateIntervalMs: 250 | 500 | 1000 | 2000;
+  positionMode?: 'anchor' | 'custom';
+  positionX?: number;
+  positionY?: number;
 }
 
 export interface SpeedAvoidanceConfig {
