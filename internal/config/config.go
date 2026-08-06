@@ -69,11 +69,16 @@ func (m *Manager) Load(isAutoStart bool) types.AppConfig {
 	if m.installDir != "" {
 		m.logInfo("尝试从安装目录加载旧配置: %s", installConfigPath)
 		if m.tryLoadFromPathLocked(installConfigPath) {
-			m.config.ConfigPath = defaultConfigPath
-			m.logInfo("从安装目录加载配置成功，将迁移到用户配置目录: %s", installConfigPath)
-			if err := m.saveLocked(); err != nil {
+			if shouldMigrateInstallConfig() {
+				m.config.ConfigPath = defaultConfigPath
+				m.logInfo("从安装目录加载配置成功，将迁移到用户配置目录: %s", installConfigPath)
+				if err := m.saveLocked(); err != nil {
+					m.config.ConfigPath = installConfigPath
+					m.logError("迁移安装目录配置失败: %v", err)
+				}
+			} else {
 				m.config.ConfigPath = installConfigPath
-				m.logError("迁移安装目录配置失败: %v", err)
+				m.logInfo("从安装目录加载配置成功: %s", installConfigPath)
 			}
 			m.bumpRevisionLocked()
 			return m.config.Clone()

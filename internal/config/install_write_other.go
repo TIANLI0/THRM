@@ -8,3 +8,7 @@ package config
 func platformInstallConfigWriteDir(string) string {
 	return ""
 }
+
+func shouldMigrateInstallConfig() bool {
+	return true
+}

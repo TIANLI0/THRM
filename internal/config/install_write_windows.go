@@ -10,3 +10,7 @@ func platformInstallConfigWriteDir(installDir string) string {
 	}
 	return filepath.Join(installDir, "config")
 }
+
+func shouldMigrateInstallConfig() bool {
+	return false
+}
