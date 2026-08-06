@@ -12,12 +12,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"go.uber.org/zap/zapcore"
 )
 
-const systemdJournalSocket = "/run/systemd/journal/socket"
+const (
+	systemdJournalSocket = "/run/systemd/journal/socket"
+	journalWriteTimeout  = 100 * time.Millisecond
+)
 
 // journalSink 是 journalCore 与传输层之间的窄接口，也让级别映射和降级逻辑可以
 // 在没有运行 systemd 的测试环境里完整验证。
@@ -61,7 +65,7 @@ func (s *nativeJournalSink) Send(entry zapcore.Entry, message string) error {
 	defer s.mu.Unlock()
 
 	if s.conn != nil {
-		if _, err := s.conn.Write(payload); err == nil {
+		if err := writeJournalDatagram(s.conn, payload); err == nil {
 			return nil
 		}
 		_ = s.conn.Close()
@@ -74,7 +78,14 @@ func (s *nativeJournalSink) Send(entry zapcore.Entry, message string) error {
 		return err
 	}
 	s.conn = conn
-	_, err = s.conn.Write(payload)
+	return writeJournalDatagram(s.conn, payload)
+}
+
+func writeJournalDatagram(conn *net.UnixConn, payload []byte) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(journalWriteTimeout)); err != nil {
+		return err
+	}
+	_, err := conn.Write(payload)
 	return err
 }
 
