@@ -11,6 +11,13 @@ import (
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
+type historyErrorLogger struct {
+	testLogger
+	errors int
+}
+
+func (l *historyErrorLogger) Error(string, ...any) { l.errors++ }
+
 func enableRecorderForTest(t *testing.T, recorder *HistoryRecorder) {
 	t.Helper()
 	if err := recorder.SetEnabled(true); err != nil {
@@ -24,6 +31,26 @@ func TestHistoryRecorderDefaultsEnabled(t *testing.T) {
 	recorder := NewHistoryRecorder(filepath.Join(t.TempDir(), "history.bin"), 8, 5*time.Second, nil)
 	if !recorder.IsEnabled() {
 		t.Fatal("expected history recorder to default enabled")
+	}
+}
+
+func TestHistoryRecorderWithoutPathKeepsHistoryInMemory(t *testing.T) {
+	logger := &historyErrorLogger{}
+	recorder := NewHistoryRecorder("", 8, 5*time.Second, logger)
+	for i := range 7 {
+		_, _ = recorder.Add(types.TemperatureData{
+			CPUTemp:    60 + i,
+			UpdateTime: 1_717_000_000 + int64(i*5),
+		}, nil)
+	}
+	if err := recorder.Flush(); err != nil {
+		t.Fatalf("memory-only Flush() error = %v", err)
+	}
+	if got := len(recorder.Snapshot().Points); got != 7 {
+		t.Fatalf("memory-only points = %d, want 7", got)
+	}
+	if logger.errors != 0 {
+		t.Fatalf("memory-only recorder logged %d persistence errors", logger.errors)
 	}
 }
 

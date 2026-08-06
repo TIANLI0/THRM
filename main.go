@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	linuxoptions "github.com/wailsapp/wails/v2/pkg/options/linux"
 )
 
 //go:embed all:frontend/dist
@@ -18,6 +19,17 @@ var assets embed.FS
 func main() {
 	if !guiapp.EnsureCoreServiceRunning() {
 		println("警告：无法启动核心服务，GUI 将以有限功能模式运行")
+	}
+
+	// WebKitGTK can hit NVIDIA's Wayland explicit-sync path without setting an
+	// acquire point. Scope the workaround to machines actually using NVIDIA and
+	// apply it after starting the non-GPU core service.
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		if _, err := os.Stat("/sys/module/nvidia"); err == nil {
+			if _, configured := os.LookupEnv("__NV_DISABLE_EXPLICIT_SYNC"); !configured {
+				_ = os.Setenv("__NV_DISABLE_EXPLICIT_SYNC", "1")
+			}
+		}
 	}
 
 	app := NewApp()
@@ -62,7 +74,11 @@ func main() {
 			OnSecondInstanceLaunch: guiapp.OnSecondInstanceLaunch,
 		},
 		BackgroundColour: &options.RGBA{R: 0, G: 0, B: 0, A: 0},
-		Windows:          guiapp.ResolveWindowsOptions(),
+		Linux: &linuxoptions.Options{
+			WebviewGpuPolicy: linuxoptions.WebviewGpuPolicyAlways,
+			ProgramName:      "thrm",
+		},
+		Windows: guiapp.ResolveWindowsOptions(),
 		Bind: []any{
 			app,
 		},

@@ -3,36 +3,14 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
-	"time"
+	"runtime/debug"
 )
 
 func setupFatalOutput() (func(), string) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return func() {}, ""
-	}
+	debug.SetTraceback("all")
 
-	logDir := filepath.Join(filepath.Dir(exePath), "logs")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return func() {}, ""
-	}
-
-	logFile := filepath.Join(logDir, time.Now().Format("2006-01-02")+"-core.log")
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return func() {}, ""
-	}
-
-	oldStderr := os.Stderr
-	oldStdout := os.Stdout
-	os.Stderr = f
-	os.Stdout = f
-
-	return func() {
-		os.Stderr = oldStderr
-		os.Stdout = oldStdout
-		f.Close()
-	}, logFile
+	// Linux 正常日志与捕获到的 panic 都由 journal 后端处理。保留 stdout/stderr
+	// 原样可让 systemd 或其他服务管理器接管 Go runtime 自己打印的致命错误，且不会
+	// 在 /usr/bin、~/.local/bin 或需要 root 的 /var/log 下偷偷创建文件。
+	return func() {}, ""
 }

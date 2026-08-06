@@ -2,7 +2,10 @@ package theme
 
 import (
 	"embed"
+	"os"
+	"path/filepath"
 	"testing"
+	"testing/fstest"
 )
 
 //go:embed testdata
@@ -39,10 +42,26 @@ func TestReadCSS_NotFound(t *testing.T) {
 }
 
 func TestResolveDir(t *testing.T) {
-	m := NewManager("/tmp/install/themes", "/tmp/user/themes", testEmbedFS)
-	dir := m.ResolveDir()
-	if dir == "" {
-		t.Error("ResolveDir should not be empty")
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	userDir := filepath.Join(root, "user", "themes")
+	installedThemeDir := filepath.Join(installDir, "sample")
+	if err := os.MkdirAll(installedThemeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installedThemeDir, manifestName), []byte(`{"id":"sample"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(installDir, userDir, fstest.MapFS{
+		"sample/theme.json": &fstest.MapFile{Data: []byte(`{"id":"sample"}`)},
+	})
+	m.EnsureSeeded()
+	if got := m.ResolveDir(); got != installDir {
+		t.Fatalf("ResolveDir() = %q, want existing install directory %q", got, installDir)
+	}
+	if _, err := os.Stat(userDir); !os.IsNotExist(err) {
+		t.Fatalf("ResolveDir created an empty user directory: %v", err)
 	}
 }
 
@@ -53,8 +72,22 @@ func TestSourceConstants(t *testing.T) {
 }
 
 func TestEnsureSeeded(t *testing.T) {
-	m := NewManager("/tmp/install/themes", "/tmp/user/themes", testEmbedFS)
+	root := t.TempDir()
+	installDir := filepath.Join(root, "install", "themes")
+	userDir := filepath.Join(root, "user", "themes")
+	builtin := fstest.MapFS{
+		"sample/theme.json": &fstest.MapFile{Data: []byte(`{"id":"sample","name":"Sample","base":"dark"}`)},
+		"sample/theme.css":  &fstest.MapFile{Data: []byte(":root {}")},
+	}
+	m := NewManager(installDir, userDir, builtin)
 	m.EnsureSeeded()
+
+	if _, err := os.Stat(filepath.Join(userDir, "sample", manifestName)); err != nil {
+		t.Fatalf("builtin theme was not seeded into the user directory: %v", err)
+	}
+	if _, err := os.Stat(installDir); !os.IsNotExist(err) {
+		t.Fatalf("theme seeding wrote to the installation directory: %v", err)
+	}
 }
 
 func TestMetaFields(t *testing.T) {

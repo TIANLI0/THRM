@@ -5,6 +5,7 @@ package appmeta
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -16,6 +17,30 @@ const (
 	BridgeExecutableName = ""
 	PawnIOInstallerName  = ""
 )
+
+// UserConfigDir follows the XDG Base Directory specification. Relative XDG
+// paths are invalid and therefore ignored.
+func UserConfigDir(homeDir string) string {
+	return xdgUserDir("XDG_CONFIG_HOME", homeDir, ".config")
+}
+
+// UserStateDir is for persistent mutable data which is not configuration,
+// such as temperature history.
+func UserStateDir(homeDir string) string {
+	return xdgUserDir("XDG_STATE_HOME", homeDir, ".local", "state")
+}
+
+func xdgUserDir(environmentName, homeDir string, fallbackParts ...string) string {
+	if configured := strings.TrimSpace(os.Getenv(environmentName)); filepath.IsAbs(configured) {
+		return filepath.Join(configured, XDGDirName)
+	}
+	if homeDir == "" {
+		return ""
+	}
+	parts := append([]string{homeDir}, fallbackParts...)
+	parts = append(parts, XDGDirName)
+	return filepath.Join(parts...)
+}
 
 func CoreExecutableCandidates(baseDir string) []string {
 	candidates := []string{

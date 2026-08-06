@@ -9,7 +9,6 @@ import (
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/theme"
 	"github.com/TIANLI0/THRM/internal/types"
-	"go.uber.org/zap"
 )
 
 // App struct - GUI 应用程序结构
@@ -53,10 +52,3 @@ type (
 	DeviceStatusRead          = types.DeviceStatusRead
 	AppConfig                 = types.AppConfig
 )
-
-var guiLogger *zap.SugaredLogger
-
-func init() {
-	logger, _ := zap.NewProduction()
-	guiLogger = logger.Sugar()
-}

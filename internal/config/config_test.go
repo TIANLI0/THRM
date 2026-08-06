@@ -10,14 +10,22 @@ import (
 
 type testLogger struct{}
 
-func (l testLogger) Info(format string, v ...any)    {}
-func (l testLogger) Error(format string, v ...any)   {}
-func (l testLogger) Warn(format string, v ...any)    {}
-func (l testLogger) Debug(format string, v ...any)   {}
-func (l testLogger) Close()                          {}
-func (l testLogger) CleanOldLogs()                   {}
-func (l testLogger) SetDebugMode(enabled bool)       {}
-func (l testLogger) GetLogDir() string               { return "" }
+func (l testLogger) Info(format string, v ...any)  {}
+func (l testLogger) Error(format string, v ...any) {}
+func (l testLogger) Warn(format string, v ...any)  {}
+func (l testLogger) Debug(format string, v ...any) {}
+func (l testLogger) Close()                        {}
+func (l testLogger) CleanOldLogs()                 {}
+func (l testLogger) SetDebugMode(enabled bool)     {}
+func (l testLogger) GetLogDir() string             { return "" }
+
+func isolateUserDirs(t *testing.T, homeDir string) {
+	t.Helper()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(homeDir, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(homeDir, ".local", "state"))
+}
 
 func TestNewManager(t *testing.T) {
 	m := NewManager("/tmp", testLogger{})
@@ -61,10 +69,7 @@ func TestGetWithRevision(t *testing.T) {
 
 func TestSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
-	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
-	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("USERPROFILE", tmpDir)
+	isolateUserDirs(t, tmpDir)
 
 	m := NewManager("/tmp", testLogger{})
 	cfg := types.GetDefaultConfig(false)
@@ -83,6 +88,8 @@ func TestSaveAndLoad(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
+	tmpDir := t.TempDir()
+	isolateUserDirs(t, tmpDir)
 	m := NewManager("/tmp", testLogger{})
 	cfg := types.GetDefaultConfig(false)
 	m.Set(cfg)
@@ -179,12 +186,9 @@ func TestLegacyConfigDir(t *testing.T) {
 
 func TestLoad_NoConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
-	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("USERPROFILE", tmpDir)
+	isolateUserDirs(t, tmpDir)
 
-	cfgDir := filepath.Join(tmpDir, ".thrm")
+	cfgDir := NewManager("/tmp", testLogger{}).GetDefaultConfigDir()
 	os.RemoveAll(cfgDir)
 	defer os.RemoveAll(cfgDir)
 

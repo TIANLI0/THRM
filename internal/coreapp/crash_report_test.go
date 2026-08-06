@@ -1,67 +1,44 @@
 package coreapp
 
 import (
+	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestCapturePanic_GeneratesFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
-
-	app := &CoreApp{}
-	filePath := CapturePanic(app, "test_source", "test panic message")
-	if filePath == "" {
-		t.Fatal("CapturePanic should return a file path")
-	}
-
-	content, err := os.ReadFile(filePath)
+func capturePanicReport(t *testing.T, source string, recovered any) (string, string) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("failed to read crash report: %v", err)
+		t.Fatal(err)
 	}
-
-	contentStr := string(content)
-	if !strings.Contains(contentStr, "test_source") {
-		t.Fatal("crash report should contain source")
+	original := os.Stderr
+	os.Stderr = writer
+	path := CapturePanic(nil, source, recovered)
+	os.Stderr = original
+	_ = writer.Close()
+	stderr, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(contentStr, "test panic message") {
-		t.Fatal("crash report should contain panic message")
+	if path == "" {
+		return "", string(stderr)
 	}
-	if !strings.Contains(contentStr, "--- stack ---") {
-		t.Fatal("crash report should contain stack trace")
+	t.Cleanup(func() { _ = os.Remove(path) })
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return path, string(content)
 }
 
-func TestCapturePanic_NilApp(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
-
-	filePath := CapturePanic(nil, "nil_test", "nil app panic")
-	if filePath == "" {
-		t.Fatal("CapturePanic should work with nil app, via config.GetInstallDir fallback")
-	}
-
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		t.Fatalf("failed to read crash report: %v", err)
-	}
-	if !strings.Contains(string(content), "nil app panic") {
-		t.Fatal("crash report should contain panic message even with nil app")
-	}
-}
-
-func TestResolveCrashLogDir_NilApp(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.Setenv("HOME", tmpDir)
-
-	logDir := resolveCrashLogDir(nil)
-	if logDir == "" || logDir == "logs" {
-		t.Logf("resolveCrashLogDir with nil app: %q (may fallback to logs/)", logDir)
-	}
-	expectedSuffix := filepath.Join(".thrm", "logs")
-	if !strings.HasSuffix(logDir, expectedSuffix) {
-		t.Logf("resolved log dir: %q, expected suffix: %q", logDir, expectedSuffix)
+func TestCapturePanicIncludesContext(t *testing.T) {
+	_, content := capturePanicReport(t, "test_source", "test panic message")
+	for _, marker := range []string{"test_source", "test panic message", "--- stack ---"} {
+		if !strings.Contains(content, marker) {
+			t.Fatalf("crash report does not contain %q: %s", marker, content)
+		}
 	}
 }

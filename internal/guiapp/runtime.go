@@ -14,15 +14,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
-	"go.uber.org/zap"
 )
-
-var mainLogger *zap.SugaredLogger
-
-func init() {
-	logger, _ := zap.NewProduction()
-	mainLogger = logger.Sugar()
-}
 
 var wailsContext *context.Context
 var ensureCoreServiceRunningMu sync.Mutex

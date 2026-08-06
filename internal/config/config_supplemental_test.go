@@ -12,18 +12,13 @@ import (
 // TestLoadFromCorruptedJSON verifies corrupt JSON falls back to defaults
 func TestLoadFromCorruptedJSON(t *testing.T) {
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".thrm")
+	isolateUserDirs(t, tmpDir)
+	configDir := NewManager(tmpDir, testLogger{}).GetDefaultConfigDir()
 	os.MkdirAll(configDir, 0755)
 	configPath := filepath.Join(configDir, "config.json")
 
 	// Write corrupted JSON
 	os.WriteFile(configPath, []byte("{not valid json!!!"), 0644)
-
-	// Override home to use tmpDir
-	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
-	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -40,18 +35,14 @@ func TestLoadFromCorruptedJSON(t *testing.T) {
 // TestMissingFieldsBackfill verifies old configs get backfilled with defaults
 func TestMissingFieldsBackfill(t *testing.T) {
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".thrm")
+	isolateUserDirs(t, tmpDir)
+	configDir := NewManager(tmpDir, testLogger{}).GetDefaultConfigDir()
 	os.MkdirAll(configDir, 0755)
 	configPath := filepath.Join(configDir, "config.json")
 
 	// Write a minimal config missing many fields
 	minimalJSON := `{"autoControl": false, "fanCurve": [{"temperature": 30, "rpm": 800}, {"temperature": 70, "rpm": 3000}]}`
 	os.WriteFile(configPath, []byte(minimalJSON), 0644)
-
-	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
-	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -81,7 +72,8 @@ func TestMissingFieldsBackfill(t *testing.T) {
 // TestConcurrentReadWrite verifies thread safety of Get/Set operations
 func TestConcurrentReadWrite(t *testing.T) {
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".thrm")
+	isolateUserDirs(t, tmpDir)
+	configDir := NewManager(tmpDir, testLogger{}).GetDefaultConfigDir()
 	os.MkdirAll(configDir, 0755)
 
 	m := NewManager(tmpDir, testLogger{})
@@ -120,13 +112,9 @@ func TestConcurrentReadWrite(t *testing.T) {
 // TestConfigSaveAndReload verifies save → load roundtrip
 func TestConfigSaveAndReload(t *testing.T) {
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".thrm")
+	isolateUserDirs(t, tmpDir)
+	configDir := NewManager(tmpDir, testLogger{}).GetDefaultConfigDir()
 	os.MkdirAll(configDir, 0755)
-
-	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
-	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -157,6 +145,7 @@ func TestConfigSaveAndReload(t *testing.T) {
 // TestInvalidFanCurveRejected verifies bad fan curves are handled
 func TestInvalidFanCurveRejected(t *testing.T) {
 	tmpDir := t.TempDir()
+	isolateUserDirs(t, tmpDir)
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
 
@@ -187,16 +176,12 @@ func TestInvalidFanCurveRejected(t *testing.T) {
 // TestLegacyConfigMigration verifies old config directory migration
 func TestLegacyConfigMigration(t *testing.T) {
 	tmpDir := t.TempDir()
+	isolateUserDirs(t, tmpDir)
 	legacyDir := filepath.Join(tmpDir, ".bs2pro-controller")
 	os.MkdirAll(legacyDir, 0755)
 
 	legacyConfig := `{"autoControl": true, "fanCurve": [{"temperature": 30, "rpm": 800}, {"temperature": 70, "rpm": 3000}]}`
 	os.WriteFile(filepath.Join(legacyDir, "config.json"), []byte(legacyConfig), 0644)
-
-	// Windows 上 os.UserHomeDir() 读 USERPROFILE 而非 HOME，
-	// 只设置 HOME 会让测试去加载用户真实配置。两者都设才能真正隔离。
-	t.Setenv("HOME", tmpDir)
-	t.Setenv("USERPROFILE", tmpDir)
 
 	m := NewManager(tmpDir, testLogger{})
 	cfg := m.Load(false)
@@ -205,8 +190,7 @@ func TestLegacyConfigMigration(t *testing.T) {
 		t.Error("AutoControl should be true from legacy config")
 	}
 
-	// New config should have been created in .thrm/
-	newPath := filepath.Join(tmpDir, ".thrm", "config.json")
+	newPath := filepath.Join(m.GetDefaultConfigDir(), "config.json")
 	if _, err := os.Stat(newPath); err != nil {
 		t.Errorf("Config should have been migrated to %s: %v", newPath, err)
 	}

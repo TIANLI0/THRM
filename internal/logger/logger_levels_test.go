@@ -1,3 +1,5 @@
+//go:build windows
+
 package logger
 
 import (
@@ -26,6 +28,19 @@ func readLogFile(t *testing.T, logDir, prefix string) string {
 		return string(data)
 	}
 	return ""
+}
+
+func TestDefaultLogDirPrefersInstallDirWhenWritable(t *testing.T) {
+	installDir := t.TempDir()
+	if got, want := defaultLogDir(installDir), filepath.Join(installDir, "logs"); got != want {
+		t.Fatalf("defaultLogDir() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultLogDirUsesRelativeLogsWhenInstallDirEmpty(t *testing.T) {
+	if got := defaultLogDir(""); got != "logs" {
+		t.Fatalf("defaultLogDir() = %q, want logs", got)
+	}
 }
 
 // TestDebugFileOnlyReceivesDebugLevel 是 #12 的回归测试。
