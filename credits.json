@@ -7,7 +7,7 @@
     "note": "备注 / 留言（可省略）",
     "amount": "赞助金额，数字（可省略，省略时不显示金额）"
   },
-  "updatedAt": "2026-07-31",
+  "updatedAt": "2026-08-06",
   "contributors": [
     {
       "login": "TIANLI0",
@@ -49,6 +49,18 @@
       "name": "XKaguya",
       "url": "https://github.com/XKaguya",
       "avatar": "https://avatars.githubusercontent.com/u/96401952?v=4"
+    },
+    {
+      "login": "ailinician",
+      "name": "ailinician",
+      "url": "https://github.com/ailinician",
+      "avatar": "https://avatars.githubusercontent.com/u/70397979?v=4"
+    },
+    {
+      "login": "ColdLemonTea",
+      "name": "ColdLemonTea",
+      "url": "https://github.com/ColdLemonTea",
+      "avatar": "https://avatars.githubusercontent.com/u/86247681?v=4"
     }
   ],
   "sponsors": [
