@@ -114,6 +114,10 @@ func TestCStringHelpers(t *testing.T) {
 	if got := readCString(buffer); got != "123456789012345" {
 		t.Fatalf("truncated string = %q", got)
 	}
+	writeCString(buffer, len(buffer), "Fan")
+	if got := readCString(buffer); got != "Fan" {
+		t.Fatalf("shorter replacement string = %q", got)
+	}
 }
 
 func TestFormatOSDTextResetsInheritedStyles(t *testing.T) {

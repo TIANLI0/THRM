@@ -245,11 +245,11 @@ func readCString(value []byte) string {
 }
 
 func writeCString(dst []byte, size int, value string) {
-	if len(dst) < size {
+	if len(dst) < size || size <= 0 {
 		return
 	}
-	clear(dst[:size])
-	copy(dst[:size-1], value)
+	written := copy(dst[:size-1], value)
+	dst[written] = 0
 }
 
 type mappedRegionInfo struct {

@@ -144,6 +144,7 @@ const RTSS_UPDATE_INTERVALS = [250, 500, 1000, 2000] as const;
 const RTSS_POSITION_MIN = -1000;
 const RTSS_POSITION_MAX = 1000;
 const RTSS_POSITION_COMMIT_DELAY = 250;
+const RTSS_POSITION_PREVIEW_INTERVAL = 40;
 const RTSS_POSITION_HOLD_DELAY = 350;
 const RTSS_POSITION_CLICK_STEP = 2;
 const RTSS_POSITION_HOLD_INITIAL_SPEED = 28;
@@ -480,6 +481,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const rtssConfiguredPositionRef = useRef<RTSSPosition>({ x: 0, y: 0 });
   const rtssPreviewPendingRef = useRef<RTSSPosition | null>(null);
   const rtssPreviewDrainRef = useRef<Promise<void> | null>(null);
+  const rtssPreviewLastSentAtRef = useRef(0);
+  const rtssPreviewDisposedRef = useRef(false);
   const rtssHoldFrameRef = useRef<number | null>(null);
   const rtssHoldActiveRef = useRef(false);
   const rtssCommitTimerRef = useRef<number | null>(null);
@@ -947,9 +950,18 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const drainRTSSPositionPreview = useCallback(async (): Promise<void> => {
     if (rtssPreviewDrainRef.current) return rtssPreviewDrainRef.current;
     const run = (async () => {
-      while (rtssPreviewPendingRef.current) {
+      while (rtssPreviewPendingRef.current && !rtssPreviewDisposedRef.current) {
+        const waitMs = RTSS_POSITION_PREVIEW_INTERVAL
+          - (performance.now() - rtssPreviewLastSentAtRef.current);
+        if (waitMs > 0) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, waitMs));
+        }
+        if (rtssPreviewDisposedRef.current) return;
         const next = rtssPreviewPendingRef.current;
         rtssPreviewPendingRef.current = null;
+        if (!next) continue;
+        rtssPreviewLastSentAtRef.current = performance.now();
+        setRtssPositionDraft(next);
         try {
           await apiService.previewRTSSPosition('custom', next.x, next.y);
         } catch {
@@ -1039,7 +1051,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     if (normalized.x === current.x && normalized.y === current.y) return false;
     rtssInteractionActiveRef.current = true;
     rtssPositionRef.current = normalized;
-    setRtssPositionDraft(normalized);
     rtssPreviewPendingRef.current = normalized;
     void drainRTSSPositionPreview();
     if (!rtssHoldActiveRef.current) scheduleRTSSPositionCommit();
@@ -1170,10 +1181,14 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return () => window.removeEventListener('blur', stopOnWindowBlur);
   }, [stopRTSSPositionHold]);
 
-  useEffect(() => () => {
-    clearRTSSPositionHold();
-    if (rtssCommitTimerRef.current !== null) window.clearTimeout(rtssCommitTimerRef.current);
-    rtssPreviewPendingRef.current = null;
+  useEffect(() => {
+    rtssPreviewDisposedRef.current = false;
+    return () => {
+      rtssPreviewDisposedRef.current = true;
+      clearRTSSPositionHold();
+      if (rtssCommitTimerRef.current !== null) window.clearTimeout(rtssCommitTimerRef.current);
+      rtssPreviewPendingRef.current = null;
+    };
   }, [clearRTSSPositionHold]);
 
   const refreshRTSSLayoutStatus = useCallback(async () => {
