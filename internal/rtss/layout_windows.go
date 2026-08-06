@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -134,6 +135,10 @@ func backupLayout(path string, data []byte) (string, error) {
 }
 
 func writeLayoutAtomically(path string, data []byte) error {
+	return writeLayoutAtomicallyWithReplace(path, data, replaceLayoutFile)
+}
+
+func writeLayoutAtomicallyWithReplace(path string, data []byte, replace func(string, string) error) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".thrm-rtss-*.ovl")
 	if err != nil {
 		return err
@@ -151,15 +156,23 @@ func writeLayoutAtomically(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpPath, path); err == nil {
-		return nil
-	}
-	// Windows cannot replace an existing file with os.Rename. The original is
-	// already backed up, so replacing it after a successful temp write is safe.
-	if err := os.Remove(path); err != nil {
+	return replace(tmpPath, path)
+}
+
+func replaceLayoutFile(source, destination string) error {
+	sourcePtr, err := windows.UTF16PtrFromString(source)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	destinationPtr, err := windows.UTF16PtrFromString(destination)
+	if err != nil {
+		return err
+	}
+	return windows.MoveFileEx(
+		sourcePtr,
+		destinationPtr,
+		windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH,
+	)
 }
 
 func findInstallPath() string {
