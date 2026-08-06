@@ -797,6 +797,39 @@
       "reconnectTitle": "Keep config after reconnect",
       "reconnectDescription": "Continue using the app configuration after reconnecting",
       "reconnectTip": "Recommended to prevent fallback to the device default mode after disconnects",
+      "rtssTitle": "RTSS on-screen display",
+      "rtssDescription": "Shows the cooler's live fan speed in the RTSS overlay when enabled, below existing items by default.",
+      "rtssIntervalTitle": "RTSS refresh rate",
+      "rtssIntervalDescription": "Limits shared-memory updates without changing device sampling or fan-control responsiveness.",
+      "rtssPositionTitle": "Fan speed position (optional)",
+      "rtssPositionDescription": {
+        "intro": "To move it, adjust the position in THRM or use RTSS OverlayEditor. You can switch between them at any time.",
+        "anchor": "The default display needs no positioning layer. Configure one to drag the fan speed separately in OverlayEditor.",
+        "custom": "Use the arrow buttons or keyboard to move it without changing the RTSS layout."
+      },
+      "rtssPositionControls": "Adjust fan speed position",
+      "rtssMoveUp": "Move up",
+      "rtssMoveDown": "Move down",
+      "rtssMoveLeft": "Move left",
+      "rtssMoveRight": "Move right",
+      "rtssResetPosition": "Reset position",
+      "rtssPositionValue": "Position: X {{x}}, Y {{y}}",
+      "rtssPositionSaveFailed": "Failed to save the RTSS display position: {{error}}",
+      "rtssLayoutDetected": "Current layout: {{layout}}",
+      "rtssLayoutNotDetected": "The current RTSS layout was not detected",
+      "rtssRefreshLayoutStatus": "Refresh RTSS layout status",
+      "rtssAnchorReady": "Positioning layer configured; drag the fan speed position in OverlayEditor",
+      "rtssAnchorNotConfigured": "No positioning layer is configured. This does not affect the default display.",
+      "rtssCreateAnchor": "Configure positioning layer",
+      "rtssReviewAnchor": "Review positioning layer",
+      "rtssAnchorDialogTitle": "Configure RTSS positioning layer",
+      "rtssAnchorConfirm": "Close RTSS OverlayEditor first. THRM will back up the current layout before creating, marking, or moving a blank 1% positioning layer to the end.",
+      "rtssAnchorCurrentLayout": "Current layout: {{layout}}",
+      "rtssAnchorContinue": "Continue",
+      "rtssAnchorSuccessTitle": "Positioning layer configured",
+      "rtssAnchorSuccessDescription": "The layout backup has been saved. Use the following file if you need to restore it.",
+      "rtssAnchorBackupLabel": "Layout backup file",
+      "rtssBackupUnknown": "backup path unavailable",
       "blurTitle": "Window material",
       "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart."
     },
@@ -936,6 +969,16 @@
         "mica": "Mica",
         "tabbed": "Mica Alt",
         "off": "Off"
+      },
+      "rtssInterval": {
+        "250": "250 ms",
+        "500": "500 ms",
+        "1000": "1 second",
+        "2000": "2 seconds"
+      },
+      "rtssPositionMode": {
+        "anchor": "Adjust in RTSS",
+        "custom": "Adjust in THRM"
       }
     }
   }

@@ -70,6 +70,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	if cfg.SmartControl.LearningBiasByProfile == nil {
 		cfg.SmartControl.LearningBiasByProfile = oldCfg.SmartControl.LearningBiasByProfile
 	}
+	cfg.RTSS = normalizeUpdatedRTSSConfig(cfg.RTSS, oldCfg.RTSS)
 	cfg.LightStrip, _ = normalizeLightStripConfig(cfg.LightStrip)
 	cfg.ThemeMode = types.NormalizeThemeMode(cfg.ThemeMode)
 	cfg.TempSource = types.NormalizeTempSource(cfg.TempSource)
@@ -101,7 +102,40 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 	a.syncManualGearLevelMemoryLocked(cfg)
 	a.applyHotkeyBindings(cfg)
 	a.applyPluginConfig(cfg)
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.Configure(cfg.RTSS.Enabled, time.Duration(cfg.RTSS.UpdateIntervalMS)*time.Millisecond)
+		a.rtssPublisher.SetPosition(cfg.RTSS.PositionMode, cfg.RTSS.PositionX, cfg.RTSS.PositionY)
+	}
 	return nil
+}
+
+func normalizeUpdatedRTSSConfig(next, previous types.RTSSConfig) types.RTSSConfig {
+	// Older GUI clients do not send the nested RTSS object. Preserve the stored
+	// settings instead of disabling OSD output when they update another field.
+	if next.UpdateIntervalMS == 0 {
+		next = previous
+	}
+	if next.PositionMode == "" {
+		next.PositionMode = previous.PositionMode
+		next.PositionX = previous.PositionX
+		next.PositionY = previous.PositionY
+	}
+	next, _ = types.NormalizeRTSSConfig(next)
+	return next
+}
+
+// PreviewRTSSPosition updates the active OSD cursor without persisting the
+// configuration. The GUI uses it while a pointer or key is held, then commits
+// the final coordinates through UpdateConfig once the interaction stops.
+func (a *CoreApp) PreviewRTSSPosition(mode string, x, y int) {
+	cfg := a.configManager.Get().RTSS
+	cfg.PositionMode = mode
+	cfg.PositionX = x
+	cfg.PositionY = y
+	cfg, _ = types.NormalizeRTSSConfig(cfg)
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.SetPosition(cfg.PositionMode, cfg.PositionX, cfg.PositionY)
+	}
 }
 
 func (a *CoreApp) SetTemperatureHistoryEnabled(enabled bool) error {

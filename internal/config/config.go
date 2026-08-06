@@ -120,9 +120,45 @@ func (m *Manager) tryLoadFromPathLocked(configPath string) bool {
 	applyMissingThemeDefaults(&config, rawConfig)
 	applyMissingTemperatureDefaults(&config, rawConfig)
 	applyMissingFanFeatureDefaults(&config, rawConfig)
+	applyMissingRTSSDefaults(&config, rawConfig)
 
 	m.config = config
 	return true
+}
+
+func applyMissingRTSSDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {
+	if cfg == nil {
+		return
+	}
+
+	defaults := types.GetDefaultRTSSConfig()
+	rawRTSS, ok := rawConfig["rtss"]
+	if !ok {
+		cfg.RTSS = defaults
+		return
+	}
+
+	var rtssConfig map[string]json.RawMessage
+	if err := json.Unmarshal(rawRTSS, &rtssConfig); err != nil {
+		cfg.RTSS = defaults
+		return
+	}
+	if _, ok := rtssConfig["enabled"]; !ok {
+		cfg.RTSS.Enabled = defaults.Enabled
+	}
+	if _, ok := rtssConfig["updateIntervalMs"]; !ok {
+		cfg.RTSS.UpdateIntervalMS = defaults.UpdateIntervalMS
+	}
+	if _, ok := rtssConfig["positionMode"]; !ok {
+		cfg.RTSS.PositionMode = defaults.PositionMode
+	}
+	if _, ok := rtssConfig["positionX"]; !ok {
+		cfg.RTSS.PositionX = defaults.PositionX
+	}
+	if _, ok := rtssConfig["positionY"]; !ok {
+		cfg.RTSS.PositionY = defaults.PositionY
+	}
+	cfg.RTSS, _ = types.NormalizeRTSSConfig(cfg.RTSS)
 }
 
 func applyMissingHotkeyDefaults(cfg *types.AppConfig, rawConfig map[string]json.RawMessage) {

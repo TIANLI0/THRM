@@ -86,6 +86,7 @@ export interface AppConfig {
   cpuSensors?: string[];       // CPU 多传感器选择(多核平均)；为空则按 cpuSensor 单选/自动
   gpuSensor?: string;
   windowBlur?: 'auto' | 'on' | 'acrylic' | 'mica' | 'tabbed' | 'off'; // 窗口材质；on 为旧版兼容值
+  rtss?: RTSSConfig;
   configPath: string;          // 配置文件路径
   manualGear: string;          // 手动挡位设置
   manualLevel: string;         // 手动挡位级别(低中高)
@@ -96,6 +97,14 @@ export interface AppConfig {
   speedAvoidance?: SpeedAvoidanceConfig;
   timeCurveSchedule?: TimeCurveScheduleConfig;
   smartControl: SmartControlConfig; // 学习型智能控温
+}
+
+export interface RTSSConfig {
+  enabled: boolean;
+  updateIntervalMs: 250 | 500 | 1000 | 2000;
+  positionMode?: 'anchor' | 'custom';
+  positionX?: number;
+  positionY?: number;
 }
 
 export interface SpeedAvoidanceConfig {

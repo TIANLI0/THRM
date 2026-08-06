@@ -54,6 +54,14 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.successResponse(true)
 
+	case ipc.ReqPreviewRTSSPosition:
+		var params ipc.PreviewRTSSPositionParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析 RTSS 位置失败: " + err.Error())
+		}
+		a.PreviewRTSSPosition(params.Mode, params.X, params.Y)
+		return a.successResponse(true)
+
 	case ipc.ReqSetFanCurve:
 		var curve []types.FanCurvePoint
 		if err := json.Unmarshal(req.Data, &curve); err != nil {

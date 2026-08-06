@@ -63,10 +63,17 @@ func didDeviceSwitchToManualMode(previousMode, currentMode string) bool {
 
 // onFanDataUpdate 风扇数据更新回调
 func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
+	if fanData == nil {
+		return
+	}
+
 	// A newly opened HID handle can deliver the device's default gear-mode
 	// report before the connection has passed its readiness gate. Do not treat
 	// that bootstrap report as a user-requested mode transition.
 	controlReady := a.isDeviceControlReady()
+	if controlReady && a.rtssPublisher != nil {
+		a.rtssPublisher.Publish(fanData.CurrentRPM)
+	}
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	deviceSwitchedToManual := didDeviceSwitchToManualMode(a.lastDeviceMode, fanData.WorkMode)
@@ -113,6 +120,10 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 
 // onDeviceDisconnect 设备断开回调
 func (a *CoreApp) onDeviceDisconnect() {
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.Close()
+	}
+
 	a.mutex.Lock()
 	wasConnected := a.isConnected
 	a.isConnected = false
@@ -376,6 +387,9 @@ func (a *CoreApp) onSystemSuspend() {
 		return
 	}
 	generation := a.suspendGeneration.Add(1)
+	if a.rtssPublisher != nil {
+		a.rtssPublisher.Close()
+	}
 	start := time.Now()
 	a.logInfo("收到系统挂起通知：提前停止监控并断开设备/桥接，避免唤醒后失效句柄导致崩溃")
 	// 趁进程还活着先记下挂起点：唤醒标记只能说明"这里恢复了"，配上挂起标记

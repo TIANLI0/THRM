@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -24,7 +24,15 @@ import {
   Sparkles,
   X,
   RotateCw,
+  RotateCcw,
   FileArchive,
+  Gauge,
+  MapPin,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  RefreshCw,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { Environment } from '../../../wailsjs/runtime/runtime';
@@ -34,7 +42,19 @@ import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type The
 import { type AppLocale, useLocale } from '../lib/i18n';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
-import { ToggleSwitch, Button, Select, MultiSelect, Slider } from './ui/index';
+import {
+  ToggleSwitch,
+  Button,
+  Select,
+  MultiSelect,
+  Slider,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/index';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -120,6 +140,21 @@ function getRequiredColorCount(mode: string): number {
 const LEGION_POWER_MODE_VALUES = ['Quiet', 'Balance', 'Performance', 'Extreme', 'GodMode'] as const;
 const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
 const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
+const RTSS_UPDATE_INTERVALS = [250, 500, 1000, 2000] as const;
+const RTSS_POSITION_MIN = -1000;
+const RTSS_POSITION_MAX = 1000;
+const RTSS_POSITION_COMMIT_DELAY = 250;
+const RTSS_POSITION_HOLD_DELAY = 350;
+const RTSS_POSITION_CLICK_STEP = 2;
+const RTSS_POSITION_HOLD_INITIAL_SPEED = 28;
+const RTSS_POSITION_HOLD_MAX_SPEED = 56;
+const RTSS_POSITION_HOLD_ACCELERATION_MS = 1600;
+
+type RTSSPosition = { x: number; y: number };
+
+function clampRTSSPosition(value: number): number {
+  return Math.max(RTSS_POSITION_MIN, Math.min(RTSS_POSITION_MAX, value));
+}
 
 // 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
 const DANGEROUS_DEBUG_COMMANDS = new Set<number>([0xed, 0xee, 0xf0, 0xf1, 0xf2]);
@@ -437,6 +472,22 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [debugInfoLoading, setDebugInfoLoading] = useState(false);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [rtssLayoutStatus, setRtssLayoutStatus] = useState<Awaited<ReturnType<typeof apiService.getRTSSLayoutStatus>> | null>(null);
+  const [rtssAnchorConfirmOpen, setRtssAnchorConfirmOpen] = useState(false);
+  const [rtssAnchorResult, setRtssAnchorResult] = useState<{ backupPath: string; layoutName: string } | null>(null);
+  const [rtssPositionDraft, setRtssPositionDraft] = useState<RTSSPosition>({ x: 0, y: 0 });
+  const rtssPositionRef = useRef<RTSSPosition>({ x: 0, y: 0 });
+  const rtssConfiguredPositionRef = useRef<RTSSPosition>({ x: 0, y: 0 });
+  const rtssPreviewPendingRef = useRef<RTSSPosition | null>(null);
+  const rtssPreviewDrainRef = useRef<Promise<void> | null>(null);
+  const rtssHoldFrameRef = useRef<number | null>(null);
+  const rtssHoldActiveRef = useRef(false);
+  const rtssCommitTimerRef = useRef<number | null>(null);
+  const rtssSaveDrainRef = useRef<Promise<void> | null>(null);
+  const rtssSaveRequestedRef = useRef(false);
+  const rtssInteractionActiveRef = useRef(false);
+  const latestConfigRef = useRef(config);
+  const onConfigChangeRef = useRef(onConfigChange);
   const [debugCommandInput, setDebugCommandInput] = useState('27');
   const [debugCommandResult, setDebugCommandResult] = useState<DeviceDebugCommandResult | null>(null);
   const [debugCommandLoading, setDebugCommandLoading] = useState(false);
@@ -474,6 +525,21 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       disposed = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isWindowsPlatform) return;
+    let disposed = false;
+    void apiService.getRTSSLayoutStatus()
+      .then((status) => {
+        if (!disposed) setRtssLayoutStatus(status || null);
+      })
+      .catch(() => {
+        if (!disposed) setRtssLayoutStatus(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [isWindowsPlatform]);
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   const isBs1 = deviceModel === 'BS1';
@@ -518,6 +584,32 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     return effectiveGpuSensors.some((sensor) => sensor.key === configured) ? configured : 'auto';
   }, [config, effectiveGpuSensors]);
   const legionFnQConfig = useMemo(() => normalizeLegionFnQConfig((config as any).legionFnQ), [config]);
+  const rtssConfig = useMemo(
+    () => types.RTSSConfig.createFrom((config as any).rtss || {
+      enabled: false,
+      updateIntervalMs: 1000,
+      positionMode: 'anchor',
+      positionX: 0,
+      positionY: 0,
+    }),
+    [config],
+  );
+  const rtssPositionMode = rtssConfig.positionMode === 'custom' ? 'custom' : 'anchor';
+  const configuredRTSSPositionX = Number.isFinite(rtssConfig.positionX) ? rtssConfig.positionX : 0;
+  const configuredRTSSPositionY = Number.isFinite(rtssConfig.positionY) ? rtssConfig.positionY : 0;
+  const rtssPositionX = rtssPositionDraft.x;
+  const rtssPositionY = rtssPositionDraft.y;
+  latestConfigRef.current = config;
+  onConfigChangeRef.current = onConfigChange;
+
+  useEffect(() => {
+    const next = { x: configuredRTSSPositionX, y: configuredRTSSPositionY };
+    rtssConfiguredPositionRef.current = next;
+    if (!rtssInteractionActiveRef.current) {
+      rtssPositionRef.current = next;
+      setRtssPositionDraft(next);
+    }
+  }, [configuredRTSSPositionX, configuredRTSSPositionY]);
   const legionPowerModes = useMemo(
     () => LEGION_POWER_MODE_VALUES.map((value) => ({ value, label: t(`controlPanel.options.legionPowerModes.${value}`) })),
     [locale, t],
@@ -557,6 +649,20 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       { value: 'mica', label: t('controlPanel.options.windowBlur.mica') },
       { value: 'tabbed', label: t('controlPanel.options.windowBlur.tabbed') },
       { value: 'off', label: t('controlPanel.options.windowBlur.off') },
+    ],
+    [locale, t],
+  );
+  const rtssIntervalOptions = useMemo(
+    () => RTSS_UPDATE_INTERVALS.map((value) => ({
+      value,
+      label: t(`controlPanel.options.rtssInterval.${value}`),
+    })),
+    [locale, t],
+  );
+  const rtssPositionModeOptions = useMemo(
+    () => [
+      { value: 'custom', label: t('controlPanel.options.rtssPositionMode.custom') },
+      { value: 'anchor', label: t('controlPanel.options.rtssPositionMode.anchor') },
     ],
     [locale, t],
   );
@@ -813,6 +919,292 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('windowBlur', false);
     }
   }, [config, onConfigChange]);
+
+  const handleRTSSEnabledChange = useCallback(async (enabled: boolean) => {
+    setLoading('rtssEnabled', true);
+    try {
+      const rtss = types.RTSSConfig.createFrom({ ...rtssConfig, enabled });
+      const newCfg = types.AppConfig.createFrom({ ...config, rtss });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('rtssEnabled', false);
+    }
+  }, [config, onConfigChange, rtssConfig]);
+
+  const handleRTSSIntervalChange = useCallback(async (updateIntervalMs: number) => {
+    setLoading('rtssInterval', true);
+    try {
+      const rtss = types.RTSSConfig.createFrom({ ...rtssConfig, updateIntervalMs });
+      const newCfg = types.AppConfig.createFrom({ ...config, rtss });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+    } catch { /* noop */ } finally {
+      setLoading('rtssInterval', false);
+    }
+  }, [config, onConfigChange, rtssConfig]);
+
+  const drainRTSSPositionPreview = useCallback(async (): Promise<void> => {
+    if (rtssPreviewDrainRef.current) return rtssPreviewDrainRef.current;
+    const run = (async () => {
+      while (rtssPreviewPendingRef.current) {
+        const next = rtssPreviewPendingRef.current;
+        rtssPreviewPendingRef.current = null;
+        try {
+          await apiService.previewRTSSPosition('custom', next.x, next.y);
+        } catch {
+          // The final persisted update reports failures; previews remain best-effort.
+        }
+      }
+    })();
+    rtssPreviewDrainRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (rtssPreviewDrainRef.current === run) rtssPreviewDrainRef.current = null;
+    }
+  }, []);
+
+  const flushRTSSPositionPreview = useCallback(async () => {
+    while (rtssPreviewPendingRef.current || rtssPreviewDrainRef.current) {
+      if (!rtssPreviewDrainRef.current) void drainRTSSPositionPreview();
+      const running = rtssPreviewDrainRef.current;
+      if (running) await running;
+    }
+  }, [drainRTSSPositionPreview]);
+
+  const persistRTSSPosition = useCallback(async (): Promise<void> => {
+    if (rtssSaveDrainRef.current) return rtssSaveDrainRef.current;
+    const run = (async () => {
+      try {
+        while (rtssSaveRequestedRef.current) {
+          rtssSaveRequestedRef.current = false;
+          const position = { ...rtssPositionRef.current };
+          rtssPreviewPendingRef.current = position;
+          await flushRTSSPositionPreview();
+
+          const currentConfig = latestConfigRef.current;
+          const currentRTSS = types.RTSSConfig.createFrom((currentConfig as any).rtss || {});
+          const rtss = types.RTSSConfig.createFrom({
+            ...currentRTSS,
+            positionMode: 'custom',
+            positionX: position.x,
+            positionY: position.y,
+          });
+          const newCfg = types.AppConfig.createFrom({ ...currentConfig, rtss });
+          await apiService.updateConfig(newCfg);
+          latestConfigRef.current = newCfg;
+          rtssConfiguredPositionRef.current = position;
+          onConfigChangeRef.current(newCfg);
+
+          if (position.x !== rtssPositionRef.current.x || position.y !== rtssPositionRef.current.y) {
+            rtssSaveRequestedRef.current = true;
+          }
+        }
+      } catch (error) {
+        rtssSaveRequestedRef.current = false;
+        const fallback = { ...rtssConfiguredPositionRef.current };
+        rtssPositionRef.current = fallback;
+        setRtssPositionDraft(fallback);
+        rtssPreviewPendingRef.current = fallback;
+        await flushRTSSPositionPreview();
+        toast.error(t('controlPanel.system.rtssPositionSaveFailed', { error: getErrorMessage(error) }));
+      } finally {
+        rtssInteractionActiveRef.current = false;
+      }
+    })();
+    rtssSaveDrainRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (rtssSaveDrainRef.current === run) rtssSaveDrainRef.current = null;
+    }
+  }, [flushRTSSPositionPreview, t]);
+
+  const scheduleRTSSPositionCommit = useCallback((delay = RTSS_POSITION_COMMIT_DELAY) => {
+    if (rtssCommitTimerRef.current !== null) window.clearTimeout(rtssCommitTimerRef.current);
+    rtssCommitTimerRef.current = window.setTimeout(() => {
+      rtssCommitTimerRef.current = null;
+      rtssSaveRequestedRef.current = true;
+      void persistRTSSPosition();
+    }, delay);
+  }, [persistRTSSPosition]);
+
+  const applyRTSSPosition = useCallback((next: RTSSPosition): boolean => {
+    const normalized = {
+      x: clampRTSSPosition(next.x),
+      y: clampRTSSPosition(next.y),
+    };
+    const current = rtssPositionRef.current;
+    if (normalized.x === current.x && normalized.y === current.y) return false;
+    rtssInteractionActiveRef.current = true;
+    rtssPositionRef.current = normalized;
+    setRtssPositionDraft(normalized);
+    rtssPreviewPendingRef.current = normalized;
+    void drainRTSSPositionPreview();
+    if (!rtssHoldActiveRef.current) scheduleRTSSPositionCommit();
+    return true;
+  }, [drainRTSSPositionPreview, scheduleRTSSPositionCommit]);
+
+  const nudgeRTSSPosition = useCallback((axis: 'x' | 'y', delta: number): boolean => {
+    const current = rtssPositionRef.current;
+    return applyRTSSPosition({
+      x: axis === 'x' ? current.x + delta : current.x,
+      y: axis === 'y' ? current.y + delta : current.y,
+    });
+  }, [applyRTSSPosition]);
+
+  const clearRTSSPositionHold = useCallback(() => {
+    rtssHoldActiveRef.current = false;
+    if (rtssHoldFrameRef.current !== null) {
+      window.cancelAnimationFrame(rtssHoldFrameRef.current);
+      rtssHoldFrameRef.current = null;
+    }
+  }, []);
+
+  const stopRTSSPositionHold = useCallback(() => {
+    if (!rtssHoldActiveRef.current) return;
+    clearRTSSPositionHold();
+    scheduleRTSSPositionCommit(0);
+  }, [clearRTSSPositionHold, scheduleRTSSPositionCommit]);
+
+  const startRTSSPositionHold = useCallback((
+    event: React.PointerEvent<HTMLButtonElement>,
+    axis: 'x' | 'y',
+    direction: number,
+  ) => {
+    if (event.button !== 0 || loadingStates.rtssPositionMode) return;
+    event.preventDefault();
+    event.currentTarget.focus();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    clearRTSSPositionHold();
+    rtssHoldActiveRef.current = true;
+    if (!nudgeRTSSPosition(axis, direction * RTSS_POSITION_CLICK_STEP)) {
+      clearRTSSPositionHold();
+      return;
+    }
+    const startedAt = performance.now();
+    let previousFrameAt = startedAt + RTSS_POSITION_HOLD_DELAY;
+    let distanceRemainder = 0;
+    const animate = (frameAt: number) => {
+      if (!rtssHoldActiveRef.current) return;
+      if (frameAt >= startedAt + RTSS_POSITION_HOLD_DELAY) {
+        const heldFor = frameAt - startedAt - RTSS_POSITION_HOLD_DELAY;
+        const progress = Math.min(heldFor / RTSS_POSITION_HOLD_ACCELERATION_MS, 1);
+        const speed = RTSS_POSITION_HOLD_INITIAL_SPEED
+          + (RTSS_POSITION_HOLD_MAX_SPEED - RTSS_POSITION_HOLD_INITIAL_SPEED) * progress;
+        const frameDuration = Math.min(Math.max(frameAt - previousFrameAt, 0), 50);
+        distanceRemainder += speed * frameDuration / 1000;
+        previousFrameAt = frameAt;
+
+        const distance = Math.floor(distanceRemainder);
+        if (distance > 0) {
+          distanceRemainder -= distance;
+          if (!nudgeRTSSPosition(axis, direction * distance)) {
+            clearRTSSPositionHold();
+            scheduleRTSSPositionCommit(0);
+            return;
+          }
+        }
+      }
+      rtssHoldFrameRef.current = window.requestAnimationFrame(animate);
+    };
+    rtssHoldFrameRef.current = window.requestAnimationFrame(animate);
+  }, [clearRTSSPositionHold, loadingStates.rtssPositionMode, nudgeRTSSPosition, scheduleRTSSPositionCommit]);
+
+  const handleRTSSPositionKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const amount = event.shiftKey ? 10 : 1;
+    const movement: Record<string, ['x' | 'y', number]> = {
+      ArrowUp: ['y', -amount],
+      ArrowDown: ['y', amount],
+      ArrowLeft: ['x', -amount],
+      ArrowRight: ['x', amount],
+    };
+    const next = movement[event.key];
+    if (!next || loadingStates.rtssPositionMode) return;
+    event.preventDefault();
+    nudgeRTSSPosition(next[0], next[1]);
+  }, [loadingStates.rtssPositionMode, nudgeRTSSPosition]);
+
+  const handleRTSSPositionKeyUp = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    if (rtssInteractionActiveRef.current) scheduleRTSSPositionCommit(0);
+  }, [scheduleRTSSPositionCommit]);
+
+  const handleRTSSPositionModeChange = useCallback(async (positionMode: string) => {
+    clearRTSSPositionHold();
+    if (rtssCommitTimerRef.current !== null) {
+      window.clearTimeout(rtssCommitTimerRef.current);
+      rtssCommitTimerRef.current = null;
+    }
+    rtssSaveRequestedRef.current = false;
+    setLoading('rtssPositionMode', true);
+    try {
+      if (rtssSaveDrainRef.current) await rtssSaveDrainRef.current;
+      await flushRTSSPositionPreview();
+      const currentConfig = latestConfigRef.current;
+      const currentRTSS = types.RTSSConfig.createFrom((currentConfig as any).rtss || {});
+      const rtss = types.RTSSConfig.createFrom({
+        ...currentRTSS,
+        positionMode: positionMode === 'custom' ? 'custom' : 'anchor',
+        positionX: rtssPositionRef.current.x,
+        positionY: rtssPositionRef.current.y,
+      });
+      const newCfg = types.AppConfig.createFrom({ ...currentConfig, rtss });
+      await apiService.updateConfig(newCfg);
+      latestConfigRef.current = newCfg;
+      rtssConfiguredPositionRef.current = { x: rtss.positionX, y: rtss.positionY };
+      rtssInteractionActiveRef.current = false;
+      onConfigChangeRef.current(newCfg);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setLoading('rtssPositionMode', false);
+    }
+  }, [clearRTSSPositionHold, flushRTSSPositionPreview]);
+
+  useEffect(() => {
+    const stopOnWindowBlur = () => stopRTSSPositionHold();
+    window.addEventListener('blur', stopOnWindowBlur);
+    return () => window.removeEventListener('blur', stopOnWindowBlur);
+  }, [stopRTSSPositionHold]);
+
+  useEffect(() => () => {
+    clearRTSSPositionHold();
+    if (rtssCommitTimerRef.current !== null) window.clearTimeout(rtssCommitTimerRef.current);
+    rtssPreviewPendingRef.current = null;
+  }, [clearRTSSPositionHold]);
+
+  const refreshRTSSLayoutStatus = useCallback(async () => {
+    setLoading('rtssLayoutRefresh', true);
+    try {
+      const status = await apiService.getRTSSLayoutStatus();
+      setRtssLayoutStatus(status || null);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setLoading('rtssLayoutRefresh', false);
+    }
+  }, []);
+
+  const handleCreateRTSSAnchor = useCallback(async () => {
+    setLoading('rtssAnchorCreate', true);
+    try {
+      const status = await apiService.createRTSSAnchor();
+      setRtssLayoutStatus(status || null);
+      setRtssAnchorConfirmOpen(false);
+      setRtssAnchorResult({
+        backupPath: status?.backupPath || t('controlPanel.system.rtssBackupUnknown'),
+        layoutName: status?.layoutName || rtssLayoutStatus?.layoutName || '',
+      });
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+      await refreshRTSSLayoutStatus();
+    } finally {
+      setLoading('rtssAnchorCreate', false);
+    }
+  }, [refreshRTSSLayoutStatus, rtssLayoutStatus?.layoutName, t]);
 
   const handleTransientSpikeFilterChange = useCallback(async (enabled: boolean) => {
     setLoading('transientSpikeFilter', true);
@@ -1769,6 +2161,211 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             />
           </SettingRow>
 
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Gauge className={clsx('h-4 w-4', rtssConfig.enabled ? 'text-emerald-500' : '')} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-medium text-foreground">{t('controlPanel.system.rtssTitle')}</div>
+                  <div className="text-sm text-muted-foreground line-clamp-2">
+                    {t('controlPanel.system.rtssDescription')}
+                  </div>
+                </div>
+              </div>
+              <ToggleSwitch
+                enabled={rtssConfig.enabled}
+                onChange={handleRTSSEnabledChange}
+                loading={loadingStates.rtssEnabled}
+                size="sm"
+                color="green"
+              />
+            </div>
+
+            <div
+              className="mt-3 rounded-xl border border-border/70 bg-background/45 px-4 py-2"
+            >
+              <div
+                aria-disabled={!rtssConfig.enabled}
+                className={clsx(
+                  'flex flex-col gap-2 py-3 transition-opacity md:flex-row md:items-center md:gap-4',
+                  !rtssConfig.enabled && 'opacity-50',
+                )}
+              >
+                <div className="min-w-0 flex-1 pr-2">
+                  <div className="flex items-center gap-2 text-sm text-foreground">
+                    <RotateCw className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>{t('controlPanel.system.rtssIntervalTitle')}</span>
+                  </div>
+                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {t('controlPanel.system.rtssIntervalDescription')}
+                  </div>
+                </div>
+
+                <div className="w-full md:ml-auto md:w-36 md:flex-none">
+                  <Select
+                    value={rtssConfig.updateIntervalMs || 1000}
+                    onChange={(value: string | number) => handleRTSSIntervalChange(Number(value))}
+                    options={rtssIntervalOptions}
+                    disabled={!rtssConfig.enabled || loadingStates.rtssInterval}
+                    size="sm"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-border/60 py-3">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+                  <div className="min-w-0 flex-1 pr-2">
+                    <div className="flex items-center gap-2 text-sm text-foreground">
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{t('controlPanel.system.rtssPositionTitle')}</span>
+                    </div>
+                    <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {t('controlPanel.system.rtssPositionDescription.intro')}
+                    </div>
+                  </div>
+                  <div className="w-full md:ml-auto md:w-48 md:flex-none">
+                    <Select
+                      value={rtssPositionMode}
+                      onChange={(value: string | number) => handleRTSSPositionModeChange(String(value))}
+                      options={rtssPositionModeOptions}
+                      disabled={loadingStates.rtssPositionMode}
+                      size="sm"
+                    />
+                  </div>
+                </div>
+
+                {rtssPositionMode === 'custom' && (
+                  <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-3 md:flex-row md:items-center">
+                    <div
+                      role="group"
+                      tabIndex={0}
+                      aria-label={t('controlPanel.system.rtssPositionControls')}
+                      className="grid h-28 w-28 shrink-0 grid-cols-3 grid-rows-3 gap-1 rounded-md outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background"
+                      onKeyDown={handleRTSSPositionKeyDown}
+                      onKeyUp={handleRTSSPositionKeyUp}
+                      onBlurCapture={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget as Node | null) && rtssInteractionActiveRef.current) {
+                          scheduleRTSSPositionCommit(0);
+                        }
+                      }}
+                    >
+                      <span />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 touch-none justify-self-center p-0"
+                        icon={<ArrowUp className="h-4 w-4" />}
+                        aria-label={t('controlPanel.system.rtssMoveUp')}
+                        onPointerDown={(event) => startRTSSPositionHold(event, 'y', -1)}
+                        onPointerUp={stopRTSSPositionHold}
+                        onPointerCancel={stopRTSSPositionHold}
+                        onLostPointerCapture={stopRTSSPositionHold}
+                        onClick={(event) => { if (event.detail === 0) nudgeRTSSPosition('y', -RTSS_POSITION_CLICK_STEP); }}
+                        disabled={loadingStates.rtssPositionMode || rtssPositionY <= RTSS_POSITION_MIN}
+                      />
+                      <span />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 touch-none justify-self-center p-0"
+                        icon={<ArrowLeft className="h-4 w-4" />}
+                        aria-label={t('controlPanel.system.rtssMoveLeft')}
+                        onPointerDown={(event) => startRTSSPositionHold(event, 'x', -1)}
+                        onPointerUp={stopRTSSPositionHold}
+                        onPointerCancel={stopRTSSPositionHold}
+                        onLostPointerCapture={stopRTSSPositionHold}
+                        onClick={(event) => { if (event.detail === 0) nudgeRTSSPosition('x', -RTSS_POSITION_CLICK_STEP); }}
+                        disabled={loadingStates.rtssPositionMode || rtssPositionX <= RTSS_POSITION_MIN}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 justify-self-center p-0"
+                        icon={<RotateCcw className="h-3.5 w-3.5" />}
+                        aria-label={t('controlPanel.system.rtssResetPosition')}
+                        onClick={() => applyRTSSPosition({ x: 0, y: 0 })}
+                        disabled={loadingStates.rtssPositionMode || (rtssPositionX === 0 && rtssPositionY === 0)}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 touch-none justify-self-center p-0"
+                        icon={<ArrowRight className="h-4 w-4" />}
+                        aria-label={t('controlPanel.system.rtssMoveRight')}
+                        onPointerDown={(event) => startRTSSPositionHold(event, 'x', 1)}
+                        onPointerUp={stopRTSSPositionHold}
+                        onPointerCancel={stopRTSSPositionHold}
+                        onLostPointerCapture={stopRTSSPositionHold}
+                        onClick={(event) => { if (event.detail === 0) nudgeRTSSPosition('x', RTSS_POSITION_CLICK_STEP); }}
+                        disabled={loadingStates.rtssPositionMode || rtssPositionX >= RTSS_POSITION_MAX}
+                      />
+                      <span />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 touch-none justify-self-center p-0"
+                        icon={<ArrowDown className="h-4 w-4" />}
+                        aria-label={t('controlPanel.system.rtssMoveDown')}
+                        onPointerDown={(event) => startRTSSPositionHold(event, 'y', 1)}
+                        onPointerUp={stopRTSSPositionHold}
+                        onPointerCancel={stopRTSSPositionHold}
+                        onLostPointerCapture={stopRTSSPositionHold}
+                        onClick={(event) => { if (event.detail === 0) nudgeRTSSPosition('y', RTSS_POSITION_CLICK_STEP); }}
+                        disabled={loadingStates.rtssPositionMode || rtssPositionY >= RTSS_POSITION_MAX}
+                      />
+                      <span />
+                    </div>
+                    <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
+                      <p className="leading-relaxed">{t('controlPanel.system.rtssPositionDescription.custom')}</p>
+                      <div className="tabular-nums">
+                        {t('controlPanel.system.rtssPositionValue', { x: rtssPositionX, y: rtssPositionY })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {rtssPositionMode === 'anchor' && isWindowsPlatform && (
+                  <div className="mt-3 flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>
+                        {rtssLayoutStatus?.layoutName
+                          ? t('controlPanel.system.rtssLayoutDetected', { layout: rtssLayoutStatus.layoutName })
+                          : t('controlPanel.system.rtssLayoutNotDetected')}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<RefreshCw className="h-3.5 w-3.5" />}
+                        aria-label={t('controlPanel.system.rtssRefreshLayoutStatus')}
+                        onClick={() => void refreshRTSSLayoutStatus()}
+                        loading={loadingStates.rtssLayoutRefresh}
+                      />
+                    </div>
+                    <p className="leading-relaxed">{t('controlPanel.system.rtssPositionDescription.anchor')}</p>
+                    {rtssLayoutStatus?.anchorState === 'confirmed' ? (
+                      <span className="text-emerald-500">{t('controlPanel.system.rtssAnchorReady')}</span>
+                    ) : rtssLayoutStatus?.installed && rtssLayoutStatus.layoutPath ? (
+                      <div className="flex flex-col items-start gap-2">
+                        <span>{t('controlPanel.system.rtssAnchorNotConfigured')}</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRtssAnchorConfirmOpen(true)}
+                          loading={loadingStates.rtssAnchorCreate}
+                        >
+                          {rtssLayoutStatus?.anchorState === 'missing'
+                            ? t('controlPanel.system.rtssCreateAnchor')
+                            : t('controlPanel.system.rtssReviewAnchor')}
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </Section>
 
         {/* ═══════════ Offline tip ═══════════ */}
@@ -1913,6 +2510,81 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           </div>
         </Collapsible>
       </div>
+
+      <Dialog
+        open={rtssAnchorConfirmOpen}
+        onOpenChange={(open) => {
+          if (!loadingStates.rtssAnchorCreate) setRtssAnchorConfirmOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-md" hideClose={loadingStates.rtssAnchorCreate}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-sky-500" />
+              {t('controlPanel.system.rtssAnchorDialogTitle')}
+            </DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              {t('controlPanel.system.rtssAnchorConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+          {rtssLayoutStatus?.layoutName && (
+            <div className="rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-sm text-foreground">
+              {t('controlPanel.system.rtssAnchorCurrentLayout', { layout: rtssLayoutStatus.layoutName })}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRtssAnchorConfirmOpen(false)}
+              disabled={loadingStates.rtssAnchorCreate}
+            >
+              {t('common.actions.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleCreateRTSSAnchor()}
+              loading={loadingStates.rtssAnchorCreate}
+              icon={<MapPin className="h-3.5 w-3.5" />}
+            >
+              {t('controlPanel.system.rtssAnchorContinue')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rtssAnchorResult !== null}>
+        <DialogContent className="max-w-md" hideClose>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              {t('controlPanel.system.rtssAnchorSuccessTitle')}
+            </DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              {t('controlPanel.system.rtssAnchorSuccessDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          {rtssAnchorResult?.layoutName && (
+            <div className="text-xs text-muted-foreground">
+              {t('controlPanel.system.rtssAnchorCurrentLayout', { layout: rtssAnchorResult.layoutName })}
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <FileArchive className="h-3.5 w-3.5" />
+              {t('controlPanel.system.rtssAnchorBackupLabel')}
+            </div>
+            <code className="block max-h-24 select-text overflow-auto break-all rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-xs leading-relaxed text-foreground">
+              {rtssAnchorResult?.backupPath}
+            </code>
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setRtssAnchorResult(null)}>
+              {t('common.actions.done')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ═══════════ Custom speed warning dialog ═══════════ */}
       <AnimatePresence>

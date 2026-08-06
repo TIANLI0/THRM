@@ -10,6 +10,10 @@ export function ConnectDevice() {
   return window['go']['main']['App']['ConnectDevice']();
 }
 
+export function CreateRTSSAnchor() {
+  return window['go']['main']['App']['CreateRTSSAnchor']();
+}
+
 export function DeleteFanCurveProfile(arg1) {
   return window['go']['main']['App']['DeleteFanCurveProfile'](arg1);
 }
@@ -74,6 +78,10 @@ export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
 }
 
+export function GetRTSSLayoutStatus() {
+  return window['go']['main']['App']['GetRTSSLayoutStatus']();
+}
+
 export function GetTemperature() {
   return window['go']['main']['App']['GetTemperature']();
 }
@@ -124,6 +132,10 @@ export function OpenThemesFolder() {
 
 export function PersistWindowState() {
   return window['go']['main']['App']['PersistWindowState']();
+}
+
+export function PreviewRTSSPosition(arg1, arg2, arg3) {
+  return window['go']['main']['App']['PreviewRTSSPosition'](arg1, arg2, arg3);
 }
 
 export function QuitAll() {

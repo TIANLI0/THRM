@@ -18,6 +18,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/logger"
 	"github.com/TIANLI0/THRM/internal/notifier"
 	"github.com/TIANLI0/THRM/internal/plugins"
+	"github.com/TIANLI0/THRM/internal/rtss"
 	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/tray"
 	"github.com/TIANLI0/THRM/internal/types"
@@ -38,6 +39,7 @@ type CoreApp struct {
 	notifier         *notifier.Manager
 	autostartManager *autostart.Manager
 	pluginManager    *plugins.Manager
+	rtssPublisher    *rtss.Publisher
 	logger           *logger.CustomLogger
 	ipcServer        *ipc.Server
 
@@ -146,6 +148,7 @@ func NewCoreApp(debugMode, isAutoStart bool, iconData []byte) *CoreApp {
 		trayManager:        trayMgr,
 		autostartManager:   autostartMgr,
 		pluginManager:      pluginMgr,
+		rtssPublisher:      rtss.New(),
 		logger:             customLogger,
 		isConnected:        false,
 		lastDeviceMode:     "",

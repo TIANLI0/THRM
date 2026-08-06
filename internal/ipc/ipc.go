@@ -69,6 +69,7 @@ const (
 	ReqExportFanCurveProfiles   RequestType = "ExportFanCurveProfiles"
 	ReqImportFanCurveProfiles   RequestType = "ImportFanCurveProfiles"
 	ReqResetLearnedOffsets      RequestType = "ResetLearnedOffsets"
+	ReqPreviewRTSSPosition      RequestType = "PreviewRTSSPosition"
 
 	// 控制相关
 	ReqSetAutoControl    RequestType = "SetAutoControl"
@@ -969,6 +970,12 @@ type SetStringParams struct {
 // SetIntParams 整数参数
 type SetIntParams struct {
 	Value int `json:"value"`
+}
+
+type PreviewRTSSPositionParams struct {
+	Mode string `json:"mode"`
+	X    int    `json:"x"`
+	Y    int    `json:"y"`
 }
 
 // DeviceDebugCommandParams contains a raw protocol command for the debug panel.

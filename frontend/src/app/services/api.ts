@@ -7,6 +7,9 @@ import {
   GetDeviceStatus,
   GetConfig,
   UpdateConfig,
+  PreviewRTSSPosition,
+  GetRTSSLayoutStatus,
+  CreateRTSSAnchor,
   SetFanCurve,
   ResetLearnedOffsets,
   GetFanCurve,
@@ -33,7 +36,7 @@ import {
   // SetWindowsAutoStart
 } from '../../../wailsjs/go/main/App';
 
-import { types } from '../../../wailsjs/go/models';
+import { rtss, types } from '../../../wailsjs/go/models';
 
 import type {
   DeviceInfo,
@@ -97,6 +100,18 @@ class ApiService {
 
   async updateConfig(config: types.AppConfig): Promise<void> {
     return await UpdateConfig(config);
+  }
+
+  async previewRTSSPosition(mode: 'anchor' | 'custom', x: number, y: number): Promise<void> {
+    return await PreviewRTSSPosition(mode, x, y);
+  }
+
+  async getRTSSLayoutStatus(): Promise<rtss.LayoutStatus> {
+    return await GetRTSSLayoutStatus();
+  }
+
+  async createRTSSAnchor(): Promise<rtss.LayoutStatus> {
+    return await CreateRTSSAnchor();
   }
 
   // 风扇曲线
