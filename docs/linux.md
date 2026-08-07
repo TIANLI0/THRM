@@ -188,7 +188,7 @@ THRM/
 │
 ├── bridge/TempBridge/Program.cs     # ❌ C# 温度桥接（需完全替代）
 ├── themes/                          # ✅ 主题文件
-├── ota/                             # ⚠️ BS2PRO 固件（按需保留）
+├── ota/                             # ⚠️ BS2PRO 固件（本地分析用，已不随仓库分发）
 ├── docs/
 │   └── bs2pro-ota-ble-commands.md   # ✅ 协议参考文档
 ├── scripts/                         # ⚠️ 含 HID/BLE 抓包数据（参考用）

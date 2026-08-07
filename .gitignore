@@ -17,3 +17,7 @@ bridge/TempBridge/obj
 bridge/TempBridge/bin
 temp/LibreHardwareMonitor/
 *.syso
+
+# 厂商固件镜像与反汇编产物：仅本地分析用，不随仓库分发。
+# 固件为飞智版权内容，反汇编体积大且非构建所需；协议结论见 docs/bs2pro-ota-ble-commands.md。
+ota/
