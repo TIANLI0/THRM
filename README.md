@@ -151,6 +151,19 @@ bridge/
 
 Windows 温度监控使用 LibreHardwareMonitor 和 PawnIO。安装程序会处理所需组件；如果便携版无法读取 CPU 温度，可以手动运行目录中的 `PawnIO_setup.exe`。
 
+### 代码签名
+
+THRM 的 Windows 发布包由 [SignPath.io](https://signpath.io/) 免费提供代码签名，证书由 [SignPath Foundation](https://signpath.org/) 签发。
+
+> Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+
+签名证书以 SignPath Foundation 的名义签发，用于证明发布包由 GitHub Actions 从本仓库的公开源码自动构建。构建流程、签名范围和团队角色详见 **[代码签名策略](CODE_SIGNING_POLICY.md)**。
+
+请只从 [GitHub Releases](https://github.com/TIANLI0/THRM/releases) 下载；`nightly-*` 预发布版本和 CI 构建产物不签名。
+
+> [!NOTE]
+> 目前 SignPath Foundation 申请仍在审核中，发布包暂未签名，首次运行时 Windows SmartScreen 可能弹出提示。请使用 Release 页面附带的校验和验证下载文件。审核通过后本节会更新。
+
 ### Linux
 
 Linux 版本目前主要面向 x86_64 桌面发行版，推荐使用 Debian、Ubuntu 或其衍生发行版。
@@ -645,6 +658,7 @@ refactor: simplify ...
 * [Next.js](https://nextjs.org/)
 * [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
 * [PawnIO](https://pawnio.eu/)
+* [SignPath.io](https://signpath.io/) 与 [SignPath Foundation](https://signpath.org/) —— 为开源项目免费提供代码签名
 * [项目贡献者](https://github.com/TIANLI0/THRM/graphs/contributors)
 * 飞智 BS 系列设备用户与测试者
 
@@ -659,3 +673,8 @@ THRM 是独立开发的第三方开源软件，与飞智官方不存在从属、
 ## 开源许可
 
 本项目使用 [MIT License](LICENSE) 开源。
+
+## 策略文档
+
+* [代码签名策略](CODE_SIGNING_POLICY.md) —— 构建与签名流程、签名范围、分发渠道
+* [隐私政策](PRIVACY.md) —— THRM 不收集任何数据；本地存储与网络行为说明
