@@ -112,6 +112,9 @@ func (a *CoreApp) Start() error {
 		a.logInfo("已升级自启动任务定义")
 	}
 
+	// 飞智空间站兼容：开关打开时补齐新出现的散热器设备节点（重新配对/换设备会产生新节点）。
+	a.ensureFlydigiCompat("startup")
+
 	// 检查并同步Windows自启动状态
 	a.logInfo("检查Windows自启动状态")
 	actualAutoStart := a.autostartManager.CheckWindowsAutoStart()

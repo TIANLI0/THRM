@@ -56,6 +56,9 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		cfg.ActiveFanCurveProfileID = oldCfg.ActiveFanCurveProfileID
 	}
 	cfg.LegionFnQSupport = oldCfg.LegionFnQSupport
+	// 飞智兼容开关由 SetFlydigiCompat 独占维护：它要连带改写设备安全描述符，
+	// 让通用的 UpdateConfig 也能改会让配置和系统实际状态脱节。
+	cfg.FlydigiCompat = oldCfg.FlydigiCompat
 	cfg.ManualGearLevels = cloneManualGearLevels(oldCfg.ManualGearLevels)
 	// 保留时长由专用接口独占维护，以记录器的实际状态为准：GUI 手上的配置副本可能还是
 	// 改动之前的值，采信入参会让"改完保留时长后又动了别的设置"把用户的选择静默回退。

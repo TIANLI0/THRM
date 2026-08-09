@@ -71,6 +71,10 @@ const (
 	ReqResetLearnedOffsets      RequestType = "ResetLearnedOffsets"
 	ReqPreviewRTSSPosition      RequestType = "PreviewRTSSPosition"
 
+	// 飞智空间站兼容
+	ReqGetFlydigiCompatStatus RequestType = "GetFlydigiCompatStatus"
+	ReqSetFlydigiCompat       RequestType = "SetFlydigiCompat"
+
 	// 控制相关
 	ReqSetAutoControl    RequestType = "SetAutoControl"
 	ReqSetManualGear     RequestType = "SetManualGear"
@@ -164,6 +168,7 @@ const (
 	EventHotkeyTriggered          = "hotkey-triggered"
 	EventLegionPowerModeUpdate    = "legion-power-mode-update"
 	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
+	EventFlydigiCompatUpdate      = "flydigi-compat-update"
 	EventHealthPing               = "health-ping"
 	EventHeartbeat                = "heartbeat"
 	EventTimelineEvent            = "timeline-event"

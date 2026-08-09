@@ -1,3 +1,36 @@
+export namespace flydigicompat {
+	
+	export class Status {
+	    supported: boolean;
+	    serviceInstalled: boolean;
+	    serviceRunning: boolean;
+	    totalNodes: number;
+	    appliedNodes: number;
+	    presentNodes: number;
+	    effective?: boolean;
+	    needsReconnect: boolean;
+	    error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.serviceInstalled = source["serviceInstalled"];
+	        this.serviceRunning = source["serviceRunning"];
+	        this.totalNodes = source["totalNodes"];
+	        this.appliedNodes = source["appliedNodes"];
+	        this.presentNodes = source["presentNodes"];
+	        this.effective = source["effective"];
+	        this.needsReconnect = source["needsReconnect"];
+	        this.error = source["error"];
+	    }
+	}
+
+}
+
 export namespace guiapp {
 	
 	export class WindowState {
@@ -24,7 +57,7 @@ export namespace guiapp {
 }
 
 export namespace rtss {
-
+	
 	export class LayoutStatus {
 	    supported: boolean;
 	    installed: boolean;
@@ -36,11 +69,11 @@ export namespace rtss {
 	    anchorState: string;
 	    anchorIndex: number;
 	    layerCount: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new LayoutStatus(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.supported = source["supported"];
@@ -325,11 +358,11 @@ export namespace types {
 	    positionMode: string;
 	    positionX: number;
 	    positionY: number;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new RTSSConfig(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
@@ -486,6 +519,7 @@ export namespace types {
 	    customSpeedRPM: number;
 	    ignoreDeviceOnReconnect: boolean;
 	    lastDeviceTransport: string;
+	    flydigiCompat: boolean;
 	    rtss: RTSSConfig;
 	    speedAvoidance: SpeedAvoidanceConfig;
 	    timeCurveSchedule: TimeCurveScheduleConfig;
@@ -534,6 +568,7 @@ export namespace types {
 	        this.customSpeedRPM = source["customSpeedRPM"];
 	        this.ignoreDeviceOnReconnect = source["ignoreDeviceOnReconnect"];
 	        this.lastDeviceTransport = source["lastDeviceTransport"];
+	        this.flydigiCompat = source["flydigiCompat"];
 	        this.rtss = this.convertValues(source["rtss"], RTSSConfig);
 	        this.speedAvoidance = this.convertValues(source["speedAvoidance"], SpeedAvoidanceConfig);
 	        this.timeCurveSchedule = this.convertValues(source["timeCurveSchedule"], TimeCurveScheduleConfig);
@@ -866,9 +901,9 @@ export namespace types {
 		    return a;
 		}
 	}
-
-
-
+	
+	
+	
 	export class FanCurveProfilesPayload {
 	    profiles: FanCurveProfile[];
 	    activeId: string;
@@ -935,6 +970,7 @@ export namespace types {
 	        this.workMode = source["workMode"];
 	    }
 	}
+	
 	
 	
 	
@@ -1101,3 +1137,4 @@ export namespace types {
 	
 
 }
+

@@ -33,12 +33,13 @@ import {
   ArrowLeft,
   ArrowRight,
   RefreshCw,
+  ShieldCheck,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { Environment } from '../../../wailsjs/runtime/runtime';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
-import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type ThemeMeta } from '../types/app';
+import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type FlydigiCompatStatus, type ThemeMeta } from '../types/app';
 import { type AppLocale, useLocale } from '../lib/i18n';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
@@ -516,6 +517,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(false);
   // 平台取自 Wails 运行时而不是 userAgent：WebKitGTK 的 UA 里没有可靠的平台标识。
   const [isWindowsPlatform, setIsWindowsPlatform] = useState(false);
+  const [flydigiCompat, setFlydigiCompat] = useState<FlydigiCompatStatus | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -528,6 +530,26 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       disposed = true;
     };
   }, []);
+
+  // 飞智空间站兼容状态：进入设置页时拉一次，之后由核心服务的自动兼容处理推送更新。
+  useEffect(() => {
+    if (!isWindowsPlatform) return;
+    let disposed = false;
+    void apiService.getFlydigiCompatStatus()
+      .then((status) => {
+        if (!disposed) setFlydigiCompat(status);
+      })
+      .catch(() => {
+        if (!disposed) setFlydigiCompat(null);
+      });
+    const off = apiService.onFlydigiCompatUpdate((status) => {
+      if (!disposed) setFlydigiCompat(status);
+    });
+    return () => {
+      disposed = true;
+      off?.();
+    };
+  }, [isWindowsPlatform]);
 
   useEffect(() => {
     if (!isWindowsPlatform) return;
@@ -762,6 +784,55 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       onConfigChange(newCfg);
     } catch { /* noop */ }
   }, [config, onConfigChange]);
+
+  // 兼容处理分成"注册表写了没"和"设备上生效了没"两层，状态文案要把这两层说清楚。
+  const flydigiStatusText = useMemo(() => {
+    if (!flydigiCompat) return t('controlPanel.system.flydigi.description');
+    if (flydigiCompat.error) {
+      return t('controlPanel.system.flydigi.statusError', { error: flydigiCompat.error });
+    }
+    if (!(config as any).flydigiCompat) {
+      return flydigiCompat.serviceRunning
+        ? t('controlPanel.system.flydigi.statusServiceRunning')
+        : t('controlPanel.system.flydigi.statusServiceIdle');
+    }
+    if (flydigiCompat.totalNodes === 0) {
+      return t('controlPanel.system.flydigi.statusNoDevice');
+    }
+    if (flydigiCompat.needsReconnect) {
+      return t('controlPanel.system.flydigi.statusNeedsReconnect');
+    }
+    if (flydigiCompat.effective) {
+      return t('controlPanel.system.flydigi.statusActive');
+    }
+    return t('controlPanel.system.flydigi.statusApplied', {
+      applied: flydigiCompat.appliedNodes,
+      total: flydigiCompat.totalNodes,
+    });
+  }, [flydigiCompat, config, t]);
+
+  const handleFlydigiCompatChange = useCallback(async (enabled: boolean) => {
+    setLoading('flydigiCompat', true);
+    try {
+      const status = await apiService.setFlydigiCompat(enabled);
+      if (status) setFlydigiCompat(status);
+      onConfigChange(types.AppConfig.createFrom({ ...config, flydigiCompat: enabled }));
+      if (enabled) {
+        // 安全描述符要等设备对象重建才生效，这里明确告诉用户还差一步。
+        if (status?.needsReconnect) {
+          toast.success(t('controlPanel.system.flydigi.toastNeedsReconnect'));
+        } else {
+          toast.success(t('controlPanel.system.flydigi.toastEnabled'));
+        }
+      } else {
+        toast.success(t('controlPanel.system.flydigi.toastDisabled'));
+      }
+    } catch (e) {
+      toast.error(t('controlPanel.system.flydigi.toastFailed', { error: getErrorMessage(e) }));
+    } finally {
+      setLoading('flydigiCompat', false);
+    }
+  }, [config, onConfigChange, t]);
 
   const handleSmartStartStopChange = useCallback(async (mode: string) => {
     if (!isConnected) return;
@@ -2175,6 +2246,24 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               color="green"
             />
           </SettingRow>
+
+          {/* 只有装了飞智空间站才有意义，没装就不占用户的设置页 */}
+          {isWindowsPlatform && flydigiCompat?.serviceInstalled && (
+            <SettingRow
+              icon={<ShieldCheck className={clsx('h-4 w-4', (config as any).flydigiCompat ? 'text-emerald-500' : '')} />}
+              title={t('controlPanel.system.flydigi.title')}
+              description={flydigiStatusText}
+              tip={t('controlPanel.system.flydigi.tip')}
+            >
+              <ToggleSwitch
+                enabled={(config as any).flydigiCompat ?? false}
+                onChange={handleFlydigiCompatChange}
+                loading={loadingStates.flydigiCompat}
+                size="sm"
+                color="green"
+              />
+            </SettingRow>
+          )}
 
           <div className="px-5 py-4">
             <div className="flex items-center justify-between gap-4">

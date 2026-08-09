@@ -54,6 +54,20 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.successResponse(true)
 
+	case ipc.ReqGetFlydigiCompatStatus:
+		return a.dataResponse(a.GetFlydigiCompatStatus())
+
+	case ipc.ReqSetFlydigiCompat:
+		var enabled bool
+		if err := json.Unmarshal(req.Data, &enabled); err != nil {
+			return a.errorResponse("解析飞智兼容开关失败: " + err.Error())
+		}
+		status, err := a.SetFlydigiCompat(enabled)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(status)
+
 	case ipc.ReqPreviewRTSSPosition:
 		var params ipc.PreviewRTSSPositionParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {

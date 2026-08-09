@@ -193,6 +193,31 @@ export interface LegionFnQSupportPayload {
   supported: boolean;
 }
 
+/**
+ * 飞智空间站兼容处理状态。
+ * 对应 Go 侧 internal/flydigicompat.Status。
+ */
+export interface FlydigiCompatStatus {
+  /** 当前平台是否支持（仅 Windows） */
+  supported: boolean;
+  /** 是否安装了飞智空间站服务 */
+  serviceInstalled: boolean;
+  /** 飞智空间站服务是否正在运行 */
+  serviceRunning: boolean;
+  /** 注册表里匹配到的散热器设备节点数 */
+  totalNodes: number;
+  /** 已写入 THRM 安全描述符的节点数 */
+  appliedNodes: number;
+  /** 当前在线的节点数 */
+  presentNodes: number;
+  /** 在线设备上是否已真正生效；null 表示当前没有在线设备 */
+  effective: boolean | null;
+  /** 已写入但尚未生效，需要重连散热器或重启系统 */
+  needsReconnect: boolean;
+  /** 检测/写入过程中的错误描述 */
+  error: string;
+}
+
 export interface DebugInfo {
   debugMode: boolean;
   trayReady: boolean;

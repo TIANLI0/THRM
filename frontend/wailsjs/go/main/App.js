@@ -78,6 +78,10 @@ export function GetFanCurveProfiles() {
   return window['go']['main']['App']['GetFanCurveProfiles']();
 }
 
+export function GetFlydigiCompatStatus() {
+  return window['go']['main']['App']['GetFlydigiCompatStatus']();
+}
+
 export function GetRTSSLayoutStatus() {
   return window['go']['main']['App']['GetRTSSLayoutStatus']();
 }
@@ -200,6 +204,10 @@ export function SetDebugMode(arg1) {
 
 export function SetFanCurve(arg1) {
   return window['go']['main']['App']['SetFanCurve'](arg1);
+}
+
+export function SetFlydigiCompat(arg1) {
+  return window['go']['main']['App']['SetFlydigiCompat'](arg1);
 }
 
 export function SetGearLight(arg1) {

@@ -44,6 +44,7 @@ import type {
   DeviceDebugFrame,
   DeviceSettings,
   DebugInfo,
+  FlydigiCompatStatus,
   LegionFnQSupportPayload,
   LegionPowerModePayload,
   ThemeMeta,
@@ -261,6 +262,17 @@ class ApiService {
     return await (window as any).go?.main?.App?.ReinstallPawnIO();
   }
 
+  // 飞智空间站兼容
+  async getFlydigiCompatStatus(): Promise<FlydigiCompatStatus | null> {
+    const value = await (window as any).go?.main?.App?.GetFlydigiCompatStatus?.();
+    return (value ?? null) as FlydigiCompatStatus | null;
+  }
+
+  async setFlydigiCompat(enabled: boolean): Promise<FlydigiCompatStatus | null> {
+    const value = await (window as any).go?.main?.App?.SetFlydigiCompat?.(enabled);
+    return (value ?? null) as FlydigiCompatStatus | null;
+  }
+
   // 事件监听
   onDeviceConnected(callback: (data: DeviceInfo) => void): () => void {
     return EventsOn('device-connected', callback);
@@ -305,6 +317,10 @@ class ApiService {
 
   onLegionFnQSupportUpdate(callback: (payload: LegionFnQSupportPayload) => void): () => void {
     return EventsOn('legion-fnq-support-update', callback);
+  }
+
+  onFlydigiCompatUpdate(callback: (payload: FlydigiCompatStatus) => void): () => void {
+    return EventsOn('flydigi-compat-update', callback);
   }
 
   async getDebugInfo(): Promise<DebugInfo> {
