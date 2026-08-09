@@ -1,7 +1,11 @@
 # Maintainer: TIANLI0 <wutianli@tianli0.top>
 
 pkgname=thrm-bin
-pkgver=3.6.3
+# 版本以 wails.json 的 productVersion 为唯一来源，避免再出现"忘了同步这一行导致发版被卡"。
+# CI 打 Arch 包时会把这一行整行 sed 成字面量：nightly 需要 0.0.0.rYYYYMMDD 这种 makepkg
+# 能接受的形式，不是 wails.json 里的值。
+pkgver=$(sed -n 's/.*"productVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${startdir}/wails.json" 2>/dev/null)
+: "${pkgver:=0.0.0}"
 pkgrel=1
 pkgdesc='Flydigi BS-series laptop cooler controller (prebuilt)'
 arch=('x86_64')

@@ -299,12 +299,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          # wails.json 是版本的唯一来源；PKGBUILD 的 pkgver 由它派生，不再需要比对两者。
+          # 这里只确保 wails.json 真的能被解析出来，解析不出来就没必要继续打包。
           PRODUCT_VER=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | sed -E 's/.*"([^"]+)"$/\1/')
-          PKGBUILD_VER=$(sed -n 's/^pkgver=//p' PKGBUILD)
-          if [ "$PKGBUILD_VER" != "$PRODUCT_VER" ]; then
-            echo "PKGBUILD pkgver ($PKGBUILD_VER) must match wails.json ($PRODUCT_VER)" >&2
+          if [ -z "$PRODUCT_VER" ]; then
+            echo "无法从 wails.json 解析 productVersion" >&2
             exit 1
           fi
+          echo "wails.json productVersion: $PRODUCT_VER"
+
           VER="${THRM_BUILD_VERSION:-$PRODUCT_VER}"
           [ -n "$VER" ] || VER="dev"
           echo "Packaging version: $VER"
