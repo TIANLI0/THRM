@@ -72,6 +72,11 @@ type Manager struct {
 	// 开机自启动相关：自启动时延时注册，等待任务栏通知区域稳定后再注册托盘
 	autoStartLaunch int32 // atomic: 1=本次进程由开机自启动触发
 	instanceCount   int32 // atomic: systray 实例运行计数，用于识别首次注册
+
+	// 托盘可见性：用户可在设置里关闭系统托盘图标。关闭期间监督协程停在等待状态，
+	// 不再创建 systray 实例；重新打开时经 enableCh 唤醒它重新注册图标。
+	disabled int32         // atomic: 1=用户已关闭托盘
+	enableCh chan struct{} // 容量 1 的唤醒信号
 }
 
 // MenuItems 托盘菜单项结构
@@ -129,6 +134,7 @@ func NewManager(logger types.Logger, iconData []byte) *Manager {
 		uiQueue:        make(chan func(), 64),
 		iconData:       iconData,
 		curveMenuItems: make(map[string]*systray.MenuItem),
+		enableCh:       make(chan struct{}, 1),
 	}
 }
 
@@ -163,6 +169,67 @@ func (m *Manager) SetAutoStartLaunch(v bool) {
 
 func (m *Manager) isAutoStartLaunch() bool {
 	return atomic.LoadInt32(&m.autoStartLaunch) == 1
+}
+
+// SetEnabled 设置系统托盘图标是否可见。
+//
+// 关闭时立即结束当前 systray 消息循环以移除通知区域图标，并让监督协程停止重建；
+// 重新打开时唤醒监督协程重新注册。可在 Init 之前调用，用于决定启动时是否显示托盘。
+func (m *Manager) SetEnabled(enabled bool) {
+	if enabled {
+		if !atomic.CompareAndSwapInt32(&m.disabled, 1, 0) {
+			return
+		}
+		m.logInfo("系统托盘已启用，准备重新注册托盘图标")
+		select {
+		case m.enableCh <- struct{}{}:
+		default:
+		}
+		return
+	}
+
+	if !atomic.CompareAndSwapInt32(&m.disabled, 0, 1) {
+		return
+	}
+	m.logInfo("系统托盘已在设置中关闭，正在移除托盘图标")
+	atomic.StoreInt32(&m.readyState, 0)
+	// 尚未 Init 时消息循环还没起来，无需（也不应）调用 systray.Quit；
+	// 监督协程会在启动前看到 disabled 并直接停在等待状态。
+	if atomic.LoadInt32(&m.initialized) == 0 {
+		return
+	}
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				m.logDebug("关闭系统托盘时发生错误（可忽略）: %v", r)
+			}
+		}()
+		systray.Quit()
+	}()
+}
+
+// IsEnabled 返回系统托盘图标当前是否处于启用状态。
+func (m *Manager) IsEnabled() bool {
+	return atomic.LoadInt32(&m.disabled) == 0
+}
+
+func (m *Manager) isDisabled() bool {
+	return atomic.LoadInt32(&m.disabled) == 1
+}
+
+// waitForEnable 阻塞直到托盘被重新启用，返回 false 表示进程正在退出。
+func (m *Manager) waitForEnable() bool {
+	m.logDebug("系统托盘处于关闭状态，等待被重新启用")
+	for {
+		select {
+		case <-m.done:
+			return false
+		case <-m.enableCh:
+			if !m.isDisabled() {
+				return true
+			}
+		}
+	}
 }
 
 // Init 初始化系统托盘
@@ -206,11 +273,31 @@ func (m *Manager) supervise() {
 		default:
 		}
 
+		// 用户在设置里关掉了托盘：不创建实例，停在这里等重新启用。
+		if m.isDisabled() {
+			if !m.waitForEnable() {
+				return
+			}
+			backoff = time.Second
+			continue
+		}
+
 		ran := m.runSystrayInstance()
 
 		select {
 		case <-m.done:
 			return
+		default:
+		}
+
+		// 消息循环是被 SetEnabled 主动结束的，不算异常退出，也不该走重建退避。
+		if m.isDisabled() {
+			continue
+		}
+		select {
+		case <-m.enableCh:
+			// 刚关掉又立刻打开：退出同样是我们主动触发的，直接重建。
+			continue
 		default:
 		}
 
@@ -283,6 +370,12 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 			}
 			m.logInfo("任务栏通知区域已就绪，开始注册系统托盘")
 		}
+	}
+
+	// 等待期间用户可能已经关掉了托盘：此时不要注册图标，让监督协程停在等待状态。
+	if m.isDisabled() {
+		close(instanceDone)
+		return 0
 	}
 
 	runtime.LockOSThread()
@@ -814,7 +907,7 @@ func (m *Manager) Quit() {
 // 主要用于系统从休眠/睡眠唤醒、或 Explorer 重启后，及时恢复通知区域图标，
 // 避免出现图标丢失或显示异常。仅在托盘就绪时生效。
 func (m *Manager) RefreshIcon() {
-	if atomic.LoadInt32(&m.readyState) == 0 || atomic.LoadInt32(&m.initialized) == 0 {
+	if atomic.LoadInt32(&m.readyState) == 0 || atomic.LoadInt32(&m.initialized) == 0 || m.isDisabled() {
 		return
 	}
 	m.refreshTrayIcon()
@@ -828,8 +921,8 @@ func (m *Manager) CheckHealth() {
 		}
 	}()
 
-	// 如果托盘未初始化，无需检查
-	if atomic.LoadInt32(&m.initialized) == 0 {
+	// 如果托盘未初始化或已被用户关闭，无需检查
+	if atomic.LoadInt32(&m.initialized) == 0 || m.isDisabled() {
 		return
 	}
 

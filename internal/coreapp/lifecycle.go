@@ -342,7 +342,17 @@ func (a *CoreApp) initSystemTray() {
 	)
 	// 自启动场景下延时注册托盘：等待任务栏通知区域稳定后再注册，避免开机快速启动时图标丢失。
 	a.trayManager.SetAutoStartLaunch(a.isAutoStartLaunch)
+	// 用户可能已经在设置里关掉了托盘：先定好可见性再启动，避免图标闪现一下又被移除。
+	a.applyTrayVisibility(a.configManager.Get())
 	a.trayManager.Init()
+}
+
+// applyTrayVisibility 按配置同步系统托盘图标的可见性。
+func (a *CoreApp) applyTrayVisibility(cfg types.AppConfig) {
+	if a.trayManager == nil {
+		return
+	}
+	a.trayManager.SetEnabled(!cfg.DisableSystemTray)
 }
 
 // cleanup 清理资源

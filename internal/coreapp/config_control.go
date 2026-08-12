@@ -103,6 +103,7 @@ func (a *CoreApp) UpdateConfig(cfg types.AppConfig) error {
 		return err
 	}
 	a.syncManualGearLevelMemoryLocked(cfg)
+	a.applyTrayVisibility(cfg)
 	a.applyHotkeyBindings(cfg)
 	a.applyPluginConfig(cfg)
 	if a.rtssPublisher != nil {
@@ -489,6 +490,7 @@ func (a *CoreApp) GetDebugInfo() map[string]any {
 		"debugMode":               a.debugMode,
 		"trayReady":               a.trayManager.IsReady(),
 		"trayInitialized":         a.trayManager.IsInitialized(),
+		"trayEnabled":             a.trayManager.IsEnabled(),
 		"isConnected":             a.isConnected,
 		"autoReconnectSuppressed": a.autoReconnectSuppressed.Load(),
 		"legionFnQSupported":      a.legionFnQSupported.Load(),

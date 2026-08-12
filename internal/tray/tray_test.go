@@ -109,6 +109,65 @@ func TestManager_IsInitialized_NotInitially(t *testing.T) {
 	}
 }
 
+// 托盘默认可见；SetEnabled 在 Init 之前调用也必须生效，否则关掉托盘的用户
+// 每次启动都会先闪出一个图标。
+func TestManager_SetEnabled_TogglesVisibility(t *testing.T) {
+	m := NewManager(testLogger{}, nil)
+	if !m.IsEnabled() {
+		t.Fatal("托盘默认应为启用状态")
+	}
+
+	m.SetEnabled(false)
+	if m.IsEnabled() {
+		t.Fatal("SetEnabled(false) 之后应报告为已关闭")
+	}
+	// 重复关闭不应堆积唤醒信号，否则重新启用后监督协程会多跑一轮。
+	m.SetEnabled(false)
+	if len(m.enableCh) != 0 {
+		t.Fatal("关闭托盘不应写入唤醒信号")
+	}
+
+	m.SetEnabled(true)
+	if !m.IsEnabled() {
+		t.Fatal("SetEnabled(true) 之后应报告为已启用")
+	}
+	if len(m.enableCh) != 1 {
+		t.Fatal("重新启用托盘应唤醒监督协程")
+	}
+}
+
+// 关闭状态下的托盘不是"坏了"：健康检查必须放行，不能触发重建。
+func TestManager_CheckHealth_SkipsWhileDisabled(t *testing.T) {
+	m := NewManager(testLogger{}, nil)
+	m.initialized = 1 // 模拟 Init 之后的状态
+	m.SetEnabled(false)
+
+	m.CheckHealth()
+
+	if m.lastRestartTry.Load() != 0 {
+		t.Fatal("关闭状态的托盘不应触发重建")
+	}
+}
+
+// waitForEnable 必须响应进程退出信号，否则监督协程在关闭托盘时永远退不出来。
+func TestManager_WaitForEnable_ReturnsOnDone(t *testing.T) {
+	m := NewManager(testLogger{}, nil)
+	m.SetEnabled(false)
+
+	result := make(chan bool, 1)
+	go func() { result <- m.waitForEnable() }()
+
+	close(m.done)
+	select {
+	case enabled := <-result:
+		if enabled {
+			t.Fatal("进程退出时 waitForEnable 应返回 false")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("waitForEnable 未响应进程退出信号")
+	}
+}
+
 func TestStatusEqual(t *testing.T) {
 	base := Status{
 		Connected:            true,

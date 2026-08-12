@@ -612,6 +612,7 @@ type AppConfig struct {
 	GearLight                        bool                      `json:"gearLight"`                        // 挡位灯
 	PowerOnStart                     bool                      `json:"powerOnStart"`                     // 通电自启动
 	WindowsAutoStart                 bool                      `json:"windowsAutoStart"`                 // Windows开机自启动
+	DisableSystemTray                bool                      `json:"disableSystemTray"`                // 关闭系统托盘图标(取反语义：旧配置缺字段时默认显示托盘)
 	ThemeMode                        string                    `json:"themeMode"`                        // 主题模式: system/light/dark/thrm
 	SmartStartStop                   string                    `json:"smartStartStop"`                   // 智能启停
 	Brightness                       int                       `json:"brightness"`                       // 亮度
@@ -996,6 +997,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		GearLight:               true,
 		PowerOnStart:            false,
 		WindowsAutoStart:        false,
+		DisableSystemTray:       false,
 		ThemeMode:               ThemeModeSystem,
 		SmartStartStop:          "off",
 		Brightness:              100,

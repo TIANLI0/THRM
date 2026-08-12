@@ -34,9 +34,11 @@ import {
   ArrowRight,
   RefreshCw,
   ShieldCheck,
+  PanelBottom,
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { Environment } from '../../../wailsjs/runtime/runtime';
+import { QuitAll } from '../../../wailsjs/go/main/App';
 import { types } from '../../../wailsjs/go/models';
 import { toast } from 'sonner';
 import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type FlydigiCompatStatus, type ThemeMeta } from '../types/app';
@@ -476,6 +478,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [rtssLayoutStatus, setRtssLayoutStatus] = useState<Awaited<ReturnType<typeof apiService.getRTSSLayoutStatus>> | null>(null);
   const [rtssAnchorConfirmOpen, setRtssAnchorConfirmOpen] = useState(false);
+  const [quitAllConfirmOpen, setQuitAllConfirmOpen] = useState(false);
   const [rtssAnchorResult, setRtssAnchorResult] = useState<{ backupPath: string; layoutName: string } | null>(null);
   const [rtssPositionDraft, setRtssPositionDraft] = useState<RTSSPosition>({ x: 0, y: 0 });
   const rtssPositionRef = useRef<RTSSPosition>({ x: 0, y: 0 });
@@ -982,6 +985,36 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
       setLoading('cpuSensors', false);
     }
   }, [config, onConfigChange]);
+
+  // 托盘开关在配置里是反向语义(disableSystemTray)，这样旧配置文件缺字段时默认仍显示托盘。
+  const handleSystemTrayChange = useCallback(async (enabled: boolean) => {
+    setLoading('systemTray', true);
+    try {
+      const newCfg = types.AppConfig.createFrom({ ...config, disableSystemTray: !enabled });
+      await apiService.updateConfig(newCfg);
+      onConfigChange(newCfg);
+      if (enabled) {
+        toast.success(t('controlPanel.system.trayEnabledToast'));
+      } else {
+        toast.info(t('controlPanel.system.trayDisabledToast'), {
+          description: t('controlPanel.system.trayDisabledHint'),
+        });
+      }
+    } catch (e) {
+      toast.error(t('controlPanel.system.trayToggleFailed', { error: getErrorMessage(e) }));
+    } finally {
+      setLoading('systemTray', false);
+    }
+  }, [config, onConfigChange, t]);
+
+  // 托盘关掉之后，托盘菜单里的"退出"就没了：这里补一个出口，否则用户只能去任务管理器结束后台。
+  const handleQuitAll = useCallback(async () => {
+    try {
+      await QuitAll();
+    } catch (e) {
+      toast.error(t('controlPanel.system.quitAllFailed', { error: getErrorMessage(e) }));
+    }
+  }, [t]);
 
   const handleWindowBlurChange = useCallback(async (mode: string) => {
     setLoading('windowBlur', true);
@@ -2234,6 +2267,34 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           </SettingRow>
 
           <SettingRow
+            icon={<PanelBottom className={clsx('h-4 w-4', !(config as any).disableSystemTray ? 'text-emerald-500' : '')} />}
+            title={t('controlPanel.system.trayTitle')}
+            description={t('controlPanel.system.trayDescription')}
+            tip={t('controlPanel.system.trayTip')}
+          >
+            <div className="flex items-center gap-2">
+              {/* 托盘关掉后，托盘菜单里的"退出"不可用，这里替它提供出口 */}
+              {(config as any).disableSystemTray && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setQuitAllConfirmOpen(true)}
+                  icon={<Power className="h-3.5 w-3.5" />}
+                >
+                  {t('controlPanel.system.quitAllAction')}
+                </Button>
+              )}
+              <ToggleSwitch
+                enabled={!(config as any).disableSystemTray}
+                onChange={handleSystemTrayChange}
+                loading={loadingStates.systemTray}
+                size="sm"
+                color="green"
+              />
+            </div>
+          </SettingRow>
+
+          <SettingRow
             icon={<Clock3 className={clsx('h-4 w-4', (config as any).ignoreDeviceOnReconnect ? 'text-emerald-500' : '')} />}
             title={t('controlPanel.system.reconnectTitle')}
             description={t('controlPanel.system.reconnectDescription')}
@@ -2614,6 +2675,33 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           </div>
         </Collapsible>
       </div>
+
+      <Dialog open={quitAllConfirmOpen} onOpenChange={setQuitAllConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Power className="h-4 w-4 text-red-500" />
+              {t('controlPanel.system.quitAllTitle')}
+            </DialogTitle>
+            <DialogDescription className="leading-relaxed">
+              {t('controlPanel.system.quitAllDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setQuitAllConfirmOpen(false)}>
+              {t('common.actions.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => void handleQuitAll()}
+              icon={<Power className="h-3.5 w-3.5" />}
+            >
+              {t('controlPanel.system.quitAllConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={rtssAnchorConfirmOpen}
