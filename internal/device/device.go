@@ -55,6 +55,23 @@ func shouldSkipBLEFallback(preferLastTransport bool, lastDeviceType string, sinc
 	}
 }
 
+// realtimeWriteErrorDecay 是实时转速写入失败计数的有效期。
+//
+// 该计数原先只在写入成功时归零，而稳态智能控温下 shouldSendTargetRPM 会把相邻两次
+// 写入拉开到几分钟乃至更久（转速不变就不下发）。于是三次相隔数小时的蓝牙瞬时抖动会被
+// 当成"连续失败"，触发一次毫无必要的主动断开重连——用户看到的就是"偶尔莫名断连"。
+// 超过该间隔的旧失败不再计入连续性判定。
+const realtimeWriteErrorDecay = 2 * time.Minute
+
+// realtimeWriteErrorsExpired 判断距上次写入失败是否已超过有效期。
+// 零值 lastErrorAt 表示本次连接尚无失败记录。
+func realtimeWriteErrorsExpired(lastErrorAt, now time.Time) bool {
+	if lastErrorAt.IsZero() {
+		return false
+	}
+	return now.Sub(lastErrorAt) > realtimeWriteErrorDecay
+}
+
 const (
 	maxConsecutiveReadErrors          = 20
 	maxConsecutiveRealtimeWriteErrors = 3
@@ -101,6 +118,7 @@ type Manager struct {
 
 	consecutiveRealtimeWriteErrors int
 	realtimeWriteRecoveryScheduled bool
+	lastRealtimeWriteErrorAt       time.Time
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}
@@ -426,6 +444,7 @@ func (m *Manager) resetRealtimeControlStateLocked() {
 	m.realtimeMode = false
 	m.consecutiveRealtimeWriteErrors = 0
 	m.realtimeWriteRecoveryScheduled = false
+	m.lastRealtimeWriteErrorAt = time.Time{}
 }
 
 // closeDeviceLocked 在持有锁的情况下安全关闭 HID 句柄。
@@ -870,8 +889,19 @@ func (m *Manager) noteRealtimeWriteResultLocked(success bool) {
 	if success {
 		m.consecutiveRealtimeWriteErrors = 0
 		m.realtimeWriteRecoveryScheduled = false
+		m.lastRealtimeWriteErrorAt = time.Time{}
 		return
 	}
+
+	// 距上次失败已久说明中间那段时间设备是好的（只是没有需要下发的新转速），
+	// 这次失败应当重新起算，而不是接着一个陈旧的计数继续攒。
+	now := time.Now()
+	if realtimeWriteErrorsExpired(m.lastRealtimeWriteErrorAt, now) {
+		m.logDebug("距上次实时转速写入失败已超过 %v，重新起算连续失败计数", realtimeWriteErrorDecay)
+		m.consecutiveRealtimeWriteErrors = 0
+		m.realtimeWriteRecoveryScheduled = false
+	}
+	m.lastRealtimeWriteErrorAt = now
 
 	m.consecutiveRealtimeWriteErrors++
 	if m.consecutiveRealtimeWriteErrors < maxConsecutiveRealtimeWriteErrors || m.realtimeWriteRecoveryScheduled {
