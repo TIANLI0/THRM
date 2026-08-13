@@ -34,6 +34,10 @@ const (
 	// trayStatusRefreshInterval balances fresh visible status with the cost of
 	// cross-thread Windows tray updates. Fan control is independent of this UI refresh.
 	trayStatusRefreshInterval = 5 * time.Second
+	// maxSystrayInstances 限制单个进程生命周期内创建 systray 实例的总次数，
+	// 理由见 systrayBudgetExhausted。取 200：正常使用下 Explorer 重启、休眠唤醒、
+	// 可见性开关加起来也远达不到，而进程级回调槽位上限约为它的十倍。
+	maxSystrayInstances = 200
 )
 
 // Manager 系统托盘管理器
@@ -198,14 +202,39 @@ func (m *Manager) SetEnabled(enabled bool) {
 	if atomic.LoadInt32(&m.initialized) == 0 {
 		return
 	}
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logDebug("关闭系统托盘时发生错误（可忽略）: %v", r)
-			}
-		}()
-		systray.Quit()
+	go m.quitSystrayInstance()
+}
+
+// systrayBudgetExhausted 报告本进程是否已用尽允许创建的 systray 实例数。
+//
+// 每建一次实例，systray 的 initInstance 都会调用 windows.NewCallback 注册窗口过程，
+// 而回调槽位是进程级的、数量有限且永不回收。托盘若陷入"建起来就失效"的病态循环，
+// 无限重试最终会耗尽槽位，此后连 initInstance 自己都会 panic——重建从此静默失效，
+// 现场也没有任何线索。到达上限时明确放弃，把状态变成一条可操作的日志。
+func (m *Manager) systrayBudgetExhausted() bool {
+	return atomic.LoadInt32(&m.instanceCount) >= maxSystrayInstances
+}
+
+// quitSystrayInstance 结束当前 systray 消息循环。
+//
+// 不能直接用 systray.Quit()：它被包级 `quitOnce sync.Once` 保护，而 Register/Run 都不
+// 重置该 Once，因此整个进程生命周期内只有第一次调用真正生效。托盘的每条自愈路径
+// （ready 超时重建、图标/菜单创建失败重建、可见性开关）都靠"结束消息循环 → 监督协程
+// 重建实例"来恢复，一旦这个 Once 被用掉（比如用户开关过一次托盘可见性），后续调用全
+// 变成静默空操作：核心进程还在跑、风扇还在控，托盘图标却再也回不来，用户看到的就是
+// "后台没了"。因此优先直接向本进程的托盘窗口投递 WM_CLOSE——那正是 systray.Quit()
+// 内部所做的事——只在拿不到窗口句柄时才退回 systray.Quit()。
+func (m *Manager) quitSystrayInstance() {
+	defer func() {
+		if r := recover(); r != nil {
+			m.logDebug("结束系统托盘消息循环时发生错误（可忽略）: %v", r)
+		}
 	}()
+
+	if postSystrayClose() {
+		return
+	}
+	systray.Quit()
 }
 
 // IsEnabled 返回系统托盘图标当前是否处于启用状态。
@@ -280,6 +309,12 @@ func (m *Manager) supervise() {
 			}
 			backoff = time.Second
 			continue
+		}
+
+		if m.systrayBudgetExhausted() {
+			m.logError("系统托盘已重建 %d 次仍未稳定，停止继续重建以免耗尽系统资源；请重启 THRM 核心服务",
+				atomic.LoadInt32(&m.instanceCount))
+			return
 		}
 
 		ran := m.runSystrayInstance()
@@ -421,7 +456,7 @@ func (m *Manager) onTrayReady() {
 	if err := m.setupIcon(); err != nil {
 		m.logError("设置托盘图标失败: %v", err)
 		atomic.StoreInt32(&m.readyState, 0)
-		systray.Quit()
+		m.quitSystrayInstance()
 		return
 	}
 
@@ -438,7 +473,7 @@ func (m *Manager) onTrayReady() {
 	if err != nil {
 		m.logError("创建托盘菜单失败: %v", err)
 		atomic.StoreInt32(&m.readyState, 0)
-		systray.Quit()
+		m.quitSystrayInstance()
 		return
 	}
 	m.menuItems = menuItems
@@ -892,14 +927,7 @@ func (m *Manager) Quit() {
 	}
 	m.mutex.Unlock()
 
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logDebug("退出托盘时发生错误（可忽略）: %v", r)
-			}
-		}()
-		systray.Quit()
-	}()
+	m.quitSystrayInstance()
 }
 
 // RefreshIcon 主动刷新托盘图标。
@@ -989,14 +1017,7 @@ func (m *Manager) requestTrayRestart(reason string) {
 	m.logError("系统托盘状态异常，准备重建: %s", reason)
 	atomic.StoreInt32(&m.readyState, 0)
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				m.logDebug("请求重建系统托盘时发生错误（可忽略）: %v", r)
-			}
-		}()
-		systray.Quit()
-	}()
+	go m.quitSystrayInstance()
 }
 
 // 日志辅助方法

@@ -25,3 +25,9 @@ func waitForShellReady(_ <-chan struct{}, _ time.Duration) bool {
 
 // waitForTraySettle 在非 Windows 平台无需等待通知区域稳定，直接返回。
 func waitForTraySettle(_ <-chan struct{}, _, _ time.Duration) {}
+
+// postSystrayClose 非 Windows 平台没有可投递 WM_CLOSE 的消息窗口，
+// 返回 false 让调用方退回 systray.Quit()。
+func postSystrayClose() bool {
+	return false
+}
