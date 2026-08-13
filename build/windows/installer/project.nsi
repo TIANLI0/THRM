@@ -981,9 +981,25 @@ Section "$(THRM_STR_SECTION_AUTOSTART)" SEC_AUTOSTART
     # Create new scheduled task for auto-start with admin privileges
     DetailPrint "$(THRM_STR_CREATE_AUTOSTART_TASK)"
     
-    # Use schtasks to create a task that runs at logon with highest privileges
-    # The task will start THRM Core.exe with --autostart flag after 15 seconds delay
-    nsExec::ExecToStack '"$SYSDIR\schtasks.exe" /create /tn "THRM" /tr "\"$INSTDIR\THRM Core.exe\" --autostart" /sc onlogon /delay 0000:15 /rl highest /f'
+    # Let the core binary register the task from its own XML definition.
+    #
+    # Do NOT create the task with the schtasks command line here. Without /xml the task
+    # inherits three Task Scheduler defaults that are all wrong for a resident fan
+    # controller: DisallowStartIfOnBatteries (core never starts when booting on battery),
+    # StopIfGoingOnBatteries (unplugging the charger terminates core.exe outright) and
+    # ExecutionTimeLimit=PT72H (core is killed after 3 days of uptime). The task also gets
+    # no RestartOnFailure, so a crash is never recovered until the next logon.
+    #
+    # The core's autostart.buildScheduledTaskXML sets all of these correctly, so it is the
+    # single source of truth. Its EnsureAutoStartTaskHealthy can repair the task in place,
+    # but it cannot be relied upon here: the core is started *by* that task, so a task with
+    # DisallowStartIfOnBatteries never fires when the machine boots on battery, the core
+    # never runs, and the task is therefore never repaired -- a self-locking loop on exactly
+    # the machines this app targets. Registering it correctly up front avoids that entirely.
+    #
+    # This installer is already elevated (RequestExecutionLevel admin) and the child process
+    # inherits that token, so no extra UAC prompt appears.
+    nsExec::ExecToStack '"$INSTDIR\THRM Core.exe" --install-autostart'
     Pop $0
     Pop $1
     ${If} $0 == 0

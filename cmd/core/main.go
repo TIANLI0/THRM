@@ -7,6 +7,7 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/TIANLI0/THRM/internal/autostart"
 	"github.com/TIANLI0/THRM/internal/coreapp"
 )
 
@@ -19,6 +20,13 @@ import (
 const idleCoreGCPercent = 50
 
 func main() {
+	// 必须排在 setupFatalOutput 之前：该模式的输出要交给调用它的安装器捕获，
+	// 而 setupFatalOutput 会把 stdout/stderr 重定向进日志文件，顺带还会为这条
+	// 装完即退的命令留下一个空的 fatal 日志。
+	if autostart.IsInstallAutoStartRequest(os.Args[1:]) {
+		os.Exit(runInstallAutoStart())
+	}
+
 	var app *coreapp.CoreApp
 	cleanupFatalOutput, _ := setupFatalOutput()
 	defer cleanupFatalOutput()
