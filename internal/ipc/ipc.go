@@ -1019,12 +1019,6 @@ type SaveCoolingBenefitReportParams struct {
 	Steps       []types.CoolingBenefitStep `json:"steps"`
 }
 
-// ClearCoolingBenefitParams 选择要清除的部分。两者可同时为真。
-type ClearCoolingBenefitParams struct {
-	Report  bool `json:"report"`
-	Passive bool `json:"passive"`
-}
-
 // SetAdaptiveConfigParams 是自适应学习 2.0 的部分更新参数。
 // 三个字段都用指针：GUI 每次只改一项，nil 表示"这项别动"，
 // 否则零值会被当成"关掉自动模式"或"倾向设为 0"。

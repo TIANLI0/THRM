@@ -177,8 +177,8 @@ class ApiService {
     return await SaveCoolingBenefitReport(params as ipc.SaveCoolingBenefitReportParams);
   }
 
-  async clearCoolingBenefit(report: boolean, passive: boolean): Promise<types.CoolingBenefitPayload> {
-    return await ClearCoolingBenefit(report, passive);
+  async clearCoolingBenefit(): Promise<types.CoolingBenefitPayload> {
+    return await ClearCoolingBenefit();
   }
 
   // 导出纯文本报告供外部分析。返回保存路径；用户取消保存对话框时返回空串。

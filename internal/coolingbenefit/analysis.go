@@ -35,23 +35,6 @@ const (
 	kneeDecayRatio = 0.35
 )
 
-// PowerBucketBounds 是日常统计的功耗分档上界 (W)，最后一档为无上界。
-// 分档而不是连续回归，是因为被动数据太脏，拟合只会给出虚假的精度。
-var PowerBucketBounds = []float64{25, 50, 80, 120}
-
-// PowerBucketCount 是功耗档位总数。
-func PowerBucketCount() int { return len(PowerBucketBounds) + 1 }
-
-// PowerBucketOf 返回功耗所属档位下标。
-func PowerBucketOf(watts float64) int {
-	for i, bound := range PowerBucketBounds {
-		if watts < bound {
-			return i
-		}
-	}
-	return len(PowerBucketBounds)
-}
-
 // AnalyzeReport 解读一次扫描测试。noise 为可选的实测噪音档案（没有就传 nil），
 // 仅用于把"收益拐点"细化成"每分贝噪音换到最多收益"的甜点转速。
 func AnalyzeReport(steps []types.CoolingBenefitStep, noise []types.NoiseProfilePoint) types.CoolingBenefitAnalysis {

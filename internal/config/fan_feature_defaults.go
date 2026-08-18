@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 
-	"github.com/TIANLI0/THRM/internal/coolingbenefit"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -51,9 +50,6 @@ func applyMissingFanFeatureDefaults(cfg *types.AppConfig, rawConfig map[string]j
 		}
 	}
 	cfg.TimeCurveSchedule = types.NormalizeTimeCurveScheduleConfig(cfg.TimeCurveSchedule, cfg.FanCurveProfiles, cfg.ActiveFanCurveProfileID)
-
-	// 散热收益的日常统计会直接画进图表，配置文件被写坏时必须先洗一遍。
-	cfg.CoolingBenefit.Passive, _ = coolingbenefit.SanitizePassiveStats(cfg.CoolingBenefit.Passive)
 
 	// 旧配置缺失窗口材质设置时默认 auto(随系统版本)。
 	if _, ok := rawConfig["windowBlur"]; !ok {

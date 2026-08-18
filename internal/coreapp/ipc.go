@@ -146,11 +146,7 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		return a.dataResponse(text)
 
 	case ipc.ReqClearCoolingBenefit:
-		var params ipc.ClearCoolingBenefitParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		payload, err := a.ClearCoolingBenefit(params)
+		payload, err := a.ClearCoolingBenefit()
 		if err != nil {
 			return a.errorResponse(err.Error())
 		}

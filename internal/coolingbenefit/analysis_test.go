@@ -253,15 +253,3 @@ func TestAnalyzeReportsLaptopFanRelief(t *testing.T) {
 		t.Errorf("本机风扇从 4800 降到 3400，期望 -1400，得到 %d", analysis.LaptopFanDelta)
 	}
 }
-
-func TestPowerBucketBoundaries(t *testing.T) {
-	cases := map[float64]int{0: 0, 24.9: 0, 25: 1, 49.9: 1, 50: 2, 79.9: 2, 80: 3, 119.9: 3, 120: 4, 400: 4}
-	for watts, want := range cases {
-		if got := PowerBucketOf(watts); got != want {
-			t.Errorf("%.1fW 应落在档位 %d，得到 %d", watts, want, got)
-		}
-	}
-	if PowerBucketCount() != len(PowerBucketBounds)+1 {
-		t.Error("档位总数应比边界数多一")
-	}
-}

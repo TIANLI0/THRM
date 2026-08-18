@@ -243,7 +243,7 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
   const clearReport = useCallback(async () => {
     setClearing(true);
     try {
-      setPayload(await apiService.clearCoolingBenefit(true, false));
+      setPayload(await apiService.clearCoolingBenefit());
       setPhase('intro');
     } catch (error) {
       toast.error(getErrorMessage(error));
@@ -346,14 +346,6 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
               activeSensors={activeSensors}
               sensorColors={sensorColors}
               onToggleSensor={toggleSensor}
-            />
-          )}
-
-          {phase !== 'running' && (
-            <PassivePanel
-              comparisons={payload?.passiveComparison ?? []}
-              bounds={payload?.powerBucketBounds ?? []}
-              minSamples={payload?.minCellSamples ?? 0}
             />
           )}
         </div>
@@ -576,11 +568,6 @@ function IntroPanel({
         />
       </div>
 
-      {/* 说明扩展传感器是测试期间临时开的，免得用户以为程序在偷偷长期轮询硬盘。 */}
-      <div className="rounded-xl border border-border/70 bg-background/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-        {t('fanCurve.benefit.extendedSensorsHint')}
-      </div>
-
       {!isConnected && (
         <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           {t('fanCurve.benefit.errors.disconnected')}
@@ -603,14 +590,20 @@ function RunningPanel({ progress, stepCount }: { progress: BenefitStepProgress |
             {t('fanCurve.benefit.runningStep', { index, total: stepCount, rpm: progress?.rpm ?? 0 })}
           </div>
           <Badge variant={progress?.phase === 'sampling' ? 'success' : 'info'}>
-            {progress?.phase === 'sampling' ? t('fanCurve.benefit.phaseSampling') : t('fanCurve.benefit.phaseSettling')}
+            {progress?.phase === 'sampling'
+              ? t('fanCurve.benefit.phaseSampling')
+              : progress?.phase === 'spinning'
+                ? t('fanCurve.benefit.phaseSpinning')
+                : t('fanCurve.benefit.phaseSettling')}
           </Badge>
         </div>
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percent}%` }} />
         </div>
         <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          {progress?.phase === 'settling'
+          {progress?.phase === 'spinning'
+            ? t('fanCurve.benefit.spinningHint', { rpm: progress?.rpm ?? 0 })
+            : progress?.phase === 'settling'
             ? t('fanCurve.benefit.settlingHint', {
               seconds: Math.round((progress?.elapsedMs ?? 0) / 1000),
               range: (progress?.tempRangeC ?? 0).toFixed(1),
@@ -812,53 +805,6 @@ function StatTile({ icon, label, value, good }: { icon: React.ReactNode; label: 
       )}>
         {value}
       </div>
-    </div>
-  );
-}
-
-function PassivePanel({
-  comparisons,
-  bounds,
-  minSamples,
-}: {
-  comparisons: types.CoolingPassiveComparison[];
-  bounds: number[];
-  minSamples: number;
-}) {
-  const { t } = useTranslation();
-
-  const bucketLabel = useCallback((index: number) => {
-    if (index <= 0) return `< ${bounds[0] ?? 0} W`;
-    if (index >= bounds.length) return `≥ ${bounds[bounds.length - 1] ?? 0} W`;
-    return `${bounds[index - 1]}–${bounds[index]} W`;
-  }, [bounds]);
-
-  return (
-    <div className="rounded-xl border border-dashed border-border/70 bg-background/45 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.benefit.passiveTitle')}</div>
-        <Badge variant="info">{t('fanCurve.benefit.passiveBadge')}</Badge>
-      </div>
-      <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.benefit.passiveDescription')}</div>
-
-      {comparisons.length === 0 ? (
-        <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          {t('fanCurve.benefit.passiveEmpty', { samples: minSamples })}
-        </div>
-      ) : (
-        <div className="mt-2 space-y-1">
-          {comparisons.map((row) => (
-            <div key={`${row.powerBucket}-${row.lowRpm}-${row.highRpm}`} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="text-muted-foreground">{bucketLabel(row.powerBucket)}</span>
-              <span className="tabular-nums text-muted-foreground">{row.lowRpm} → {row.highRpm} RPM</span>
-              <span className={clsx('font-semibold tabular-nums', row.tempDelta < 0 ? 'text-sky-500' : 'text-orange-500')}>
-                {row.tempDelta > 0 ? '+' : ''}{row.tempDelta} °C
-              </span>
-              <span className="text-[11px] text-muted-foreground">n={row.samples}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

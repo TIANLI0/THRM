@@ -388,60 +388,6 @@ export namespace types {
 		    return a;
 		}
 	}
-	export class CoolingPassiveCell {
-	    powerBucket: number;
-	    rpm: number;
-	    cpuTemp: number;
-	    gpuTemp: number;
-	    power: number;
-	    samples: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new CoolingPassiveCell(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.powerBucket = source["powerBucket"];
-	        this.rpm = source["rpm"];
-	        this.cpuTemp = source["cpuTemp"];
-	        this.gpuTemp = source["gpuTemp"];
-	        this.power = source["power"];
-	        this.samples = source["samples"];
-	    }
-	}
-	export class CoolingPassiveStats {
-	    cells: CoolingPassiveCell[];
-	    updatedAt: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new CoolingPassiveStats(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.cells = this.convertValues(source["cells"], CoolingPassiveCell);
-	        this.updatedAt = source["updatedAt"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class CoolingSensorDelta {
 	    key: string;
 	    name: string;
@@ -632,7 +578,6 @@ export namespace types {
 	}
 	export class CoolingBenefitState {
 	    report?: CoolingBenefitReport;
-	    passive: CoolingPassiveStats;
 	
 	    static createFrom(source: any = {}) {
 	        return new CoolingBenefitState(source);
@@ -641,7 +586,6 @@ export namespace types {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.report = this.convertValues(source["report"], CoolingBenefitReport);
-	        this.passive = this.convertValues(source["passive"], CoolingPassiveStats);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1213,32 +1157,8 @@ export namespace types {
 		}
 	}
 	
-	export class CoolingPassiveComparison {
-	    powerBucket: number;
-	    lowRpm: number;
-	    highRpm: number;
-	    tempDelta: number;
-	    samples: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new CoolingPassiveComparison(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.powerBucket = source["powerBucket"];
-	        this.lowRpm = source["lowRpm"];
-	        this.highRpm = source["highRpm"];
-	        this.tempDelta = source["tempDelta"];
-	        this.samples = source["samples"];
-	    }
-	}
 	export class CoolingBenefitPayload {
 	    report?: CoolingBenefitReport;
-	    passive: CoolingPassiveStats;
-	    passiveComparison: CoolingPassiveComparison[];
-	    powerBucketBounds: number[];
-	    minCellSamples: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new CoolingBenefitPayload(source);
@@ -1247,10 +1167,6 @@ export namespace types {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.report = this.convertValues(source["report"], CoolingBenefitReport);
-	        this.passive = this.convertValues(source["passive"], CoolingPassiveStats);
-	        this.passiveComparison = this.convertValues(source["passiveComparison"], CoolingPassiveComparison);
-	        this.powerBucketBounds = source["powerBucketBounds"];
-	        this.minCellSamples = source["minCellSamples"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -1271,9 +1187,6 @@ export namespace types {
 		    return a;
 		}
 	}
-	
-	
-	
 	
 	
 	

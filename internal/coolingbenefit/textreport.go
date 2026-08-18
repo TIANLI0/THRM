@@ -28,9 +28,7 @@ const textReportIndent = "  "
 
 // TextReportInput 汇总导出所需的全部数据。
 type TextReportInput struct {
-	Report      *types.CoolingBenefitReport
-	Passive     types.CoolingPassiveStats
-	Comparisons []types.CoolingPassiveComparison
+	Report *types.CoolingBenefitReport
 	// NoiseProfile 是可选的实测噪音档案。甜点转速依赖它，不带上的话模型无法复核那个结论。
 	NoiseProfile []types.NoiseProfilePoint
 	AppVersion   string
@@ -44,8 +42,7 @@ func FormatTextReport(in TextReportInput) string {
 
 	writeTextHeader(&b, in)
 	if in.Report == nil {
-		b.WriteString("\nNo active measurement report is stored yet.\n")
-		writePassiveSection(&b, in)
+		b.WriteString("\nNo measurement report is stored yet.\n")
 		return b.String()
 	}
 
@@ -55,7 +52,6 @@ func FormatTextReport(in TextReportInput) string {
 	writeSensorMatrix(&b, in.Report.Steps)
 	writeAnalysisSection(&b, in.Report.Analysis)
 	writeNoiseSection(&b, in.NoiseProfile)
-	writePassiveSection(&b, in)
 	return b.String()
 }
 
@@ -118,8 +114,7 @@ the control temperature stops drifting (rolling range within 1.5 C, at least
 window are what appears below.
 
 This matters for interpretation: because the workload is held constant across
-steps, differences between steps can be attributed to the cooler. That is not
-true of the "everyday statistics" section at the end.
+steps, differences between steps can be attributed to the cooler.
 `)
 }
 
@@ -325,49 +320,6 @@ func writeNoiseSection(b *strings.Builder, profile []types.NoiseProfilePoint) {
 	for _, p := range profile {
 		fmt.Fprintf(b, "%-8d %.1f\n", p.RPM, p.DB)
 	}
-}
-
-func writePassiveSection(b *strings.Builder, in TextReportInput) {
-	b.WriteString("\nEveryday statistics (LOW CONFIDENCE — do not mix with the above)\n")
-	b.WriteString("----------------------------------------------------------------\n")
-	b.WriteString(`Collected passively during normal use, so samples at different cooler speeds
-come from different workloads at different times. To keep them even loosely
-comparable they are bucketed by total power as well as by speed, and only
-speeds inside the same power bucket are ever compared. Treat this as a hint,
-never as a measurement.
-
-`)
-
-	if len(in.Comparisons) == 0 && len(in.Passive.Cells) == 0 {
-		b.WriteString("No everyday statistics collected yet.\n")
-		return
-	}
-
-	if len(in.Passive.Cells) > 0 {
-		fmt.Fprintf(b, "%-14s %-8s %-8s %-8s %-8s %s\n", "power bucket", "rpm", "cpuT", "gpuT", "watts", "samples")
-		for _, cell := range in.Passive.Cells {
-			fmt.Fprintf(b, "%-14s %-8d %-8.1f %-8.1f %-8.1f %d\n",
-				powerBucketLabel(cell.PowerBucket), cell.RPM, cell.CPUTemp, cell.GPUTemp, cell.Power, cell.Samples)
-		}
-	}
-
-	if len(in.Comparisons) > 0 {
-		b.WriteString("\nWithin-bucket speed comparisons:\n")
-		for _, c := range in.Comparisons {
-			fmt.Fprintf(b, "%s%s: %d RPM -> %d RPM gives %+.1f C (n=%d)\n",
-				textReportIndent, powerBucketLabel(c.PowerBucket), c.LowRPM, c.HighRPM, c.TempDelta, c.Samples)
-		}
-	}
-}
-
-func powerBucketLabel(index int) string {
-	if index <= 0 {
-		return fmt.Sprintf("<%.0fW", PowerBucketBounds[0])
-	}
-	if index >= len(PowerBucketBounds) {
-		return fmt.Sprintf(">=%.0fW", PowerBucketBounds[len(PowerBucketBounds)-1])
-	}
-	return fmt.Sprintf("%.0f-%.0fW", PowerBucketBounds[index-1], PowerBucketBounds[index])
 }
 
 func sortedSteps(steps []types.CoolingBenefitStep) []types.CoolingBenefitStep {

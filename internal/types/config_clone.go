@@ -60,7 +60,6 @@ func (s SmartControlConfig) Clone() SmartControlConfig {
 // 逐层复制才能切断与配置管理器内部状态的共享。
 func (s CoolingBenefitState) Clone() CoolingBenefitState {
 	cloned := s
-	cloned.Passive.Cells = slices.Clone(s.Passive.Cells)
 	if s.Report != nil {
 		report := *s.Report
 		report.Steps = make([]CoolingBenefitStep, len(s.Report.Steps))

@@ -11,7 +11,7 @@ import {ipc} from '../models';
 
 export function CheckWindowsAutoStart():Promise<boolean>;
 
-export function ClearCoolingBenefit(arg1:boolean,arg2:boolean):Promise<types.CoolingBenefitPayload>;
+export function ClearCoolingBenefit():Promise<types.CoolingBenefitPayload>;
 
 export function ConnectDevice():Promise<boolean>;
 

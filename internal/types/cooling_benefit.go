@@ -10,13 +10,10 @@ package types
 关心的是"该吹多少转"，收益关心的是"吹到这个转速值不值"，两者的数据口径和可信度
 要求都不一样，混在一起只会让哪一边都说不清楚。
 
-数据有两条来源，可信度差一个量级，因此分开存、分开标注：
-
-  - Report：主动扫描测试。用户挂着同一个负载，程序把转速逐档锁定并等热稳定后采样。
-    同负载横向对比，结论可以直接归因给散热器。
-  - Passive：日常被动统计。零成本，但不同转速的样本来自不同时间的不同负载。为了让
-    格子之间勉强可比，按「功耗档 × 转速档」二维分桶——只按转速分桶的话，温差里
-    混着负载差异，得出的"收益"是假的。即便如此它仍只能作为参考。
+数据只有一个来源：主动扫描测试。用户挂着同一个负载，程序把转速逐档锁定并等热稳定
+后采样，同负载横向对比，结论可以直接归因给散热器。曾经还有一条"日常被动统计"的路径，
+但那些样本来自不同时间的不同负载，即便按功耗分桶也只能标注"仅供参考"——它带来的
+解释负担超过了它的价值，已经移除。
 */
 
 // 散热收益扫描测试的转速范围与档位。热稳定远慢于声学稳定，因此档位比噪音测试稀疏得多：
@@ -123,44 +120,12 @@ type CoolingBenefitReport struct {
 	Analysis CoolingBenefitAnalysis `json:"analysis"`
 }
 
-// CoolingPassiveCell 是日常统计里 (功耗档 × 转速档) 的一格。
-type CoolingPassiveCell struct {
-	PowerBucket int     `json:"powerBucket"` // 功耗档下标，见 coolingbenefit.PowerBucketBounds
-	RPM         int     `json:"rpm"`         // 转速档中心
-	CPUTemp     float64 `json:"cpuTemp"`
-	GPUTemp     float64 `json:"gpuTemp"`
-	Power       float64 `json:"power"`
-	Samples     int     `json:"samples"`
-}
-
-// CoolingPassiveStats 是日常使用中累积的观测。
-type CoolingPassiveStats struct {
-	Cells     []CoolingPassiveCell `json:"cells"`
-	UpdatedAt int64                `json:"updatedAt"`
-}
-
 // CoolingBenefitState 是散热收益功能的全部持久化状态。
 type CoolingBenefitState struct {
-	Report  *CoolingBenefitReport `json:"report,omitempty"`
-	Passive CoolingPassiveStats   `json:"passive"`
-}
-
-// CoolingPassiveComparison 是同一功耗档内部两个转速档的对比，
-// 被动统计唯一站得住的用法——跨功耗档比较等于把负载差异当成散热器的功劳。
-type CoolingPassiveComparison struct {
-	PowerBucket int     `json:"powerBucket"`
-	LowRPM      int     `json:"lowRpm"`
-	HighRPM     int     `json:"highRpm"`
-	TempDelta   float64 `json:"tempDelta"` // 高转速档相对低转速档的温差，负值为降温
-	Samples     int     `json:"samples"`   // 两格中较少的一侧
+	Report *CoolingBenefitReport `json:"report,omitempty"`
 }
 
 // CoolingBenefitPayload 是散热收益面板需要的全部数据。
 type CoolingBenefitPayload struct {
 	Report *CoolingBenefitReport `json:"report"`
-
-	Passive           CoolingPassiveStats        `json:"passive"`
-	PassiveComparison []CoolingPassiveComparison `json:"passiveComparison"`
-	PowerBucketBounds []float64                  `json:"powerBucketBounds"`
-	MinCellSamples    int                        `json:"minCellSamples"`
 }

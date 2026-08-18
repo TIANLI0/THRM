@@ -147,34 +147,9 @@ func TestFormatTextReportIncludesNoiseProfileBehindSweetSpot(t *testing.T) {
 	}
 }
 
-// 被动统计与实测混在一起会让模型给出过度自信的结论。
-func TestFormatTextReportSeparatesPassiveStats(t *testing.T) {
-	out := FormatTextReport(TextReportInput{
-		Report: sampleReport(),
-		Passive: types.CoolingPassiveStats{Cells: []types.CoolingPassiveCell{
-			{PowerBucket: 3, RPM: 1400, CPUTemp: 84, GPUTemp: 79, Power: 95, Samples: 12},
-			{PowerBucket: 3, RPM: 3400, CPUTemp: 77, GPUTemp: 72, Power: 97, Samples: 9},
-		}},
-		Comparisons: []types.CoolingPassiveComparison{
-			{PowerBucket: 3, LowRPM: 1400, HighRPM: 3400, TempDelta: -7, Samples: 9},
-		},
-	})
-
-	if !strings.Contains(out, "LOW CONFIDENCE") {
-		t.Error("被动统计必须显著标注可信度低")
-	}
-	if !strings.Contains(out, "80-120W") {
-		t.Error("应当标出功耗分桶区间，否则跨桶数字会被误当成可比")
-	}
-	// 可信度声明必须出现在被动数据之前。
-	if strings.Index(out, "LOW CONFIDENCE") > strings.Index(out, "80-120W") {
-		t.Error("可信度声明应当先于被动数据出现")
-	}
-}
-
 func TestFormatTextReportHandlesMissingReport(t *testing.T) {
 	out := FormatTextReport(TextReportInput{})
-	if !strings.Contains(out, "No active measurement report") {
+	if !strings.Contains(out, "No measurement report") {
 		t.Error("没有报告时应当说明，而不是产出一份空壳")
 	}
 	if strings.Contains(out, "Per-step measurements") {

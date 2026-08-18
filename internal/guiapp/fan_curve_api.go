@@ -220,9 +220,9 @@ func (a *App) SaveCoolingBenefitReport(params ipc.SaveCoolingBenefitReportParams
 	return payload, nil
 }
 
-// ClearCoolingBenefit 清除实测报告和/或日常统计。
-func (a *App) ClearCoolingBenefit(report, passive bool) (types.CoolingBenefitPayload, error) {
-	resp, err := a.sendRequest(ipc.ReqClearCoolingBenefit, ipc.ClearCoolingBenefitParams{Report: report, Passive: passive})
+// ClearCoolingBenefit 清除已保存的实测报告。
+func (a *App) ClearCoolingBenefit() (types.CoolingBenefitPayload, error) {
+	resp, err := a.sendRequest(ipc.ReqClearCoolingBenefit, nil)
 	if err != nil {
 		return types.CoolingBenefitPayload{}, err
 	}

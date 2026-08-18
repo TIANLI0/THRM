@@ -55,18 +55,13 @@ func (a *CoreApp) SaveCoolingBenefitReport(params ipc.SaveCoolingBenefitReportPa
 	return a.coolingBenefitPayload(cfg), nil
 }
 
-// ClearCoolingBenefit 清除实测报告和/或日常统计。
-func (a *CoreApp) ClearCoolingBenefit(params ipc.ClearCoolingBenefitParams) (types.CoolingBenefitPayload, error) {
+// ClearCoolingBenefit 清除已保存的实测报告。
+func (a *CoreApp) ClearCoolingBenefit() (types.CoolingBenefitPayload, error) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	if params.Report {
-		cfg.CoolingBenefit.Report = nil
-	}
-	if params.Passive {
-		cfg.CoolingBenefit.Passive = types.CoolingPassiveStats{}
-	}
+	cfg.CoolingBenefit.Report = nil
 
 	if err := a.configManager.Update(cfg); err != nil {
 		return types.CoolingBenefitPayload{}, err
@@ -86,14 +81,12 @@ func (a *CoreApp) ExportCoolingBenefitText() (string, error) {
 	defer a.mutex.Unlock()
 
 	cfg := a.configManager.Get()
-	if cfg.CoolingBenefit.Report == nil && len(cfg.CoolingBenefit.Passive.Cells) == 0 {
+	if cfg.CoolingBenefit.Report == nil {
 		return "", fmt.Errorf("尚无可导出的散热收益数据")
 	}
 
 	return coolingbenefit.FormatTextReport(coolingbenefit.TextReportInput{
-		Report:      cfg.CoolingBenefit.Report,
-		Passive:     cfg.CoolingBenefit.Passive,
-		Comparisons: coolingbenefit.ComparePassive(cfg.CoolingBenefit.Passive),
+		Report: cfg.CoolingBenefit.Report,
 		// 甜点转速是从噪音档案算出来的，带上档案模型才能复核那个结论。
 		NoiseProfile: cfg.SmartControl.NoiseProfile,
 		AppVersion:   version.BuildVersion,
@@ -103,11 +96,5 @@ func (a *CoreApp) ExportCoolingBenefitText() (string, error) {
 }
 
 func (a *CoreApp) coolingBenefitPayload(cfg types.AppConfig) types.CoolingBenefitPayload {
-	return types.CoolingBenefitPayload{
-		Report:            cfg.CoolingBenefit.Report,
-		Passive:           cfg.CoolingBenefit.Passive,
-		PassiveComparison: coolingbenefit.ComparePassive(cfg.CoolingBenefit.Passive),
-		PowerBucketBounds: coolingbenefit.PowerBucketBounds,
-		MinCellSamples:    coolingbenefit.MinCellSamples,
-	}
+	return types.CoolingBenefitPayload{Report: cfg.CoolingBenefit.Report}
 }

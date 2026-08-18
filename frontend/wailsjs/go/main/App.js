@@ -6,8 +6,8 @@ export function CheckWindowsAutoStart() {
   return window['go']['main']['App']['CheckWindowsAutoStart']();
 }
 
-export function ClearCoolingBenefit(arg1, arg2) {
-  return window['go']['main']['App']['ClearCoolingBenefit'](arg1, arg2);
+export function ClearCoolingBenefit() {
+  return window['go']['main']['App']['ClearCoolingBenefit']();
 }
 
 export function ConnectDevice() {
