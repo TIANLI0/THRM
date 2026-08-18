@@ -141,7 +141,6 @@ export default function AdaptiveLearning({ status, onStatusChange, onConfigInval
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.adaptive.preferenceTitle')}</div>
-                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.adaptive.preferenceDescription')}</div>
               </div>
               <Badge variant="default">{anchorLabel}</Badge>
             </div>

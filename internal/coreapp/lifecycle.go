@@ -330,13 +330,19 @@ func (a *CoreApp) initSystemTray() {
 			}
 
 			return tray.Status{
-				Connected:            a.isConnected,
-				CPUTemp:              a.currentTemp.CPUTemp,
-				GPUTemp:              a.currentTemp.GPUTemp,
-				CurrentRPM:           currentRPM,
-				AutoControlState:     cfg.AutoControl,
-				ActiveCurveProfileID: cfg.ActiveFanCurveProfileID,
-				CurveProfiles:        curveOptions,
+				Connected: a.isConnected,
+				CPUTemp:   a.currentTemp.CPUTemp,
+				GPUTemp:   a.currentTemp.GPUTemp,
+				// 功耗读不到时这里就是 0，托盘据此隐藏对应条目。
+				// 用户关掉 GPU 监测时桥接根本不会读 GPU，GPUTemp/GPUPower 都是 0，
+				// 但那是"没读"而不是"读不到"，所以把开关状态一并传过去。
+				CPUPower:              a.currentTemp.CPUPower,
+				GPUPower:              a.currentTemp.GPUPower,
+				GPUMonitoringDisabled: cfg.DisableGpuMonitoring,
+				CurrentRPM:            currentRPM,
+				AutoControlState:      cfg.AutoControl,
+				ActiveCurveProfileID:  cfg.ActiveFanCurveProfileID,
+				CurveProfiles:         curveOptions,
 			}
 		},
 	)

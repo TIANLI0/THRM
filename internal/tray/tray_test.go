@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -192,5 +193,64 @@ func TestStatusEqual(t *testing.T) {
 	changed.CurveProfiles = []CurveOption{{ID: "balanced", Name: "Quiet"}}
 	if statusEqual(base, changed) {
 		t.Fatal("changed curve menu entry was treated as equal")
+	}
+}
+
+func TestFormatTooltipReadingsHidesUnavailableReadings(t *testing.T) {
+	// 功耗读不到（多数没有 PawnIO 的机型）：只报温度与转速，不摆一个 0 W。
+	got := formatTooltipReadings(Status{CPUTemp: 72, GPUTemp: 65, CurrentRPM: 2400})
+	if strings.Contains(got, "W") {
+		t.Errorf("功耗为 0 时不该出现功耗行: %q", got)
+	}
+	for _, want := range []string{"CPU: 72°C", "GPU: 65°C", "2400 RPM"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("缺少 %q: %q", want, got)
+		}
+	}
+}
+
+func TestFormatTooltipReadingsShowsPowerWhenAvailable(t *testing.T) {
+	got := formatTooltipReadings(Status{CPUTemp: 80, GPUTemp: 74, CPUPower: 45.2, GPUPower: 88.6, CurrentRPM: 3000})
+	for _, want := range []string{"CPU: 45.2 W", "GPU: 88.6 W"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("缺少 %q: %q", want, got)
+		}
+	}
+}
+
+// 用户关掉 GPU 监测是主动选择，不是故障：提示里就不该再提 GPU。
+func TestFormatTooltipReadingsRespectsGpuMonitoringSwitch(t *testing.T) {
+	got := formatTooltipReadings(Status{
+		CPUTemp: 78, CPUPower: 40,
+		GPUTemp: 0, GPUPower: 0,
+		GPUMonitoringDisabled: true,
+		CurrentRPM:            2200,
+	})
+	if strings.Contains(got, "GPU") {
+		t.Errorf("关闭 GPU 监测后不该出现 GPU 字样: %q", got)
+	}
+	if !strings.Contains(got, "CPU: 40.0 W") {
+		t.Errorf("CPU 功耗仍应显示: %q", got)
+	}
+}
+
+// 关掉 GPU 监测时桥接可能仍返回上一帧的残留读数，不能因此把 GPU 又显示出来。
+func TestFormatTooltipReadingsIgnoresStaleGpuWhenDisabled(t *testing.T) {
+	got := formatTooltipReadings(Status{
+		CPUTemp: 70, GPUTemp: 66, GPUPower: 55,
+		GPUMonitoringDisabled: true,
+	})
+	if strings.Contains(got, "GPU") {
+		t.Errorf("开关关闭时应无条件隐藏 GPU: %q", got)
+	}
+}
+
+func TestStatusEqualDetectsPowerChanges(t *testing.T) {
+	base := Status{CPUTemp: 70, CPUPower: 40}
+	if statusEqual(base, Status{CPUTemp: 70, CPUPower: 41}) {
+		t.Error("功耗变化应当触发托盘刷新")
+	}
+	if statusEqual(base, Status{CPUTemp: 70, CPUPower: 40, GPUMonitoringDisabled: true}) {
+		t.Error("GPU 监测开关变化应当触发托盘刷新")
 	}
 }

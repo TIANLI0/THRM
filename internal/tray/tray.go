@@ -4,6 +4,7 @@ package tray
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -89,6 +90,8 @@ type MenuItems struct {
 	DeviceStatus   *systray.MenuItem
 	CPUTemperature *systray.MenuItem
 	GPUTemperature *systray.MenuItem
+	CPUPower       *systray.MenuItem
+	GPUPower       *systray.MenuItem
 	FanSpeed       *systray.MenuItem
 	CurveSelect    *systray.MenuItem
 	AutoControl    *systray.MenuItem
@@ -103,19 +106,57 @@ type CurveOption struct {
 
 // Status 状态信息
 type Status struct {
-	Connected            bool
-	CPUTemp              int
-	GPUTemp              int
-	CurrentRPM           uint16
-	AutoControlState     bool
-	ActiveCurveProfileID string
-	CurveProfiles        []CurveOption
+	Connected bool
+	CPUTemp   int
+	GPUTemp   int
+	// 功耗读数并非所有机型都有（需要 PawnIO 且 CPU/GPU 支持），0 表示读不到。
+	// 读不到时托盘不显示对应条目，而不是显示一个会误导人的 0 W。
+	CPUPower float64
+	GPUPower float64
+	// GPUMonitoringDisabled 表示用户主动关闭了 GPU 监测（混合显卡防止独显被唤醒）。
+	// 这与"读不到"是两码事：读不到显示"无数据"是有用的诊断信息，而用户自己关掉的
+	// 东西再摆在菜单里只会让人以为出了故障，直接隐藏。
+	GPUMonitoringDisabled bool
+	CurrentRPM            uint16
+	AutoControlState      bool
+	ActiveCurveProfileID  string
+	CurveProfiles         []CurveOption
+}
+
+// formatTooltipReadings 拼出悬浮提示里的读数行。
+//
+// 与菜单同一套可见性规则：用户关掉 GPU 监测就不提 GPU，功耗读不到就不提功耗。
+// 悬浮提示比菜单更挤，塞一堆"无数据"只会把真正有用的读数顶出视野。
+func formatTooltipReadings(status Status) string {
+	temps := fmt.Sprintf("CPU: %d°C", status.CPUTemp)
+	if !status.GPUMonitoringDisabled {
+		temps += fmt.Sprintf(" GPU: %d°C", status.GPUTemp)
+	}
+	lines := []string{temps}
+
+	var powers []string
+	if status.CPUPower > 0 {
+		powers = append(powers, fmt.Sprintf("CPU: %.1f W", status.CPUPower))
+	}
+	if status.GPUPower > 0 && !status.GPUMonitoringDisabled {
+		powers = append(powers, fmt.Sprintf("GPU: %.1f W", status.GPUPower))
+	}
+	if len(powers) > 0 {
+		lines = append(lines, strings.Join(powers, " "))
+	}
+	if status.CurrentRPM > 0 {
+		lines = append(lines, fmt.Sprintf("风扇: %d RPM", status.CurrentRPM))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func statusEqual(left, right Status) bool {
 	if left.Connected != right.Connected ||
 		left.CPUTemp != right.CPUTemp ||
 		left.GPUTemp != right.GPUTemp ||
+		left.CPUPower != right.CPUPower ||
+		left.GPUPower != right.GPUPower ||
+		left.GPUMonitoringDisabled != right.GPUMonitoringDisabled ||
 		left.CurrentRPM != right.CurrentRPM ||
 		left.AutoControlState != right.AutoControlState ||
 		left.ActiveCurveProfileID != right.ActiveCurveProfileID ||
@@ -579,6 +620,14 @@ func (m *Manager) createMenu() (items *MenuItems, err error) {
 	items.GPUTemperature = systray.AddMenuItem("GPU温度", "显示当前GPU温度")
 	items.GPUTemperature.Disable()
 
+	items.CPUPower = systray.AddMenuItem("CPU功耗", "显示当前CPU封装功耗")
+	items.CPUPower.Disable()
+	items.CPUPower.Hide()
+
+	items.GPUPower = systray.AddMenuItem("GPU功耗", "显示当前GPU功耗")
+	items.GPUPower.Disable()
+	items.GPUPower.Hide()
+
 	items.FanSpeed = systray.AddMenuItem("风扇转速", "显示当前风扇转速")
 	items.FanSpeed.Disable()
 	items.CurveSelect = systray.AddMenuItem("选择温控曲线", "直接切换到指定温控曲线")
@@ -732,10 +781,30 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 					m.menuItems.CPUTemperature.SetTitle("CPU温度: 无数据")
 				}
 
-				if status.GPUTemp > 0 {
-					m.menuItems.GPUTemperature.SetTitle(fmt.Sprintf("GPU温度: %d°C", status.GPUTemp))
+				if status.GPUMonitoringDisabled {
+					m.menuItems.GPUTemperature.Hide()
 				} else {
-					m.menuItems.GPUTemperature.SetTitle("GPU温度: 无数据")
+					m.menuItems.GPUTemperature.Show()
+					if status.GPUTemp > 0 {
+						m.menuItems.GPUTemperature.SetTitle(fmt.Sprintf("GPU温度: %d°C", status.GPUTemp))
+					} else {
+						m.menuItems.GPUTemperature.SetTitle("GPU温度: 无数据")
+					}
+				}
+
+				// 功耗要 PawnIO 加上 CPU/GPU 本身支持才读得到，不少机型没有。
+				// 读不到就整行隐藏，而不是摆一个会误导人的 0 W。
+				if status.CPUPower > 0 {
+					m.menuItems.CPUPower.SetTitle(fmt.Sprintf("CPU功耗: %.1f W", status.CPUPower))
+					m.menuItems.CPUPower.Show()
+				} else {
+					m.menuItems.CPUPower.Hide()
+				}
+				if status.GPUPower > 0 && !status.GPUMonitoringDisabled {
+					m.menuItems.GPUPower.SetTitle(fmt.Sprintf("GPU功耗: %.1f W", status.GPUPower))
+					m.menuItems.GPUPower.Show()
+				} else {
+					m.menuItems.GPUPower.Hide()
 				}
 
 				if status.CurrentRPM > 0 {
@@ -757,17 +826,9 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 
 				if status.Connected {
 					if status.AutoControlState {
-						tooltipText := fmt.Sprintf("%s - 智能变频中\nCPU: %d°C GPU: %d°C", appmeta.AppName, status.CPUTemp, status.GPUTemp)
-						if status.CurrentRPM > 0 {
-							tooltipText += fmt.Sprintf("\n风扇: %d RPM", status.CurrentRPM)
-						}
-						systray.SetTooltip(tooltipText)
+						systray.SetTooltip(appmeta.AppName + " - 智能变频中\n" + formatTooltipReadings(status))
 					} else {
-						tooltipText := appmeta.AppName + " - 手动模式"
-						if status.CurrentRPM > 0 {
-							tooltipText += fmt.Sprintf("\n风扇: %d RPM", status.CurrentRPM)
-						}
-						systray.SetTooltip(tooltipText)
+						systray.SetTooltip(appmeta.AppName + " - 手动模式\n" + formatTooltipReadings(status))
 					}
 				} else {
 					systray.SetTooltip(appmeta.AppName + " - 设备未连接")
