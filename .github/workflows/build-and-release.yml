@@ -296,6 +296,7 @@ jobs:
         shell: bash
         env:
           THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
+          PREVIOUS_STABLE_TAG: ${{ needs.prepare-release.outputs.previous_stable_tag }}
         run: |
           set -euo pipefail
 
@@ -330,12 +331,39 @@ jobs:
           echo "Created $DIST/THRM-linux-amd64-portable.tar.gz"
 
           # ---------- Debian package ----------
+          # 预发布的版本号必须落在正确的升级链上，否则 apt 会拒绝升级，而且不会报错。
+          # 早先固定写 0.0.0 会让每个预发布看起来都比任何正式版旧，永远升不上去。
+          #
+          # 分两种情形，取决于 wails.json 有没有领先于最近一个正式版：
+          #   领先（正在开发 3.7.0，上个正式版是 3.6.5）→ 3.7.0~nightly.X
+          #     dpkg 里 ~ 排在空之前，于是它低于 3.7.0，将来升正式版是升级。
+          #   持平（3.7.0 已发布，版本号还没往上 bump）→ 3.7.0+nightly.X
+          #     此时没有"下一个版本"可依附，只能表达成 3.7.0 之后的快照。
+          #     这个窗口不是罕见情况：release 提交先 bump 版本号再打 tag，
+          #     所以发布之后到下次 bump 之前，两者一直是持平的。
+          PREV_STABLE="${PREVIOUS_STABLE_TAG#[vV]}"
           case "$VER" in
-            nightly-*) DEB_VER="0.0.0~${VER#nightly-}" ;;
-            v*|V*)     DEB_VER="${VER#[vV]}" ;;
-            *)         DEB_VER="$VER" ;;
+            nightly-*)
+              NIGHTLY_ID="${VER#nightly-}"
+              NIGHTLY_ID="${NIGHTLY_ID//-/.}"
+              if [ -n "$PREV_STABLE" ] && ! dpkg --compare-versions "$PRODUCT_VER" gt "$PREV_STABLE"; then
+                DEB_VER="${PRODUCT_VER}+nightly.${NIGHTLY_ID}"
+                DEB_EXPECT=gt
+              else
+                DEB_VER="${PRODUCT_VER}~nightly.${NIGHTLY_ID}"
+                DEB_EXPECT=lt
+              fi
+              ;;
+            v*|V*) DEB_VER="${VER#[vV]}" ;;
+            *)     DEB_VER="$VER" ;;
           esac
           echo "Debian version: $DEB_VER"
+
+          # 版本序就是这段逻辑存在的全部意义，交给 dpkg 自己判定，别靠人推断。
+          if [ -n "${DEB_EXPECT:-}" ] && ! dpkg --compare-versions "$DEB_VER" "$DEB_EXPECT" "$PRODUCT_VER"; then
+            echo "预发布版本 $DEB_VER 与正式版 $PRODUCT_VER 的先后关系不是 $DEB_EXPECT" >&2
+            exit 1
+          fi
 
           PKGROOT="build/deb/thrm"
           install -Dm755 build/thrm "$PKGROOT/usr/bin/thrm"
@@ -384,6 +412,7 @@ jobs:
         shell: bash
         env:
           THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
+          PREVIOUS_STABLE_TAG: ${{ needs.prepare-release.outputs.previous_stable_tag }}
         run: |
           set -euo pipefail
 
@@ -393,23 +422,52 @@ jobs:
           fi
           [ -n "$VER" ] || VER="dev"
 
+          # pacman 的 vercmp 里多出来的段一律算"更新"，没有 dpkg 那个 ~ 的写法，
+          # 因此无法表达"低于 3.7.0"。改用 Arch VCS 包的通行惯例：以**上一个正式版**
+          # 为基，加 .r<日期>。3.6.5.r20260818 高于 3.6.5、低于 3.7.0，升级链是对的。
+          # 拿不到上一个正式版时（仓库还没发过版）才退回 0.0.0。
           case "$VER" in
-            nightly-*) ARCH_VER="0.0.0.r${VER#nightly-}" ;;
-            v*|V*)     ARCH_VER="${VER#[vV]}" ;;
-            *)         ARCH_VER="$VER" ;;
+            nightly-*)
+              NIGHTLY_ID="${VER#nightly-}"
+              ARCH_BASE="${PREVIOUS_STABLE_TAG#[vV]}"
+              [ -n "$ARCH_BASE" ] || ARCH_BASE="0.0.0"
+              ARCH_VER="${ARCH_BASE}.r${NIGHTLY_ID}"
+              ;;
+            v*|V*) ARCH_VER="${VER#[vV]}" ;;
+            *)     ARCH_VER="$VER" ;;
           esac
           ARCH_VER=$(printf '%s' "$ARCH_VER" | sed -E 's/[^[:alnum:]_+.]+/./g; s/^\.+//; s/\.+$//')
           [ -n "$ARCH_VER" ] || ARCH_VER="0.0.0.dev"
           echo "Arch package version: $ARCH_VER"
           sed -i "s/^pkgver=.*/pkgver=$ARCH_VER/" PKGBUILD
 
+          # 预发布必须高于上一个正式版、低于下一个正式版。pacman 的 vercmp 只在容器里有，
+          # 顺带塞进下面那次 docker run 里校验，排错了直接让构建失败。
+          NEXT_VER=$(grep -oE '"productVersion"[[:space:]]*:[[:space:]]*"[^"]+"' wails.json | sed -E 's/.*"([^"]+)"$/\1/')
+
           BUILDER_UID=$(id -u)
           docker run --rm \
             --env "BUILDER_UID=$BUILDER_UID" \
+            --env "ARCH_CHECK_VER=$ARCH_VER" \
+            --env "ARCH_CHECK_BASE=${ARCH_BASE:-}" \
+            --env "ARCH_CHECK_NEXT=$NEXT_VER" \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             archlinux:base-devel \
             bash -euc '
+              if [ -n "${ARCH_CHECK_BASE:-}" ]; then
+                if [ "$(vercmp "$ARCH_CHECK_VER" "$ARCH_CHECK_BASE")" -le 0 ]; then
+                  echo "预发布 $ARCH_CHECK_VER 没有高于上一个正式版 $ARCH_CHECK_BASE" >&2
+                  exit 1
+                fi
+                # wails.json 与上个正式版持平时没有"下一个版本"可比，跳过上界检查。
+                if [ "$(vercmp "$ARCH_CHECK_NEXT" "$ARCH_CHECK_BASE")" -gt 0 ] \
+                   && [ "$(vercmp "$ARCH_CHECK_VER" "$ARCH_CHECK_NEXT")" -ge 0 ]; then
+                  echo "预发布 $ARCH_CHECK_VER 没有低于下一个正式版 $ARCH_CHECK_NEXT" >&2
+                  exit 1
+                fi
+              fi
+
               builder=$(getent passwd "$BUILDER_UID" | cut -d: -f1)
               if [ -z "$builder" ]; then
                 useradd --create-home --uid "$BUILDER_UID" --user-group builder
