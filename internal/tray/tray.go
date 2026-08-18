@@ -4,10 +4,10 @@ package tray
 import (
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf16"
 
 	"fyne.io/systray"
 	"github.com/TIANLI0/THRM/internal/appmeta"
@@ -123,31 +123,64 @@ type Status struct {
 	CurveProfiles         []CurveOption
 }
 
+// trayTooltipMaxUnits 是 Windows 通知图标提示文本的硬上限（UTF-16 单元）。
+//
+// fyne.io/systray 的结构体里 Tip 虽然是 [128]uint16，但它从不调用 NIM_SETVERSION，
+// 于是 shell 按旧版协议处理，实际只显示前 64 个单元——而且是直接截断，不给任何提示。
+// 早先那版三行提示正好 65 个单元，用户看到的是"风扇: 180"，最后一位被吃掉了。
+const trayTooltipMaxUnits = 64
+
+// utf16Len 按 UTF-16 单元数计长度。中文和数字都在 BMP 内各占 1 个单元，
+// 补充平面字符（表情之类）占 2 个，用 rune 数会低估。
+func utf16Len(s string) int {
+	return len(utf16.Encode([]rune(s)))
+}
+
+// buildTrayTooltip 在 64 单元预算内拼装提示文本。
+//
+// 放不下就整行丢弃，绝不交给 Windows 从中间截断——被切掉半个数字的"风扇: 180"
+// 比没有这一行更糟，用户会把它当成真实读数。
+func buildTrayTooltip(header string, lines []string) string {
+	out := header
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		candidate := out + "\n" + line
+		if utf16Len(candidate) > trayTooltipMaxUnits {
+			break
+		}
+		out = candidate
+	}
+	return out
+}
+
 // formatTooltipReadings 拼出悬浮提示里的读数行。
 //
-// 与菜单同一套可见性规则：用户关掉 GPU 监测就不提 GPU，功耗读不到就不提功耗。
-// 悬浮提示比菜单更挤，塞一堆"无数据"只会把真正有用的读数顶出视野。
-func formatTooltipReadings(status Status) string {
-	temps := fmt.Sprintf("CPU: %d°C", status.CPUTemp)
-	if !status.GPUMonitoringDisabled {
-		temps += fmt.Sprintf(" GPU: %d°C", status.GPUTemp)
-	}
-	lines := []string{temps}
-
-	var powers []string
+// 温度与功耗按设备合并成一行（"CPU 54°C 28W"）而不是各占一行：预算只有 64 个单元，
+// 分行写光是标签就要吃掉十几个。功耗取整——悬浮提示是用来扫一眼的，小数位不值那两格。
+//
+// 可见性与右键菜单同一套规则：用户关掉 GPU 监测就不提 GPU，功耗读不到就不提功耗。
+func formatTooltipReadings(status Status) []string {
+	cpu := fmt.Sprintf("CPU %d°C", status.CPUTemp)
 	if status.CPUPower > 0 {
-		powers = append(powers, fmt.Sprintf("CPU: %.1f W", status.CPUPower))
+		cpu += fmt.Sprintf(" %.0fW", status.CPUPower)
 	}
-	if status.GPUPower > 0 && !status.GPUMonitoringDisabled {
-		powers = append(powers, fmt.Sprintf("GPU: %.1f W", status.GPUPower))
+	readings := cpu
+
+	if !status.GPUMonitoringDisabled {
+		gpu := fmt.Sprintf("GPU %d°C", status.GPUTemp)
+		if status.GPUPower > 0 {
+			gpu += fmt.Sprintf(" %.0fW", status.GPUPower)
+		}
+		readings += "  " + gpu
 	}
-	if len(powers) > 0 {
-		lines = append(lines, strings.Join(powers, " "))
-	}
+
+	lines := []string{readings}
 	if status.CurrentRPM > 0 {
-		lines = append(lines, fmt.Sprintf("风扇: %d RPM", status.CurrentRPM))
+		lines = append(lines, fmt.Sprintf("风扇 %d RPM", status.CurrentRPM))
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 func statusEqual(left, right Status) bool {
@@ -826,9 +859,9 @@ func (m *Manager) updateMenuStatus(instanceDone <-chan struct{}) {
 
 				if status.Connected {
 					if status.AutoControlState {
-						systray.SetTooltip(appmeta.AppName + " - 智能变频中\n" + formatTooltipReadings(status))
+						systray.SetTooltip(buildTrayTooltip(appmeta.AppName+" - 智能变频中", formatTooltipReadings(status)))
 					} else {
-						systray.SetTooltip(appmeta.AppName + " - 手动模式\n" + formatTooltipReadings(status))
+						systray.SetTooltip(buildTrayTooltip(appmeta.AppName+" - 手动模式", formatTooltipReadings(status)))
 					}
 				} else {
 					systray.SetTooltip(appmeta.AppName + " - 设备未连接")

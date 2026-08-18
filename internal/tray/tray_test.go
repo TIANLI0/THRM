@@ -196,22 +196,26 @@ func TestStatusEqual(t *testing.T) {
 	}
 }
 
-func TestFormatTooltipReadingsHidesUnavailableReadings(t *testing.T) {
-	// 功耗读不到（多数没有 PawnIO 的机型）：只报温度与转速，不摆一个 0 W。
-	got := formatTooltipReadings(Status{CPUTemp: 72, GPUTemp: 65, CurrentRPM: 2400})
+func tooltipText(status Status) string {
+	return buildTrayTooltip("THRM - 智能变频中", formatTooltipReadings(status))
+}
+
+func TestTooltipHidesUnavailableReadings(t *testing.T) {
+	// 功耗读不到（多数没装 PawnIO 的机型）：只报温度与转速，不摆一个 0 W。
+	got := tooltipText(Status{CPUTemp: 72, GPUTemp: 65, CurrentRPM: 2400})
 	if strings.Contains(got, "W") {
-		t.Errorf("功耗为 0 时不该出现功耗行: %q", got)
+		t.Errorf("功耗为 0 时不该出现功耗: %q", got)
 	}
-	for _, want := range []string{"CPU: 72°C", "GPU: 65°C", "2400 RPM"} {
+	for _, want := range []string{"CPU 72°C", "GPU 65°C", "2400 RPM"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("缺少 %q: %q", want, got)
 		}
 	}
 }
 
-func TestFormatTooltipReadingsShowsPowerWhenAvailable(t *testing.T) {
-	got := formatTooltipReadings(Status{CPUTemp: 80, GPUTemp: 74, CPUPower: 45.2, GPUPower: 88.6, CurrentRPM: 3000})
-	for _, want := range []string{"CPU: 45.2 W", "GPU: 88.6 W"} {
+func TestTooltipShowsPowerWhenAvailable(t *testing.T) {
+	got := tooltipText(Status{CPUTemp: 80, GPUTemp: 74, CPUPower: 45.2, GPUPower: 88.6, CurrentRPM: 3000})
+	for _, want := range []string{"CPU 80°C 45W", "GPU 74°C 89W"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("缺少 %q: %q", want, got)
 		}
@@ -219,29 +223,66 @@ func TestFormatTooltipReadingsShowsPowerWhenAvailable(t *testing.T) {
 }
 
 // 用户关掉 GPU 监测是主动选择，不是故障：提示里就不该再提 GPU。
-func TestFormatTooltipReadingsRespectsGpuMonitoringSwitch(t *testing.T) {
-	got := formatTooltipReadings(Status{
+func TestTooltipRespectsGpuMonitoringSwitch(t *testing.T) {
+	got := tooltipText(Status{
 		CPUTemp: 78, CPUPower: 40,
-		GPUTemp: 0, GPUPower: 0,
 		GPUMonitoringDisabled: true,
 		CurrentRPM:            2200,
 	})
 	if strings.Contains(got, "GPU") {
-		t.Errorf("关闭 GPU 监测后不该出现 GPU 字样: %q", got)
+		t.Errorf("关闭 GPU 监测后不该出现 GPU: %q", got)
 	}
-	if !strings.Contains(got, "CPU: 40.0 W") {
-		t.Errorf("CPU 功耗仍应显示: %q", got)
+	if !strings.Contains(got, "CPU 78°C 40W") {
+		t.Errorf("CPU 读数仍应显示: %q", got)
 	}
 }
 
-// 关掉 GPU 监测时桥接可能仍返回上一帧的残留读数，不能因此把 GPU 又显示出来。
-func TestFormatTooltipReadingsIgnoresStaleGpuWhenDisabled(t *testing.T) {
-	got := formatTooltipReadings(Status{
-		CPUTemp: 70, GPUTemp: 66, GPUPower: 55,
-		GPUMonitoringDisabled: true,
-	})
+// 关掉开关时桥接可能仍返回上一帧的残留读数，不能因此把 GPU 又显示出来。
+func TestTooltipIgnoresStaleGpuWhenDisabled(t *testing.T) {
+	got := tooltipText(Status{CPUTemp: 70, GPUTemp: 66, GPUPower: 55, GPUMonitoringDisabled: true})
 	if strings.Contains(got, "GPU") {
 		t.Errorf("开关关闭时应无条件隐藏 GPU: %q", got)
+	}
+}
+
+// Windows 旧版通知图标协议只显示前 64 个 UTF-16 单元，超出部分直接截断且毫无提示。
+// 这正是"风扇: 180"那个 bug 的成因，所以用最坏情况把预算钉死。
+func TestTooltipFitsWindowsBudget(t *testing.T) {
+	worst := tooltipText(Status{
+		CPUTemp: 100, GPUTemp: 100,
+		CPUPower: 155.7, GPUPower: 155.7,
+		CurrentRPM: 4000,
+	})
+	if n := utf16Len(worst); n > trayTooltipMaxUnits {
+		t.Errorf("最坏情况提示 %d 个单元，超出上限 %d: %q", n, trayTooltipMaxUnits, worst)
+	}
+	// 最坏情况下三行都必须留得住，不能靠丢行来满足预算。
+	for _, want := range []string{"CPU 100°C", "GPU 100°C", "4000 RPM"} {
+		if !strings.Contains(worst, want) {
+			t.Errorf("最坏情况下缺少 %q: %q", want, worst)
+		}
+	}
+}
+
+// 预算耗尽时宁可整行不显示，也不能把数字切一半。
+func TestBuildTrayTooltipDropsWholeLines(t *testing.T) {
+	long := strings.Repeat("x", 60)
+	got := buildTrayTooltip("H", []string{long, "风扇 1800 RPM"})
+	if strings.Contains(got, "风扇") {
+		t.Errorf("放不下的行应当整行丢弃: %q", got)
+	}
+	if utf16Len(got) > trayTooltipMaxUnits {
+		t.Errorf("结果超出预算: %d", utf16Len(got))
+	}
+}
+
+func TestUtf16LenCountsSupplementaryPlaneAsTwo(t *testing.T) {
+	// 中文在 BMP 内各占 1 个单元，表情占 2 个；用 rune 数会低估从而超预算。
+	if got := utf16Len("风扇"); got != 2 {
+		t.Errorf("中文应各占 1 个单元，得到 %d", got)
+	}
+	if got := utf16Len("🌡"); got != 2 {
+		t.Errorf("补充平面字符应占 2 个单元，得到 %d", got)
 	}
 }
 
