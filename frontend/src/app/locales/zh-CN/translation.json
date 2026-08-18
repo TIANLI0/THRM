@@ -704,6 +704,89 @@
       "updateFailed": "更新自适应学习设置失败: {{message}}",
       "chartNotice": "当前曲线由自适应学习 2.0 生成（紫色实线），无法手动拖动。灰色细线是你保存的手动曲线，关闭 2.0 后立即恢复使用。",
       "shortTitle": "自适应 2.0"
+    },
+    "benefit": {
+      "title": "散热收益实测",
+      "entryDescription": "实测这台散热器在不同转速下究竟带来了什么：降了几度、多释放了几瓦、哪个零部件受益最大。与学习模式无关。",
+      "entryButton": "开始实测",
+      "entryBadge": "{{span}} RPM → {{effect}}",
+      "description": "在同一个负载下把转速逐档锁定并等热稳定后采样，这样转速之间的差异才能归因给散热器本身。",
+      "intro": "测试会把散热器依次锁定在 {{steps}} 个转速档位，每档等温度稳定后采样，全程约 {{minutes}} 分钟。请先让机器跑起一个持续稳定的负载（游戏、渲染或烤机），并在整个测试期间保持它不变——中途关掉负载会让结果完全失真。",
+      "loadCheckTitle": "负载检查",
+      "loadReady": "负载已就绪，可以开始。",
+      "loadWaiting": "当前功耗过低。请先跑起一个持续负载（至少 {{min}}W），否则各转速下温度都一样，测不出区分度。",
+      "currentLoad": "当前功耗",
+      "loadLabelTitle": "负载说明（可选）",
+      "loadLabelDescription": "记下这次是在跑什么，方便日后对照。不同负载下的结果不可直接比较。",
+      "loadLabelPlaceholder": "例如：赛博朋克 2077 高画质",
+      "start": "开始测试",
+      "retest": "重新测试",
+      "stop": "中止测试",
+      "clear": "清除报告",
+      "runningStep": "第 {{index}}/{{total}} 档 · {{rpm}} RPM",
+      "phaseSettling": "等待热稳定",
+      "phaseSampling": "采样中",
+      "settlingHint": "已等待 {{seconds}} 秒，温度波动 {{range}}°C。热惯性需要时间，温度不再漂移后才会开始采样。",
+      "samplingHint": "正在采集该转速下的稳态温度与功耗。",
+      "keepLoadHint": "请保持负载不变，不要关闭游戏或切换到其他程序。测试结束后风扇会自动恢复原有控制方式。",
+      "sweetSpotMark": "甜点",
+      "series": {
+        "temp": "温度",
+        "power": "总功耗",
+        "laptopFan": "本机风扇",
+        "cpu": "CPU 温度",
+        "gpu": "GPU 温度"
+      },
+      "verdictTitle": "结论",
+      "regime": {
+        "thermal": "温度墙受限",
+        "power": "功耗墙受限",
+        "mixed": "温度与性能双收益",
+        "inconclusive": "未测出明显收益"
+      },
+      "regimeHint": {
+        "thermal": "温度顶在上限不动，散热器多吹的转速换成了更高的可持续功耗——收益体现为性能，而不是更凉。",
+        "power": "功耗保持恒定，散热器多吹的转速全部换成了更低的温度——收益体现为温度和寿命。",
+        "mixed": "温度下降的同时功耗也提高了，散热器在这个负载下同时带来了更凉和更快。",
+        "inconclusive": "温度和功耗都没有明显变化。可能是负载太轻、机器本身没有散热瓶颈，或散热器没有贴合到位。"
+      },
+      "underLoad": "测试负载：{{label}}",
+      "stats": {
+        "temp": "温度变化",
+        "power": "功耗变化",
+        "laptopFan": "本机风扇",
+        "sweetSpot": "噪音甜点",
+        "knee": "收益拐点"
+      },
+      "perKilo": "折算下来，每提高 1000 RPM：温度 {{temp}}°C，功耗 {{power}}W。",
+      "warningsTitle": "这份结果的可信度存在问题",
+      "warnings": {
+        "loadUnstable": "各档位之间的功耗差异过大，说明测试期间负载变了。转速之间的温差里混着负载差异，不能归因给散热器。",
+        "loadTooLight": "全程负载过轻，测不出区分度。请在持续重载下重测。",
+        "notSettled": "有档位在采样时温度仍在漂移，该档读数偏离真实稳态值。",
+        "rpmUnreachable": "风扇达不到部分目标转速，高转速档实际上没有测到。",
+        "fewSteps": "有效档位太少，不足以看出趋势。"
+      },
+      "sensorsTitle": "各零部件降温幅度",
+      "sensorsDescription": "从最低档到最高档的变化。整机平均会把 GPU 热点降 12°C 和 CPU 降 2°C 抹成一个没有意义的中间数，所以这里逐个列出。点击任意一行可把它加入上方温度图对比。",
+      "measuredAt": "测于 {{date}}",
+      "passiveTitle": "日常统计",
+      "passiveBadge": "仅供参考",
+      "passiveDescription": "从日常使用中自动积累，无需你做任何事。但不同转速的样本来自不同时间的不同负载，所以只在同一功耗档内部比较，且可信度远低于上面的实测。",
+      "passiveEmpty": "还没有攒够数据。每个格子需要至少 {{samples}} 个稳态样本，正常使用一段时间后会自动出现。",
+      "errors": {
+        "idle": "当前功耗只有 {{watts}}W，低于 {{min}}W。请先跑起持续负载再开始测试。",
+        "noPower": "读不到 CPU/GPU 功耗，无法进行散热收益测试。",
+        "failed": "测试失败: {{message}}",
+        "restore": "恢复风扇控制方式失败，请手动检查风扇设置。",
+        "disconnected": "设备未连接，无法开始测试。"
+      },
+      "sensorsCount": "{{count}} 个传感器",
+      "chartTemp": "温度 — 转速",
+      "chartPower": "总功耗 — 转速",
+      "chartLaptopFan": "本机风扇 — 转速",
+      "sensorLimit": "最多同时对比 {{count}} 个传感器，请先取消一个",
+      "noSeriesSelected": "未选择任何传感器。在下方列表中点选即可加入对比。"
     }
   },
   "controlPanel": {

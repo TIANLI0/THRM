@@ -17,6 +17,9 @@ import {
   SetAdaptivePreference,
   SetAdaptiveTempLimit,
   ResetAdaptiveModel,
+  GetCoolingBenefit,
+  SaveCoolingBenefitReport,
+  ClearCoolingBenefit,
   GetFanCurve,
   SetAutoControl,
   GetAppVersion,
@@ -41,7 +44,7 @@ import {
   // SetWindowsAutoStart
 } from '../../../wailsjs/go/main/App';
 
-import { rtss, smartcontrol, types } from '../../../wailsjs/go/models';
+import { ipc, rtss, smartcontrol, types } from '../../../wailsjs/go/models';
 
 import type {
   DeviceInfo,
@@ -151,6 +154,29 @@ class ApiService {
   // 清空 2.0 学到的热模型；倾向与开关保持不变。
   async resetAdaptiveModel(): Promise<smartcontrol.AdaptiveStatus> {
     return await ResetAdaptiveModel();
+  }
+
+  /* ── 散热收益（与学习模式无关） ── */
+
+  async getCoolingBenefit(): Promise<types.CoolingBenefitPayload> {
+    return await GetCoolingBenefit();
+  }
+
+  // 提交扫描测试的原始档位数据；分析在核心侧完成，返回的是分析后的完整结果。
+  // 参数按结构声明而不是用生成的类：调用方拿到的是普通对象，
+  // 经 Wails 走 JSON 序列化，没必要为了类型强行 new 一个实例。
+  async saveCoolingBenefitReport(params: {
+    deviceModel: string;
+    cpuModel: string;
+    gpuModel: string;
+    loadLabel: string;
+    steps: types.CoolingBenefitStep[];
+  }): Promise<types.CoolingBenefitPayload> {
+    return await SaveCoolingBenefitReport(params as ipc.SaveCoolingBenefitReportParams);
+  }
+
+  async clearCoolingBenefit(report: boolean, passive: boolean): Promise<types.CoolingBenefitPayload> {
+    return await ClearCoolingBenefit(report, passive);
   }
 
   async getFanCurve(): Promise<types.FanCurvePoint[]> {

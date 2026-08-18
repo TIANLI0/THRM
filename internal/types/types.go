@@ -702,6 +702,7 @@ type AppConfig struct {
 	SpeedAvoidance    SpeedAvoidanceConfig    `json:"speedAvoidance"`    // 智能控温转速避让
 	TimeCurveSchedule TimeCurveScheduleConfig `json:"timeCurveSchedule"` // 分时曲线计划
 	SmartControl      SmartControlConfig      `json:"smartControl"`      // 学习型智能控温配置
+	CoolingBenefit    CoolingBenefitState     `json:"coolingBenefit"`    // 散热收益实测与日常统计（与学习模式无关）
 	LightStrip        LightStripConfig        `json:"lightStrip"`        // 灯带配置
 }
 

@@ -16,6 +16,7 @@ import {
   Clipboard,
   Download,
   Sparkles,
+  Gauge,
   Pencil,
   X,
   AudioLines,
@@ -44,6 +45,7 @@ import { useTranslation } from 'react-i18next';
 import FanCurveProfileToolbar from './FanCurveProfileToolbar';
 import NoiseTest from './NoiseTest';
 import AdaptiveLearning from './AdaptiveLearning';
+import CoolingBenefit from './CoolingBenefit';
 import { toast } from 'sonner';
 import { ToggleSwitch, Button, Badge, Select, Slider, NumberInput, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/index';
 import clsx from 'clsx';
@@ -526,6 +528,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [learningConfigLoading, setLearningConfigLoading] = useState(false);
   const [learningResetLoading, setLearningResetLoading] = useState(false);
   const [noiseTestOpen, setNoiseTestOpen] = useState(false);
+  const [benefitOpen, setBenefitOpen] = useState(false);
   const [featureConfigLoading, setFeatureConfigLoading] = useState(false);
   const [avoidanceRevealed, setAvoidanceRevealed] = useState(false);
   const [avoidanceConfirmOpen, setAvoidanceConfirmOpen] = useState(false);
@@ -1078,6 +1081,16 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
 
   const adaptiveActive = !!adaptiveStatus?.enabled;
 
+  // 入口处的一行摘要直接取配置里已存的报告，省掉一次只为徽标发起的 IPC。
+  const benefitSummary = useMemo(() => {
+    const analysis = (config as any).coolingBenefit?.report?.analysis;
+    if (!analysis || analysis.regime === 'inconclusive') return '';
+    const parts: string[] = [];
+    if (analysis.tempDelta < 0) parts.push(`${analysis.tempDelta}°C`);
+    if (analysis.powerDelta > 0) parts.push(`+${analysis.powerDelta}W`);
+    if (parts.length === 0) return '';
+    return t('fanCurve.benefit.entryBadge', { span: `${analysis.baselineRpm}→${analysis.topRpm}`, effect: parts.join(' / ') });
+  }, [config, t]);
   const adaptiveCurve = useMemo(() => {
     const curve = adaptiveStatus?.curve;
     return Array.isArray(curve) ? curve : [];
@@ -1942,6 +1955,41 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           status={adaptiveStatus}
           onStatusChange={setAdaptiveStatus}
           onConfigInvalidated={syncConfigFromBackend}
+        />
+
+        {/* 散热收益是一次性的实测报告，与学习/控温策略无关，因此单列一节。 */}
+        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Gauge className="h-4 w-4 text-emerald-500" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-medium text-foreground">{t('fanCurve.benefit.title')}</div>
+                  {benefitSummary && <Badge variant="success">{benefitSummary}</Badge>}
+                </div>
+                <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.benefit.entryDescription')}</div>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setBenefitOpen(true)}
+              icon={<Gauge className="h-3.5 w-3.5" />}
+            >
+              {t('fanCurve.benefit.entryButton')}
+            </Button>
+          </div>
+        </section>
+
+        <CoolingBenefit
+          open={benefitOpen}
+          onOpenChange={setBenefitOpen}
+          config={config}
+          deviceModel={deviceModel}
+          temperature={temperature}
+          isConnected={isConnected}
         />
 
         <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">

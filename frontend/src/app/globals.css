@@ -54,6 +54,15 @@
   --chart-temperature-indicator: #ef4444;
   /* 自适应学习 2.0 生成的曲线：与主曲线拉开色相，避免两条线混淆 */
   --chart-adaptive: #8b5cf6;
+  /* 分类配色：散热收益报告里多条传感器曲线的身份色。
+     顺序固定、不循环使用，且已用 CVD 分离度与对比度校验过（浅色下
+     aqua/yellow/magenta 低于 3:1，靠图例色块与下方传感器表提供识别冗余）。 */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
   --chart-tooltip-bg: rgba(255, 255, 255, 0.72);
   --chart-tooltip-border: transparent;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
@@ -156,6 +165,13 @@
   --chart-point-shadow: rgba(0, 0, 0, 0.45);
   --chart-temperature-indicator: #ff7048;
   --chart-adaptive: #a78bfa;
+  /* 深色下是同样八色按深色背景重新取级，不是简单反转。 */
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
   --chart-tooltip-bg: rgba(17, 22, 29, 0.72);
   --chart-tooltip-border: #303845;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);

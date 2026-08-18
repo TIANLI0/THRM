@@ -188,3 +188,44 @@ func (a *App) setAdaptiveConfig(params ipc.SetAdaptiveConfigParams) (smartcontro
 	json.Unmarshal(resp.Data, &status)
 	return status, nil
 }
+
+/* ── 散热收益 ── */
+
+// GetCoolingBenefit 获取最近一次散热收益实测报告与日常统计。
+func (a *App) GetCoolingBenefit() types.CoolingBenefitPayload {
+	resp, err := a.sendRequest(ipc.ReqGetCoolingBenefit, nil)
+	if err != nil || !resp.Success {
+		return types.CoolingBenefitPayload{}
+	}
+	var payload types.CoolingBenefitPayload
+	json.Unmarshal(resp.Data, &payload)
+	return payload
+}
+
+// SaveCoolingBenefitReport 提交一次扫描测试的原始档位数据，核心侧分析后保存。
+func (a *App) SaveCoolingBenefitReport(params ipc.SaveCoolingBenefitReportParams) (types.CoolingBenefitPayload, error) {
+	resp, err := a.sendRequest(ipc.ReqSaveCoolingBenefitReport, params)
+	if err != nil {
+		return types.CoolingBenefitPayload{}, err
+	}
+	if !resp.Success {
+		return types.CoolingBenefitPayload{}, fmt.Errorf("%s", resp.Error)
+	}
+	var payload types.CoolingBenefitPayload
+	json.Unmarshal(resp.Data, &payload)
+	return payload, nil
+}
+
+// ClearCoolingBenefit 清除实测报告和/或日常统计。
+func (a *App) ClearCoolingBenefit(report, passive bool) (types.CoolingBenefitPayload, error) {
+	resp, err := a.sendRequest(ipc.ReqClearCoolingBenefit, ipc.ClearCoolingBenefitParams{Report: report, Passive: passive})
+	if err != nil {
+		return types.CoolingBenefitPayload{}, err
+	}
+	if !resp.Success {
+		return types.CoolingBenefitPayload{}, fmt.Errorf("%s", resp.Error)
+	}
+	var payload types.CoolingBenefitPayload
+	json.Unmarshal(resp.Data, &payload)
+	return payload, nil
+}

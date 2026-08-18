@@ -6,6 +6,10 @@ export function CheckWindowsAutoStart() {
   return window['go']['main']['App']['CheckWindowsAutoStart']();
 }
 
+export function ClearCoolingBenefit(arg1, arg2) {
+  return window['go']['main']['App']['ClearCoolingBenefit'](arg1, arg2);
+}
+
 export function ConnectDevice() {
   return window['go']['main']['App']['ConnectDevice']();
 }
@@ -56,6 +60,10 @@ export function GetBridgeProgramStatus() {
 
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
+}
+
+export function GetCoolingBenefit() {
+  return window['go']['main']['App']['GetCoolingBenefit']();
 }
 
 export function GetCurrentFanData() {
@@ -176,6 +184,10 @@ export function RestartPawnIO() {
 
 export function RestoreWindowPosition(arg1) {
   return window['go']['main']['App']['RestoreWindowPosition'](arg1);
+}
+
+export function SaveCoolingBenefitReport(arg1) {
+  return window['go']['main']['App']['SaveCoolingBenefitReport'](arg1);
 }
 
 export function SaveFanCurveProfile(arg1, arg2, arg3, arg4) {

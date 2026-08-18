@@ -24,6 +24,7 @@ func (c AppConfig) Clone() AppConfig {
 	cloned.LightStrip.Colors = slices.Clone(c.LightStrip.Colors)
 	cloned.TimeCurveSchedule.Rules = cloneTimeCurveRules(c.TimeCurveSchedule.Rules)
 	cloned.SmartControl = c.SmartControl.Clone()
+	cloned.CoolingBenefit = c.CoolingBenefit.Clone()
 
 	return cloned
 }
@@ -52,6 +53,25 @@ func (s SmartControlConfig) Clone() SmartControlConfig {
 		cloned.LearnedOffsetsByProfile = byProfile
 	}
 
+	return cloned
+}
+
+// Clone 返回散热收益状态的深拷贝。Report 是指针、Steps 里还嵌着传感器切片，
+// 逐层复制才能切断与配置管理器内部状态的共享。
+func (s CoolingBenefitState) Clone() CoolingBenefitState {
+	cloned := s
+	cloned.Passive.Cells = slices.Clone(s.Passive.Cells)
+	if s.Report != nil {
+		report := *s.Report
+		report.Steps = make([]CoolingBenefitStep, len(s.Report.Steps))
+		for i, step := range s.Report.Steps {
+			step.Sensors = slices.Clone(step.Sensors)
+			report.Steps[i] = step
+		}
+		report.Analysis.SensorDeltas = slices.Clone(s.Report.Analysis.SensorDeltas)
+		report.Analysis.Warnings = slices.Clone(s.Report.Analysis.Warnings)
+		cloned.Report = &report
+	}
 	return cloned
 }
 

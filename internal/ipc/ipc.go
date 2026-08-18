@@ -72,6 +72,9 @@ const (
 	ReqGetAdaptiveStatus        RequestType = "GetAdaptiveStatus"
 	ReqSetAdaptiveConfig        RequestType = "SetAdaptiveConfig"
 	ReqResetAdaptiveModel       RequestType = "ResetAdaptiveModel"
+	ReqGetCoolingBenefit        RequestType = "GetCoolingBenefit"
+	ReqSaveCoolingBenefitReport RequestType = "SaveCoolingBenefitReport"
+	ReqClearCoolingBenefit      RequestType = "ClearCoolingBenefit"
 	ReqPreviewRTSSPosition      RequestType = "PreviewRTSSPosition"
 
 	// 飞智空间站兼容
@@ -1004,6 +1007,22 @@ type SetLightStripParams struct {
 }
 
 // SetActiveFanCurveProfileParams 设置激活曲线方案参数
+// SaveCoolingBenefitReportParams 提交一次散热收益扫描测试的原始结果。
+// 分析在核心侧做：那段逻辑有单元测试守着，也保证 GUI 与后续读取看到的是同一份结论。
+type SaveCoolingBenefitReportParams struct {
+	DeviceModel string                     `json:"deviceModel"`
+	CPUModel    string                     `json:"cpuModel"`
+	GPUModel    string                     `json:"gpuModel"`
+	LoadLabel   string                     `json:"loadLabel"`
+	Steps       []types.CoolingBenefitStep `json:"steps"`
+}
+
+// ClearCoolingBenefitParams 选择要清除的部分。两者可同时为真。
+type ClearCoolingBenefitParams struct {
+	Report  bool `json:"report"`
+	Passive bool `json:"passive"`
+}
+
 // SetAdaptiveConfigParams 是自适应学习 2.0 的部分更新参数。
 // 三个字段都用指针：GUI 每次只改一项，nil 表示"这项别动"，
 // 否则零值会被当成"关掉自动模式"或"倾向设为 0"。

@@ -117,6 +117,31 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(status)
 
+	case ipc.ReqGetCoolingBenefit:
+		return a.dataResponse(a.GetCoolingBenefit())
+
+	case ipc.ReqSaveCoolingBenefitReport:
+		var params ipc.SaveCoolingBenefitReportParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析散热收益测试结果失败: " + err.Error())
+		}
+		payload, err := a.SaveCoolingBenefitReport(params)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(payload)
+
+	case ipc.ReqClearCoolingBenefit:
+		var params ipc.ClearCoolingBenefitParams
+		if err := json.Unmarshal(req.Data, &params); err != nil {
+			return a.errorResponse("解析参数失败: " + err.Error())
+		}
+		payload, err := a.ClearCoolingBenefit(params)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(payload)
+
 	case ipc.ReqGetFanCurveProfiles:
 		return a.dataResponse(a.GetFanCurveProfiles())
 

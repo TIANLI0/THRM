@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/bridge"
+	"github.com/TIANLI0/THRM/internal/coolingbenefit"
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/temperature"
@@ -287,6 +288,10 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
 	thermalPredictor := smartcontrol.NewThermalPredictor()
 	adaptiveEngine := smartcontrol.NewAdaptiveEngine()
+	// 散热收益的日常统计与学习完全独立：不看学习开关，也不参与控温决策，
+	// 只是把"这个转速下这台机器有多热"如实记下来。
+	benefitObserver := coolingbenefit.NewPassiveObserver()
+	benefitDirty := false
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 	// 只统计"定时器等待"期间流逝的时间，不把本轮采样/控温的耗时算进去。
@@ -314,6 +319,7 @@ monitorLoop:
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
 				thermalPredictor.Reset()
 				adaptiveEngine.Reset()
+				benefitObserver.Reset()
 				resetTimer(updateInterval)
 				continue
 			}
@@ -332,6 +338,7 @@ monitorLoop:
 				steadyObserver.Reset()
 				thermalPredictor.Reset()
 				adaptiveEngine.Reset()
+				benefitObserver.Reset()
 				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
 			}
 
@@ -665,14 +672,31 @@ monitorLoop:
 					steadyObserver.Reset()
 				}
 
+				// 散热收益统计走自己的通路：无论学习开关如何、2.0 是否接管，
+				// 它都照常记录，因为它描述的是硬件事实而不是控制策略。
+				if benefitRPM := max(lastTargetRPM, 0); benefitRPM > 0 {
+					if stats, recorded := benefitObserver.Observe(
+						cfg.CoolingBenefit.Passive,
+						benefitRPM,
+						temp.CPUTemp,
+						temp.GPUTemp,
+						temp.CPUPower+temp.GPUPower,
+					); recorded {
+						cfg.CoolingBenefit.Passive = stats
+						a.configManager.Set(cfg)
+						benefitDirty = true
+					}
+				}
+
 				// 落盘节流对 1.0 偏移与 2.0 模型是同一套：两者都在控温环里高频改写，
-				// 每次都写盘既伤 SSD 也会拖慢采样周期。
-				if learningDirty && time.Since(lastLearningSave) >= 25*time.Second {
+				// 每次都写盘既伤 SSD 也会拖慢采样周期。散热收益统计搭同一班车。
+				if (learningDirty || benefitDirty) && time.Since(lastLearningSave) >= 25*time.Second {
 					if err := a.configManager.Save(); err != nil {
 						a.logError("保存学习状态失败: %v", err)
 					} else {
 						lastLearningSave = time.Now()
 						learningDirty = false
+						benefitDirty = false
 						if a.ipcServer != nil {
 							a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 						}
@@ -695,7 +719,7 @@ monitorLoop:
 		}
 	}
 
-	if learningDirty {
+	if learningDirty || benefitDirty {
 		if err := a.configManager.Save(); err != nil {
 			a.logError("退出监控时保存学习曲线失败: %v", err)
 		}

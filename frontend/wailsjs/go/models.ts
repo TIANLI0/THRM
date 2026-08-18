@@ -56,6 +56,49 @@ export namespace guiapp {
 
 }
 
+export namespace ipc {
+	
+	export class SaveCoolingBenefitReportParams {
+	    deviceModel: string;
+	    cpuModel: string;
+	    gpuModel: string;
+	    loadLabel: string;
+	    steps: types.CoolingBenefitStep[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SaveCoolingBenefitReportParams(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.deviceModel = source["deviceModel"];
+	        this.cpuModel = source["cpuModel"];
+	        this.gpuModel = source["gpuModel"];
+	        this.loadLabel = source["loadLabel"];
+	        this.steps = this.convertValues(source["steps"], types.CoolingBenefitStep);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace rtss {
 	
 	export class LayoutStatus {
@@ -325,6 +368,280 @@ export namespace types {
 	        this.speed = source["speed"];
 	        this.brightness = source["brightness"];
 	        this.colors = this.convertValues(source["colors"], RGBColor);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CoolingPassiveCell {
+	    powerBucket: number;
+	    rpm: number;
+	    cpuTemp: number;
+	    gpuTemp: number;
+	    power: number;
+	    samples: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingPassiveCell(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.powerBucket = source["powerBucket"];
+	        this.rpm = source["rpm"];
+	        this.cpuTemp = source["cpuTemp"];
+	        this.gpuTemp = source["gpuTemp"];
+	        this.power = source["power"];
+	        this.samples = source["samples"];
+	    }
+	}
+	export class CoolingPassiveStats {
+	    cells: CoolingPassiveCell[];
+	    updatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingPassiveStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cells = this.convertValues(source["cells"], CoolingPassiveCell);
+	        this.updatedAt = source["updatedAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CoolingSensorDelta {
+	    key: string;
+	    name: string;
+	    group: string;
+	    baseline: number;
+	    best: number;
+	    delta: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingSensorDelta(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.name = source["name"];
+	        this.group = source["group"];
+	        this.baseline = source["baseline"];
+	        this.best = source["best"];
+	        this.delta = source["delta"];
+	    }
+	}
+	export class CoolingBenefitAnalysis {
+	    regime: string;
+	    baselineRpm: number;
+	    topRpm: number;
+	    tempDelta: number;
+	    powerDelta: number;
+	    laptopFanDelta: number;
+	    tempPerKiloRpm: number;
+	    powerPerKiloRpm: number;
+	    kneeRpm: number;
+	    sweetSpotRpm: number;
+	    sweetSpotHasNoise: boolean;
+	    sensorDeltas: CoolingSensorDelta[];
+	    warnings: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingBenefitAnalysis(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.regime = source["regime"];
+	        this.baselineRpm = source["baselineRpm"];
+	        this.topRpm = source["topRpm"];
+	        this.tempDelta = source["tempDelta"];
+	        this.powerDelta = source["powerDelta"];
+	        this.laptopFanDelta = source["laptopFanDelta"];
+	        this.tempPerKiloRpm = source["tempPerKiloRpm"];
+	        this.powerPerKiloRpm = source["powerPerKiloRpm"];
+	        this.kneeRpm = source["kneeRpm"];
+	        this.sweetSpotRpm = source["sweetSpotRpm"];
+	        this.sweetSpotHasNoise = source["sweetSpotHasNoise"];
+	        this.sensorDeltas = this.convertValues(source["sensorDeltas"], CoolingSensorDelta);
+	        this.warnings = source["warnings"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CoolingSensorReading {
+	    key: string;
+	    name: string;
+	    group: string;
+	    value: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingSensorReading(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.name = source["name"];
+	        this.group = source["group"];
+	        this.value = source["value"];
+	    }
+	}
+	export class CoolingBenefitStep {
+	    targetRpm: number;
+	    actualRpm: number;
+	    cpuTemp: number;
+	    gpuTemp: number;
+	    cpuPower: number;
+	    gpuPower: number;
+	    laptopCpuFanRpm: number;
+	    laptopGpuFanRpm: number;
+	    sensors: CoolingSensorReading[];
+	    samples: number;
+	    tempRange: number;
+	    powerRange: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingBenefitStep(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.targetRpm = source["targetRpm"];
+	        this.actualRpm = source["actualRpm"];
+	        this.cpuTemp = source["cpuTemp"];
+	        this.gpuTemp = source["gpuTemp"];
+	        this.cpuPower = source["cpuPower"];
+	        this.gpuPower = source["gpuPower"];
+	        this.laptopCpuFanRpm = source["laptopCpuFanRpm"];
+	        this.laptopGpuFanRpm = source["laptopGpuFanRpm"];
+	        this.sensors = this.convertValues(source["sensors"], CoolingSensorReading);
+	        this.samples = source["samples"];
+	        this.tempRange = source["tempRange"];
+	        this.powerRange = source["powerRange"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CoolingBenefitReport {
+	    createdAt: number;
+	    deviceModel: string;
+	    cpuModel: string;
+	    gpuModel: string;
+	    loadLabel: string;
+	    steps: CoolingBenefitStep[];
+	    analysis: CoolingBenefitAnalysis;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingBenefitReport(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.createdAt = source["createdAt"];
+	        this.deviceModel = source["deviceModel"];
+	        this.cpuModel = source["cpuModel"];
+	        this.gpuModel = source["gpuModel"];
+	        this.loadLabel = source["loadLabel"];
+	        this.steps = this.convertValues(source["steps"], CoolingBenefitStep);
+	        this.analysis = this.convertValues(source["analysis"], CoolingBenefitAnalysis);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class CoolingBenefitState {
+	    report?: CoolingBenefitReport;
+	    passive: CoolingPassiveStats;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingBenefitState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.report = this.convertValues(source["report"], CoolingBenefitReport);
+	        this.passive = this.convertValues(source["passive"], CoolingPassiveStats);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -684,6 +1001,7 @@ export namespace types {
 	    speedAvoidance: SpeedAvoidanceConfig;
 	    timeCurveSchedule: TimeCurveScheduleConfig;
 	    smartControl: SmartControlConfig;
+	    coolingBenefit: CoolingBenefitState;
 	    lightStrip: LightStripConfig;
 	
 	    static createFrom(source: any = {}) {
@@ -734,6 +1052,7 @@ export namespace types {
 	        this.speedAvoidance = this.convertValues(source["speedAvoidance"], SpeedAvoidanceConfig);
 	        this.timeCurveSchedule = this.convertValues(source["timeCurveSchedule"], TimeCurveScheduleConfig);
 	        this.smartControl = this.convertValues(source["smartControl"], SmartControlConfig);
+	        this.coolingBenefit = this.convertValues(source["coolingBenefit"], CoolingBenefitState);
 	        this.lightStrip = this.convertValues(source["lightStrip"], LightStripConfig);
 	    }
 	
@@ -891,6 +1210,73 @@ export namespace types {
 		    return a;
 		}
 	}
+	
+	export class CoolingPassiveComparison {
+	    powerBucket: number;
+	    lowRpm: number;
+	    highRpm: number;
+	    tempDelta: number;
+	    samples: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingPassiveComparison(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.powerBucket = source["powerBucket"];
+	        this.lowRpm = source["lowRpm"];
+	        this.highRpm = source["highRpm"];
+	        this.tempDelta = source["tempDelta"];
+	        this.samples = source["samples"];
+	    }
+	}
+	export class CoolingBenefitPayload {
+	    report?: CoolingBenefitReport;
+	    passive: CoolingPassiveStats;
+	    passiveComparison: CoolingPassiveComparison[];
+	    powerBucketBounds: number[];
+	    minCellSamples: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CoolingBenefitPayload(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.report = this.convertValues(source["report"], CoolingBenefitReport);
+	        this.passive = this.convertValues(source["passive"], CoolingPassiveStats);
+	        this.passiveComparison = this.convertValues(source["passiveComparison"], CoolingPassiveComparison);
+	        this.powerBucketBounds = source["powerBucketBounds"];
+	        this.minCellSamples = source["minCellSamples"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	
+	
+	
+	
+	
+	
+	
 	export class DeviceDebugFrame {
 	    id: number;
 	    direction: string;
