@@ -672,7 +672,6 @@
       "toggleAria": "切换自适应学习 2.0",
       "disabledHint": "开启后曲线将完全由算法生成，曲线编辑与自适应学习 1.0 会自动让位。随时关闭即可恢复手动曲线。",
       "preferenceTitle": "倾向",
-      "preferenceDescription": "唯一需要你表达的偏好：向左更安静、允许温度高一些；向右更低温、接受风扇更吵。这里没有\"目标温度\"——算法权衡的是\"一度热值多少分贝\"，稳态落在哪里是权衡的结果，不会在某个温度上突然变脸。",
       "anchors": {
         "silent": "静音",
         "balanced": "均衡",
@@ -770,10 +769,6 @@
       "sensorsTitle": "各零部件降温幅度",
       "sensorsDescription": "从最低档到最高档的变化。整机平均会把 GPU 热点降 12°C 和 CPU 降 2°C 抹成一个没有意义的中间数，所以这里逐个列出。点击任意一行可把它加入上方温度图对比。",
       "measuredAt": "测于 {{date}}",
-      "passiveTitle": "日常统计",
-      "passiveBadge": "仅供参考",
-      "passiveDescription": "从日常使用中自动积累，无需你做任何事。但不同转速的样本来自不同时间的不同负载，所以只在同一功耗档内部比较，且可信度远低于上面的实测。",
-      "passiveEmpty": "还没有攒够数据。每个格子需要至少 {{samples}} 个稳态样本，正常使用一段时间后会自动出现。",
       "errors": {
         "idle": "当前功耗只有 {{watts}}W，低于 {{min}}W。请先跑起持续负载再开始测试。",
         "noPower": "读不到 CPU/GPU 功耗，无法进行散热收益测试。",
@@ -787,11 +782,12 @@
       "chartLaptopFan": "本机风扇 — 转速",
       "sensorLimit": "最多同时对比 {{count}} 个传感器，请先取消一个",
       "noSeriesSelected": "未选择任何传感器。在下方列表中点选即可加入对比。",
-      "extendedSensorsHint": "测试期间会临时开启内存、硬盘、主板/EC、电源等全部可读温度传感器，结束后自动关闭。这些读数不参与控温，平时也不会轮询——它们需要额外打开 SMART / SPD / Super I/O 通道，常开会给后台带来不必要的开销。",
       "export": "导出 txt",
       "exportDone": "已导出到 {{path}}",
       "exportFailed": "导出失败: {{message}}",
-      "exportHint": "导出为纯文本，含每个档位的逐传感器原始读数与判定依据，可直接交给 AI 分析。"
+      "exportHint": "导出为纯文本，含每个档位的逐传感器原始读数与判定依据。可以直接把文件丢给 AI，问它这台机器该怎么设置转速、值不值得开到更高档。",
+      "phaseSpinning": "等待转速到位",
+      "spinningHint": "正在等待散热器稳定在目标转速（当前 {{rpm}} RPM）。风扇爬升期间的降温不属于该档位的稳态，所以要先等它到位。"
     }
   },
   "controlPanel": {

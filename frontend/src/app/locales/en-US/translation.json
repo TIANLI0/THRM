@@ -672,7 +672,6 @@
       "toggleAria": "Toggle adaptive learning 2.0",
       "disabledHint": "Once enabled the curve is generated entirely by the algorithm, and curve editing plus adaptive learning 1.0 step aside. Turn it off at any time to get your manual curve back.",
       "preferenceTitle": "Preference",
-      "preferenceDescription": "The only choice you need to make: left is quieter and tolerates higher temperatures, right is cooler and accepts more fan noise. There is no target temperature — the algorithm weighs how many decibels a degree is worth, so where it settles is the result of that trade-off and never changes character at some threshold.",
       "anchors": {
         "silent": "Silent",
         "balanced": "Balanced",
@@ -770,10 +769,6 @@
       "sensorsTitle": "Per-component temperature change",
       "sensorsDescription": "Change from the lowest to the highest speed. A whole-machine average would flatten a 12°C GPU hot-spot drop and a 2°C CPU drop into one meaningless number, so each is listed separately. Click any row to plot it in the temperature chart above.",
       "measuredAt": "Measured {{date}}",
-      "passiveTitle": "Everyday statistics",
-      "passiveBadge": "Reference only",
-      "passiveDescription": "Accumulated automatically from normal use, with no effort on your part. But samples at different speeds come from different workloads at different times, so comparisons stay within one power band and are far less trustworthy than the test above.",
-      "passiveEmpty": "Not enough data yet. Each cell needs at least {{samples}} steady samples; they appear on their own after a while of normal use.",
       "errors": {
         "idle": "Current draw is only {{watts}}W, below {{min}}W. Start a sustained load before running the test.",
         "noPower": "CPU/GPU power cannot be read, so the cooling benefit test cannot run.",
@@ -787,11 +782,12 @@
       "chartLaptopFan": "Laptop fan vs speed",
       "sensorLimit": "At most {{count}} sensors can be compared at once — deselect one first",
       "noSeriesSelected": "No sensor selected. Pick one from the list below to add it to the comparison.",
-      "extendedSensorsHint": "For the duration of the test all readable sensors — memory, storage, motherboard/EC, PSU — are temporarily enabled, then switched off again. These readings never drive fan control and are not polled at other times: they require SMART / SPD / Super I/O channels that would otherwise cost background resources for nothing.",
       "export": "Export txt",
       "exportDone": "Exported to {{path}}",
       "exportFailed": "Export failed: {{message}}",
-      "exportHint": "Plain-text export with the raw per-sensor readings at every step plus the reasoning behind the verdict — ready to hand to an AI for analysis."
+      "exportHint": "Plain-text export with the raw per-sensor readings at every step plus the reasoning behind the verdict. Hand the file straight to an AI and ask how this machine should be set up, or whether a higher speed is worth it.",
+      "phaseSpinning": "Waiting for fan speed",
+      "spinningHint": "Waiting for the cooler to stabilise at the target speed (currently {{rpm}} RPM). Cooling that happens while the fan is still ramping is not this step’s steady state, so it has to reach speed first."
     }
   },
   "controlPanel": {

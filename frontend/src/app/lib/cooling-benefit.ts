@@ -11,6 +11,15 @@ export const BENEFIT_MIN_RPM = 1000;
 export const BENEFIT_MAX_RPM = 4000;
 export const BENEFIT_STEP_RPM = 600;
 
+// 转速到位判据。热稳定必须在风扇真的稳在目标转速之后才开始判断：
+// 散热器从 1000 冲到 3400 要好几秒，这期间温度本来就在往下走，直接进热稳定判断
+// 有可能在风扇还没到位时就"恰好"看到一段平稳读数，把过渡态当成该档位的稳态。
+const RPM_POLL_MS = 700;
+const RPM_SETTLE_TIMEOUT_MS = 25_000;
+const RPM_SETTLE_HITS = 3;      // 连续几次落在容差内才算到位
+const RPM_STALL_HITS = 5;       // 转速不再变化也算稳定（目标超出风扇能力上限）
+const RPM_STALL_DELTA = 30;
+
 // 热稳定判据：温度在该窗口内的极差小于阈值即认为稳了。
 const SETTLE_POLL_MS = 3000;
 const SETTLE_WINDOW = 6;          // 约 18 秒的滚动窗口
@@ -27,7 +36,7 @@ export interface BenefitStepProgress {
   index: number;
   total: number;
   rpm: number;
-  phase: 'settling' | 'sampling';
+  phase: 'spinning' | 'settling' | 'sampling';
   elapsedMs: number;
   /** 稳定阶段的实时温度极差，让用户看见"它在等什么"。 */
   tempRangeC: number;
@@ -183,6 +192,38 @@ function finalizeSensors(acc: Map<string, SensorAccumulator>): types.CoolingSens
   return out;
 }
 
+// waitForFanSpeed 等散热器真的转到目标转速附近。
+//
+// 返回实测转速；达不到目标也会在超时后返回，由报告里的 rpmUnreachable 告警负责说明——
+// 这里硬等下去只会让一次测试永远跑不完。
+async function waitForFanSpeed(targetRPM: number, onTick: (rpm: number) => void, signal?: AbortSignal): Promise<number> {
+  const tolerance = Math.max(120, Math.round(targetRPM * 0.06));
+  const deadline = Date.now() + RPM_SETTLE_TIMEOUT_MS;
+  let last = -1;
+  let hits = 0;
+  let stalls = 0;
+
+  while (Date.now() < deadline) {
+    await sleep(RPM_POLL_MS, signal);
+    let current = -1;
+    try {
+      const fanData = await apiService.getCurrentFanData();
+      if (fanData && fanData.currentRpm > 0) current = fanData.currentRpm;
+    } catch {
+      /* 读不到就当这一拍没到位 */
+    }
+    if (current <= 0) continue;
+
+    onTick(current);
+    hits = Math.abs(current - targetRPM) <= tolerance ? hits + 1 : 0;
+    // 转速卡住不动同样视为稳定：这台设备可能根本上不去这个档位。
+    stalls = last > 0 && Math.abs(current - last) < RPM_STALL_DELTA ? stalls + 1 : 0;
+    last = current;
+    if (hits >= RPM_SETTLE_HITS || stalls >= RPM_STALL_HITS) return current;
+  }
+  return last > 0 ? last : 0;
+}
+
 // waitForThermalSettle 盯着控温温度直到它不再漂，或者到达超时。
 // 返回是否真的稳住了——没稳住的档位会在报告里标注，而不是假装它稳了。
 async function waitForThermalSettle(
@@ -290,6 +331,16 @@ export async function runBenefitSweep(
     const rpm = rpmSteps[i];
 
     await apiService.setCustomSpeed(true, rpm);
+
+    // 先等风扇到位，再等温度稳定。顺序反过来的话，风扇爬升期间的降温会被
+    // 误判成该档位已经热稳定。
+    onProgress({ index: i, total: rpmSteps.length, rpm, phase: 'spinning', elapsedMs: 0, tempRangeC: 0 }, results);
+    await waitForFanSpeed(
+      rpm,
+      (actual) => onProgress({ index: i, total: rpmSteps.length, rpm: actual, phase: 'spinning', elapsedMs: 0, tempRangeC: 0 }, results),
+      signal,
+    );
+
     onProgress({ index: i, total: rpmSteps.length, rpm, phase: 'settling', elapsedMs: 0, tempRangeC: 0 }, results);
     const settled = await waitForThermalSettle(
       (elapsedMs, tempRangeC) => onProgress({ index: i, total: rpmSteps.length, rpm, phase: 'settling', elapsedMs, tempRangeC }, results),
@@ -306,5 +357,5 @@ export async function runBenefitSweep(
 
 /** 一次完整扫描的预计耗时，用于在开测前如实告知用户。 */
 export function estimatedDurationMs(): number {
-  return buildBenefitSteps().length * (SETTLE_MIN_MS + SAMPLE_MS);
+  return buildBenefitSteps().length * (RPM_POLL_MS * RPM_SETTLE_HITS + SETTLE_MIN_MS + SAMPLE_MS);
 }
