@@ -20,6 +20,7 @@ import {
   GetCoolingBenefit,
   SaveCoolingBenefitReport,
   ClearCoolingBenefit,
+  SetExtendedSensors,
   GetFanCurve,
   SetAutoControl,
   GetAppVersion,
@@ -177,6 +178,12 @@ class ApiService {
 
   async clearCoolingBenefit(report: boolean, passive: boolean): Promise<types.CoolingBenefitPayload> {
     return await ClearCoolingBenefit(report, passive);
+  }
+
+  // 临时开启扩展温度传感器（内存/硬盘/主板/EC/电源）。会话级，不写配置；
+  // 核心侧在 GUI 断开或超时后会自动关闭。
+  async setExtendedSensors(enabled: boolean): Promise<boolean> {
+    return await SetExtendedSensors(enabled);
   }
 
   async getFanCurve(): Promise<types.FanCurvePoint[]> {

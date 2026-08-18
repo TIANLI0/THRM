@@ -1160,6 +1160,7 @@ export namespace types {
 	    cpuPowerSensors: PowerSensor[];
 	    gpuPowerSensors: PowerSensor[];
 	    gpuDevices: TemperatureGPUDevice[];
+	    otherSensors: TemperatureSensor[];
 	    updateTime: number;
 	    success: boolean;
 	    error: string;
@@ -1186,6 +1187,7 @@ export namespace types {
 	        this.cpuPowerSensors = this.convertValues(source["cpuPowerSensors"], PowerSensor);
 	        this.gpuPowerSensors = this.convertValues(source["gpuPowerSensors"], PowerSensor);
 	        this.gpuDevices = this.convertValues(source["gpuDevices"], TemperatureGPUDevice);
+	        this.otherSensors = this.convertValues(source["otherSensors"], TemperatureSensor);
 	        this.updateTime = source["updateTime"];
 	        this.success = source["success"];
 	        this.error = source["error"];
@@ -1543,6 +1545,7 @@ export namespace types {
 	    cpuPowerSensors: PowerSensor[];
 	    gpuPowerSensors: PowerSensor[];
 	    gpuDevices: TemperatureGPUDevice[];
+	    otherSensors?: TemperatureSensor[];
 	    updateTime: number;
 	    bridgeOk: boolean;
 	    bridgeMessage: string;
@@ -1571,6 +1574,7 @@ export namespace types {
 	        this.cpuPowerSensors = this.convertValues(source["cpuPowerSensors"], PowerSensor);
 	        this.gpuPowerSensors = this.convertValues(source["gpuPowerSensors"], PowerSensor);
 	        this.gpuDevices = this.convertValues(source["gpuDevices"], TemperatureGPUDevice);
+	        this.otherSensors = this.convertValues(source["otherSensors"], TemperatureSensor);
 	        this.updateTime = source["updateTime"];
 	        this.bridgeOk = source["bridgeOk"];
 	        this.bridgeMessage = source["bridgeMessage"];

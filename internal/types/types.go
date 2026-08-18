@@ -175,6 +175,10 @@ type TemperatureSelection struct {
 	// DisableGpu 完全跳过 GPU 温度/功耗读取。混合显卡笔记本上轮询 GPU 传感器
 	// 会持续唤醒独显，开启后控温基准只使用 CPU 温度。
 	DisableGpu bool `json:"disableGpu"`
+	// ExtendedSensors 额外读取内存、硬盘、主板/EC、电源等温度。它们不参与控温，
+	// 只用于展示与散热收益报告；单列开关是因为要为此打开 SMART/SPD/Super I/O 通道，
+	// 对常驻后台的核心不是零成本。
+	ExtendedSensors bool `json:"extendedSensors"`
 }
 
 // NormalizeTemperatureSelection 归一化温度选择配置。
@@ -341,9 +345,13 @@ type TemperatureData struct {
 	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`   // 当前识别到的 CPU 功耗传感器
 	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`   // 当前选中 GPU 的功耗传感器
 	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`        // 当前识别到的 GPU 设备列表
-	UpdateTime        int64                  `json:"updateTime"`        // 更新时间戳
-	BridgeOk          bool                   `json:"bridgeOk"`          // 桥接程序是否正常
-	BridgeMsg         string                 `json:"bridgeMessage"`     // 桥接故障提示
+	// OtherSensors 是 CPU/GPU 之外能读到的全部温度：内存、硬盘、主板、EC、电源、电池。
+	// 归属由 Key 前缀标明（memory/ storage/ board/ ec/ psu/ battery/），与 cpu/ gpu/ 同一套约定。
+	// 仅在开启扩展传感器时非空，且不参与控温决策。
+	OtherSensors []TemperatureSensor `json:"otherSensors,omitempty"`
+	UpdateTime   int64               `json:"updateTime"`    // 更新时间戳
+	BridgeOk     bool                `json:"bridgeOk"`      // 桥接程序是否正常
+	BridgeMsg    string              `json:"bridgeMessage"` // 桥接故障提示
 	// CPUTempError 是 CPU 温度专属的故障说明与修复指引。
 	// CPU 温度只能由 PawnIO 读取，没有可信的替代来源，因此读不到时必须明确告知用户，
 	// 而不是留一个没有解释的空值。GPU 正常时 BridgeOk 仍为 true，该字段独立生效。
@@ -439,6 +447,7 @@ type BridgeTemperatureData struct {
 	CpuPowerSensors   []PowerSensor          `json:"cpuPowerSensors"`
 	GpuPowerSensors   []PowerSensor          `json:"gpuPowerSensors"`
 	GpuDevices        []TemperatureGPUDevice `json:"gpuDevices"`
+	OtherSensors      []TemperatureSensor    `json:"otherSensors"`
 	UpdateTime        int64                  `json:"updateTime"`
 	Success           bool                   `json:"success"`
 	Error             string                 `json:"error"`

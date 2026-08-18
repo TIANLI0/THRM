@@ -125,6 +125,8 @@ export function SetCustomSpeed(arg1:boolean,arg2:number):Promise<void>;
 
 export function SetDebugMode(arg1:boolean):Promise<void>;
 
+export function SetExtendedSensors(arg1:boolean):Promise<boolean>;
+
 export function SetFanCurve(arg1:Array<types.FanCurvePoint>):Promise<void>;
 
 export function SetFlydigiCompat(arg1:boolean):Promise<flydigicompat.Status>;

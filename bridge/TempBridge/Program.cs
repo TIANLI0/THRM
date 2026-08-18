@@ -30,6 +30,10 @@ namespace THRM.TempBridge
         public PowerSensor[] CpuPowerSensors { get; set; }
         public PowerSensor[] GpuPowerSensors { get; set; }
         public TemperatureGpuDevice[] GpuDevices { get; set; }
+        // OtherSensors 是 CPU/GPU 之外一切能读到的温度：内存、硬盘、主板、EC、
+        // 电源等。归属由 Key 前缀标明（memory/ storage/ board/ ...），与 cpu/ gpu/
+        // 是同一套约定，因此上层不需要再引入新的分类字段。
+        public TemperatureSensor[] OtherSensors { get; set; }
         public long UpdateTime { get; set; }
         public bool Success { get; set; }
         public string Error { get; set; }
@@ -50,6 +54,7 @@ namespace THRM.TempBridge
             CpuPowerSensors = Array.Empty<PowerSensor>();
             GpuPowerSensors = Array.Empty<PowerSensor>();
             GpuDevices = Array.Empty<TemperatureGpuDevice>();
+            OtherSensors = Array.Empty<TemperatureSensor>();
             Error = string.Empty;
         }
     }
@@ -106,6 +111,10 @@ namespace THRM.TempBridge
         public string GpuSensor { get; set; }
         // 停用 GPU 监测：混合显卡笔记本上轮询 GPU 传感器会持续唤醒独显。
         public bool DisableGpu { get; set; }
+        // 扩展传感器：内存、硬盘、主板/EC 等 CPU 与 GPU 之外的温度源。
+        // 独立开关是因为它们要额外打开 SMART / SPD / Super I/O 通道，
+        // 对常驻后台的核心来说不是零成本，且个别机型上会与其他监控软件抢占 EC。
+        public bool ExtendedSensors { get; set; }
 
         public TemperatureSelection()
         {
@@ -114,6 +123,7 @@ namespace THRM.TempBridge
             CpuSensor = "auto";
             GpuSensor = "auto";
             DisableGpu = false;
+            ExtendedSensors = false;
         }
     }
 
@@ -190,6 +200,7 @@ namespace THRM.TempBridge
         // 是否启用 GPU 硬件监控。停用时 LibreHardwareMonitor 完全不初始化 GPU
         // 子系统（NVAPI/NVML 等），避免混合显卡笔记本的独显被轮询唤醒。
         private static bool gpuMonitoringEnabled = true;
+        private static bool extendedSensorsEnabled = false;
         private static bool running = true;
         private static readonly object lockObject = new object();
         private static Mutex singleInstanceMutex;
@@ -553,11 +564,16 @@ namespace THRM.TempBridge
                     {
                         IsCpuEnabled = true,
                         IsGpuEnabled = gpuMonitoringEnabled,
-                        IsMemoryEnabled = false,
-                        IsMotherboardEnabled = false,
-                        IsControllerEnabled = false,
-                        IsNetworkEnabled = false,
-                        IsStorageEnabled = false
+                        // 内存 / 硬盘 / 主板 / EC / 电源：只有开了扩展传感器才打开。
+                        // 这几项要各自建立 SPD、SMART、Super I/O 通道，常驻后台时是实打实的
+                        // 开销；关掉时必须在 Computer 层面关，光是不读取并不能停止轮询。
+                        IsMemoryEnabled = extendedSensorsEnabled,
+                        IsMotherboardEnabled = extendedSensorsEnabled,
+                        IsControllerEnabled = extendedSensorsEnabled,
+                        IsStorageEnabled = extendedSensorsEnabled,
+                        IsPsuEnabled = extendedSensorsEnabled,
+                        IsBatteryEnabled = extendedSensorsEnabled,
+                        IsNetworkEnabled = false
                     };
 
                     computer.Open();
@@ -970,6 +986,7 @@ namespace THRM.TempBridge
             var cpuSensors = new System.Collections.Generic.List<TemperatureSensor>();
             var cpuPowerSensors = new System.Collections.Generic.List<PowerSensor>();
             var gpuCandidates = new System.Collections.Generic.List<GpuCandidate>();
+            var otherSensors = new System.Collections.Generic.List<TemperatureSensor>();
             int gpuIndex = 0;
 
             try
@@ -980,6 +997,15 @@ namespace THRM.TempBridge
 
                     foreach (IHardware hardware in computer.Hardware)
                     {
+                        string otherPrefix = OtherSensorPrefix(hardware.HardwareType);
+                        if (otherPrefix != null)
+                        {
+                            // 内存、硬盘、主板、EC、电源、电池……凡是 LibreHardwareMonitor
+                            // 能报出温度的都收进来。CollectTemperatureSensors 会递归子硬件，
+                            // 因此主板下面的 Super I/O、硬盘下面的各温区都不会漏。
+                            CollectTemperatureSensors(hardware, otherPrefix, hardware.Name ?? string.Empty, hardware.Name ?? string.Empty, otherSensors);
+                            continue;
+                        }
                         if (hardware.HardwareType == HardwareType.Cpu)
                         {
                             if (cpuSensors.Count == 0)
@@ -1051,6 +1077,7 @@ namespace THRM.TempBridge
             result.GpuSensors = gpuSensors.ToArray();
             result.CpuPowerSensors = cpuPowerSensors.ToArray();
             result.GpuPowerSensors = gpuPowerSensors.ToArray();
+            result.OtherSensors = otherSensors.ToArray();
             result.GpuDevices = gpuCandidates.Select(candidate => new TemperatureGpuDevice
             {
                 Key = candidate.Key,
@@ -1111,11 +1138,14 @@ namespace THRM.TempBridge
                 // GPU 监测开关变化时重建硬件监控实例：只有在 Computer 层面关闭
                 // IsGpuEnabled 才能真正停止 NVAPI/NVML 轮询，避免独显被持续唤醒。
                 bool wantGpu = selection == null || !selection.DisableGpu;
-                if (wantGpu != gpuMonitoringEnabled)
+                bool wantExtended = selection != null && selection.ExtendedSensors;
+                if (wantGpu != gpuMonitoringEnabled || wantExtended != extendedSensorsEnabled)
                 {
+                    LogInitProgress(string.Format("监测范围切换（GPU={0} 扩展传感器={1}），重建硬件监控实例",
+                        wantGpu ? "启用" : "停用", wantExtended ? "启用" : "停用"));
                     gpuMonitoringEnabled = wantGpu;
-                    LogInitProgress(string.Format("GPU 监测开关切换为 {0}，重建硬件监控实例", wantGpu ? "启用" : "停用"));
-                    CloseComputerSafely("gpu-monitoring-toggle");
+                    extendedSensorsEnabled = wantExtended;
+                    CloseComputerSafely("monitoring-scope-toggle");
                     InitializeHardwareMonitor();
                 }
 
@@ -1151,6 +1181,35 @@ namespace THRM.TempBridge
                 }
 
                 return result;
+            }
+        }
+
+        // OtherSensorPrefix 给 CPU/GPU 之外的硬件类别一个稳定的 Key 前缀。
+        // 返回 null 表示"这类硬件由专门的分支处理，或者不该收集"。
+        // 前缀同时充当上层的分组标识，沿用 cpu/ gpu/ 那一套约定。
+        static string OtherSensorPrefix(HardwareType hardwareType)
+        {
+            switch (hardwareType)
+            {
+                case HardwareType.Memory:
+                    return "memory";
+                case HardwareType.Storage:
+                    return "storage";
+                case HardwareType.Motherboard:
+                case HardwareType.SuperIO:
+                    return "board";
+                case HardwareType.EmbeddedController:
+                    return "ec";
+                case HardwareType.Cooler:
+                    return "cooler";
+                case HardwareType.Psu:
+                    return "psu";
+                case HardwareType.Battery:
+                    return "battery";
+                default:
+                    // CPU 与各家 GPU 有各自的分支（要挑主温度、功耗、设备列表），
+                    // Network/PowerMonitor 没有温度可读。
+                    return null;
             }
         }
 

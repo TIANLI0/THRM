@@ -117,6 +117,13 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(status)
 
+	case ipc.ReqSetExtendedSensors:
+		var enabled bool
+		if err := json.Unmarshal(req.Data, &enabled); err != nil {
+			return a.errorResponse("解析扩展传感器开关失败: " + err.Error())
+		}
+		return a.dataResponse(map[string]bool{"enabled": a.SetExtendedSensors(enabled)})
+
 	case ipc.ReqGetCoolingBenefit:
 		return a.dataResponse(a.GetCoolingBenefit())
 
@@ -302,22 +309,24 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	case ipc.ReqTestTemperatureReading:
 		cfg := a.configManager.Get()
 		temp := a.tempReader.Read(types.TemperatureSelection{
-			TempSource: cfg.TempSource,
-			GpuDevice:  cfg.GpuDevice,
-			CpuSensor:  cfg.CpuSensor,
-			GpuSensor:  cfg.GpuSensor,
-			DisableGpu: cfg.DisableGpuMonitoring,
+			TempSource:      cfg.TempSource,
+			GpuDevice:       cfg.GpuDevice,
+			CpuSensor:       cfg.CpuSensor,
+			GpuSensor:       cfg.GpuSensor,
+			DisableGpu:      cfg.DisableGpuMonitoring,
+			ExtendedSensors: a.extendedSensorsActive(),
 		})
 		return a.dataResponse(temp)
 
 	case ipc.ReqTestBridgeProgram:
 		cfg := a.configManager.Get()
 		data := a.bridgeManager.GetTemperature(types.TemperatureSelection{
-			TempSource: cfg.TempSource,
-			GpuDevice:  cfg.GpuDevice,
-			CpuSensor:  cfg.CpuSensor,
-			GpuSensor:  cfg.GpuSensor,
-			DisableGpu: cfg.DisableGpuMonitoring,
+			TempSource:      cfg.TempSource,
+			GpuDevice:       cfg.GpuDevice,
+			CpuSensor:       cfg.CpuSensor,
+			GpuSensor:       cfg.GpuSensor,
+			DisableGpu:      cfg.DisableGpuMonitoring,
+			ExtendedSensors: a.extendedSensorsActive(),
 		})
 		return a.dataResponse(data)
 

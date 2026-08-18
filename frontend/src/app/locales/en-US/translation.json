@@ -786,7 +786,8 @@
       "chartPower": "Total power vs speed",
       "chartLaptopFan": "Laptop fan vs speed",
       "sensorLimit": "At most {{count}} sensors can be compared at once — deselect one first",
-      "noSeriesSelected": "No sensor selected. Pick one from the list below to add it to the comparison."
+      "noSeriesSelected": "No sensor selected. Pick one from the list below to add it to the comparison.",
+      "extendedSensorsHint": "For the duration of the test all readable sensors — memory, storage, motherboard/EC, PSU — are temporarily enabled, then switched off again. These readings never drive fan control and are not polled at other times: they require SMART / SPD / Super I/O channels that would otherwise cost background resources for nothing."
     }
   },
   "controlPanel": {

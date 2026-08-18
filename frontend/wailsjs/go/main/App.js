@@ -234,6 +234,10 @@ export function SetDebugMode(arg1) {
   return window['go']['main']['App']['SetDebugMode'](arg1);
 }
 
+export function SetExtendedSensors(arg1) {
+  return window['go']['main']['App']['SetExtendedSensors'](arg1);
+}
+
 export function SetFanCurve(arg1) {
   return window['go']['main']['App']['SetFanCurve'](arg1);
 }

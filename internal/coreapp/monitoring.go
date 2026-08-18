@@ -114,6 +114,9 @@ func compactTemperatureEventPayload(current, previous types.TemperatureData) typ
 	if gpuDevicesEqual(current.GpuDevices, previous.GpuDevices) {
 		compact.GpuDevices = nil
 	}
+	if temperatureSensorsEqual(current.OtherSensors, previous.OtherSensors) {
+		compact.OtherSensors = nil
+	}
 	return compact
 }
 
@@ -257,12 +260,13 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	recentAvgTemps := make([]int, 0, 24)
 	recentControlTemps := make([]int, 0, 24)
 	initialSelection := types.TemperatureSelection{
-		TempSource: cfg.TempSource,
-		GpuDevice:  cfg.GpuDevice,
-		CpuSensor:  cfg.CpuSensor,
-		CpuSensors: cfg.CpuSensors,
-		GpuSensor:  cfg.GpuSensor,
-		DisableGpu: cfg.DisableGpuMonitoring,
+		TempSource:      cfg.TempSource,
+		GpuDevice:       cfg.GpuDevice,
+		CpuSensor:       cfg.CpuSensor,
+		CpuSensors:      cfg.CpuSensors,
+		GpuSensor:       cfg.GpuSensor,
+		DisableGpu:      cfg.DisableGpuMonitoring,
+		ExtendedSensors: a.extendedSensorsActive(),
 	}
 	initialTemp := a.tempReader.Read(initialSelection)
 	if initialTemp.ControlTemp > 0 {
@@ -355,15 +359,18 @@ monitorLoop:
 				lastMemRelease = now
 				a.safeGo("release-idle-memory", func() { debug.FreeOSMemory() })
 			}
+			// 扩展传感器只为散热收益测试临时开启，而测试跑在 GUI 里。
+			a.releaseExtendedSensorsIfIdle(hasClients)
 			prevHasClients = hasClients
 
 			selection := types.TemperatureSelection{
-				TempSource: cfg.TempSource,
-				GpuDevice:  cfg.GpuDevice,
-				CpuSensor:  cfg.CpuSensor,
-				CpuSensors: cfg.CpuSensors,
-				GpuSensor:  cfg.GpuSensor,
-				DisableGpu: cfg.DisableGpuMonitoring,
+				TempSource:      cfg.TempSource,
+				GpuDevice:       cfg.GpuDevice,
+				CpuSensor:       cfg.CpuSensor,
+				CpuSensors:      cfg.CpuSensors,
+				GpuSensor:       cfg.GpuSensor,
+				DisableGpu:      cfg.DisableGpuMonitoring,
+				ExtendedSensors: a.extendedSensorsActive(),
 			}
 			temp := a.tempReader.Read(selection)
 			// 补充笔记本内置风扇转速（机械革命等 Uniwill/同方准系统），不支持时保持 0。

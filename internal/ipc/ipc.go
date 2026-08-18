@@ -75,6 +75,7 @@ const (
 	ReqGetCoolingBenefit        RequestType = "GetCoolingBenefit"
 	ReqSaveCoolingBenefitReport RequestType = "SaveCoolingBenefitReport"
 	ReqClearCoolingBenefit      RequestType = "ClearCoolingBenefit"
+	ReqSetExtendedSensors       RequestType = "SetExtendedSensors"
 	ReqPreviewRTSSPosition      RequestType = "PreviewRTSSPosition"
 
 	// 飞智空间站兼容

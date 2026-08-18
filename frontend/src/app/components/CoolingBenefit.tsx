@@ -165,8 +165,14 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
   }, [sensorDeltas, t]);
 
   const start = useCallback(async () => {
+    // 先开扩展传感器再做负载检查：打开会让桥接重建硬件监控实例，内存/硬盘/主板的
+    // 读数要过一两个采样周期才补齐。抢在检查和第一档热稳定之前打开，第一档采样时
+    // 传感器清单才是完整的——否则基准档缺的传感器会因为"没有可比的基准"被整条剔除。
+    await apiService.setExtendedSensors(true).catch(() => false);
+
     const check = await checkLoad();
     if (!check.hasPowerReadings || !check.ok) {
+      void apiService.setExtendedSensors(false).catch(() => false);
       toast.error(check.hasPowerReadings
         ? t('fanCurve.benefit.errors.idle', { watts: Math.round(check.watts), min: MIN_LOAD_WATTS })
         : t('fanCurve.benefit.errors.noPower'));
@@ -203,14 +209,16 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
       setPhase('intro');
     } finally {
       abortRef.current = null;
-      // 无论成功、失败还是中止，都必须把风扇交还给用户原本的控制方式：
-      // 测试期间它被锁在固定转速上，漏掉这一步风扇就永远停在最后一档。
+      // 无论成功、失败还是中止，都必须收拾干净：风扇要交还给用户原本的控制方式
+      // （测试期间它被锁在固定转速上，漏掉这一步风扇就永远停在最后一档），
+      // 扩展传感器也要关掉，不能让它一直在后台多轮询一批硬件。
       setRestoring(true);
       try {
         await restoreFanState(snapshot);
       } catch {
         toast.error(t('fanCurve.benefit.errors.restore'));
       } finally {
+        void apiService.setExtendedSensors(false).catch(() => false);
         setRestoring(false);
       }
     }
@@ -541,6 +549,11 @@ function IntroPanel({
           placeholder={t('fanCurve.benefit.loadLabelPlaceholder')}
           className="mt-2 w-full rounded-lg border border-border/70 bg-card px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary/50"
         />
+      </div>
+
+      {/* 说明扩展传感器是测试期间临时开的，免得用户以为程序在偷偷长期轮询硬盘。 */}
+      <div className="rounded-xl border border-border/70 bg-background/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+        {t('fanCurve.benefit.extendedSensorsHint')}
       </div>
 
       {!isConnected && (

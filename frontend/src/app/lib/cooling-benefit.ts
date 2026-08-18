@@ -102,7 +102,7 @@ export async function checkLoad(): Promise<LoadCheck> {
   return { ok: watts >= MIN_LOAD_WATTS, watts, hasPowerReadings: watts > 0 };
 }
 
-type SensorGroup = 'cpu' | 'gpu';
+type SensorGroup = 'cpu' | 'gpu' | 'other';
 
 interface SensorAccumulator {
   name: string;
@@ -150,6 +150,22 @@ function accumulateSensors(acc: Map<string, SensorAccumulator>, temp: types.Temp
   for (const sensor of temp.gpuSensors ?? []) {
     if (!sensor?.key) continue;
     push(`gpu/${sensor.key}`, sensor.name || sensor.key, 'gpu', sensor.value);
+  }
+}
+
+// 内存、硬盘、主板/EC、电源、电池等 CPU/GPU 之外的温度。桥接侧已经把归属编进
+// Key 前缀（memory/ storage/ board/ ...），这里不再重复分类。
+// 只有开启扩展传感器监测时这批读数才存在。
+function accumulateOtherSensors(acc: Map<string, SensorAccumulator>, temp: types.TemperatureData): void {
+  for (const sensor of temp.otherSensors ?? []) {
+    if (!sensor?.key || typeof sensor.value !== 'number' || sensor.value <= 0) continue;
+    const existing = acc.get(sensor.key);
+    if (existing) {
+      existing.sum += sensor.value;
+      existing.count += 1;
+      continue;
+    }
+    acc.set(sensor.key, { name: sensor.name || sensor.key, group: 'other', sum: sensor.value, count: 1 });
   }
 }
 
@@ -230,6 +246,7 @@ async function sampleStep(targetRPM: number, settled: boolean, signal?: AbortSig
     totals.push(totalPower(temp));
 
     accumulateSensors(sensorAcc, temp);
+    accumulateOtherSensors(sensorAcc, temp);
 
     try {
       const fanData = await apiService.getCurrentFanData();

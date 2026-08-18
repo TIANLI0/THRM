@@ -229,3 +229,18 @@ func (a *App) ClearCoolingBenefit(report, passive bool) (types.CoolingBenefitPay
 	json.Unmarshal(resp.Data, &payload)
 	return payload, nil
 }
+
+// SetExtendedSensors 临时开启/关闭扩展温度传感器（内存 / 硬盘 / 主板 / EC / 电源）。
+//
+// 这是会话级的临时开关，不写进配置：这些读数不参与控温，只有散热收益测试需要，
+// 而为它们打开的 SMART/SPD/Super I/O 通道会一直消耗后台资源。核心侧还会在 GUI
+// 断开或超时后自动关闭，所以即便这里漏发关闭指令也不会一直开着。
+func (a *App) SetExtendedSensors(enabled bool) bool {
+	resp, err := a.sendRequest(ipc.ReqSetExtendedSensors, enabled)
+	if err != nil || !resp.Success {
+		return false
+	}
+	var result map[string]bool
+	json.Unmarshal(resp.Data, &result)
+	return result["enabled"]
+}

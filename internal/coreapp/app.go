@@ -42,8 +42,16 @@ type CoreApp struct {
 	logger           *logger.CustomLogger
 	ipcServer        *ipc.Server
 
-	isConnected             bool
-	monitoringTemp          atomic.Bool
+	isConnected    bool
+	monitoringTemp atomic.Bool
+	// extendedSensorsUntil 是"临时全开扩展传感器"的到期时刻（UnixMilli，0=关闭）。
+	// 内存、硬盘、主板/EC 这些温度只有散热收益测试需要，而打开它们要额外建立
+	// SMART/SPD/Super I/O 通道，对 7×24 挂托盘的核心不是零成本。所以既不做成
+	// 持久化设置，也不常开——测试期间临时打开，结束即关。
+	//
+	// 存到期时刻而不是布尔，是因为它必须能自己关掉：GUI 崩了或卡死时没人来发关闭
+	// 指令，一个永远开着的扩展轮询正是这里要避免的东西。
+	extendedSensorsUntil    atomic.Int64
 	currentTemp             types.TemperatureData
 	deviceSettings          *types.DeviceSettings
 	lastDeviceMode          string
