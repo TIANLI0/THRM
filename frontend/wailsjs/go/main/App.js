@@ -30,6 +30,10 @@ export function DownloadAndInstallUpdate(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['DownloadAndInstallUpdate'](arg1, arg2, arg3, arg4);
 }
 
+export function ExportCoolingBenefitReport() {
+  return window['go']['main']['App']['ExportCoolingBenefitReport']();
+}
+
 export function ExportDiagnosticPackage() {
   return window['go']['main']['App']['ExportDiagnosticPackage']();
 }

@@ -787,7 +787,11 @@
       "chartLaptopFan": "本机风扇 — 转速",
       "sensorLimit": "最多同时对比 {{count}} 个传感器，请先取消一个",
       "noSeriesSelected": "未选择任何传感器。在下方列表中点选即可加入对比。",
-      "extendedSensorsHint": "测试期间会临时开启内存、硬盘、主板/EC、电源等全部可读温度传感器，结束后自动关闭。这些读数不参与控温，平时也不会轮询——它们需要额外打开 SMART / SPD / Super I/O 通道，常开会给后台带来不必要的开销。"
+      "extendedSensorsHint": "测试期间会临时开启内存、硬盘、主板/EC、电源等全部可读温度传感器，结束后自动关闭。这些读数不参与控温，平时也不会轮询——它们需要额外打开 SMART / SPD / Super I/O 通道，常开会给后台带来不必要的开销。",
+      "export": "导出 txt",
+      "exportDone": "已导出到 {{path}}",
+      "exportFailed": "导出失败: {{message}}",
+      "exportHint": "导出为纯文本，含每个档位的逐传感器原始读数与判定依据，可直接交给 AI 分析。"
     }
   },
   "controlPanel": {

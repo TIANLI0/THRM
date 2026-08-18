@@ -20,6 +20,7 @@ import {
   GetCoolingBenefit,
   SaveCoolingBenefitReport,
   ClearCoolingBenefit,
+  ExportCoolingBenefitReport,
   SetExtendedSensors,
   GetFanCurve,
   SetAutoControl,
@@ -178,6 +179,11 @@ class ApiService {
 
   async clearCoolingBenefit(report: boolean, passive: boolean): Promise<types.CoolingBenefitPayload> {
     return await ClearCoolingBenefit(report, passive);
+  }
+
+  // 导出纯文本报告供外部分析。返回保存路径；用户取消保存对话框时返回空串。
+  async exportCoolingBenefitReport(): Promise<string> {
+    return await ExportCoolingBenefitReport();
   }
 
   // 临时开启扩展温度传感器（内存/硬盘/主板/EC/电源）。会话级，不写配置；

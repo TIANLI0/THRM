@@ -18,7 +18,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Activity, Gauge, Play, Thermometer, TriangleAlert, X, Zap } from 'lucide-react';
+import { Activity, Download, Gauge, Play, Thermometer, TriangleAlert, X, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import clsx from 'clsx';
@@ -100,6 +100,7 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
   const [loadLabel, setLoadLabel] = useState('');
   const [restoring, setRestoring] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [selectedSensors, setSelectedSensors] = useState<string[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -225,6 +226,19 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
   }, [config, deviceModel, loadLabel, t, temperature?.cpuModel, temperature?.gpuModel]);
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
+
+  const exportReport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const path = await apiService.exportCoolingBenefitReport();
+      // 空路径表示用户在保存对话框里点了取消，不是失败。
+      if (path) toast.success(t('fanCurve.benefit.exportDone', { path }));
+    } catch (error) {
+      toast.error(t('fanCurve.benefit.exportFailed', { message: getErrorMessage(error) }));
+    } finally {
+      setExporting(false);
+    }
+  }, [t]);
 
   const clearReport = useCallback(async () => {
     setClearing(true);
@@ -352,9 +366,20 @@ export default function CoolingBenefit({ open, onOpenChange, config, deviceModel
           ) : (
             <>
               {report && (
-                <Button variant="secondary" size="sm" onClick={clearReport} loading={clearing}>
-                  {t('fanCurve.benefit.clear')}
-                </Button>
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={exportReport}
+                    loading={exporting}
+                    icon={<Download className="h-3.5 w-3.5" />}
+                  >
+                    {t('fanCurve.benefit.export')}
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={clearReport} loading={clearing}>
+                    {t('fanCurve.benefit.clear')}
+                  </Button>
+                </>
               )}
               <Button variant="secondary" size="sm" onClick={() => onOpenChange(false)}>
                 {t('common.actions.close')}
@@ -717,8 +742,9 @@ function ReportPanel({
         </div>
       )}
 
-      <div className="text-[11px] text-muted-foreground">
-        {t('fanCurve.benefit.measuredAt', { date: new Date(report.createdAt * 1000).toLocaleString(i18n.language) })}
+      <div className="space-y-1 text-[11px] text-muted-foreground">
+        <div>{t('fanCurve.benefit.measuredAt', { date: new Date(report.createdAt * 1000).toLocaleString(i18n.language) })}</div>
+        <div className="leading-relaxed">{t('fanCurve.benefit.exportHint')}</div>
       </div>
     </div>
   );

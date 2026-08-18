@@ -3,10 +3,14 @@ package guiapp
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
 	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/types"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // SetFanCurve 设置风扇曲线
@@ -243,4 +247,38 @@ func (a *App) SetExtendedSensors(enabled bool) bool {
 	var result map[string]bool
 	json.Unmarshal(resp.Data, &result)
 	return result["enabled"]
+}
+
+// ExportCoolingBenefitReport 把散热收益测试结果导出成纯文本，返回保存路径。
+// 用户取消保存对话框时返回空路径且不报错。
+func (a *App) ExportCoolingBenefitReport() (string, error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("application is not ready")
+	}
+
+	resp, err := a.sendRequest(ipc.ReqExportCoolingBenefitText, nil)
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success {
+		return "", fmt.Errorf("%s", resp.Error)
+	}
+	var text string
+	if err := json.Unmarshal(resp.Data, &text); err != nil {
+		return "", err
+	}
+
+	name := fmt.Sprintf("THRM-cooling-benefit-%s.txt", time.Now().Format("20060102-150405"))
+	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{
+		Title:           "Export cooling benefit report",
+		DefaultFilename: name,
+		Filters:         []wailsruntime.FileFilter{{DisplayName: "Text file", Pattern: "*.txt"}},
+	})
+	if err != nil || strings.TrimSpace(path) == "" {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }

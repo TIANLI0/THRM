@@ -138,6 +138,13 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(payload)
 
+	case ipc.ReqExportCoolingBenefitText:
+		text, err := a.ExportCoolingBenefitText()
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(text)
+
 	case ipc.ReqClearCoolingBenefit:
 		var params ipc.ClearCoolingBenefitParams
 		if err := json.Unmarshal(req.Data, &params); err != nil {
