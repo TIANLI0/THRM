@@ -217,6 +217,91 @@ func (a *CoreApp) ResetLearnedOffsets() error {
 	return nil
 }
 
+/* ── 自适应学习 2.0 ── */
+
+// GetAdaptiveStatus 返回 2.0 的运行状态：倾向派生出的目标、模型学习进度、
+// 以及当前（或预览的）自动曲线。
+func (a *CoreApp) GetAdaptiveStatus() smartcontrol.AdaptiveStatus {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	return smartcontrol.BuildAdaptiveStatus(a.configManager.Get().SmartControl)
+}
+
+// SetAdaptiveConfig 部分更新 2.0 配置（开关 / 倾向 / 安全红线）。
+//
+// 任何改动都会立刻重算一次自动曲线并写回配置：控温环最快也要到下一个采样周期
+// 才会重算，而 GUI 在滑块松手的瞬间就要显示新曲线。这里同步算一遍既让界面即时
+// 响应，也让重启后能从这条曲线继续，而不是退回种子曲线。
+func (a *CoreApp) SetAdaptiveConfig(params ipc.SetAdaptiveConfigParams) (smartcontrol.AdaptiveStatus, error) {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	cfg := a.configManager.Get()
+	adaptive := cfg.SmartControl.Adaptive
+
+	if params.Enabled != nil {
+		adaptive.Enabled = *params.Enabled
+	}
+	if params.Preference != nil {
+		if *params.Preference < types.AdaptivePreferenceMin || *params.Preference > types.AdaptivePreferenceMax {
+			return smartcontrol.AdaptiveStatus{}, fmt.Errorf("倾向取值需在 %d..%d 之间", types.AdaptivePreferenceMin, types.AdaptivePreferenceMax)
+		}
+		adaptive.Preference = *params.Preference
+	}
+	if params.TempLimit != nil {
+		if *params.TempLimit < types.AdaptiveTempLimitMin || *params.TempLimit > types.AdaptiveTempLimitMax {
+			return smartcontrol.AdaptiveStatus{}, fmt.Errorf("安全红线需在 %d..%d°C 之间", types.AdaptiveTempLimitMin, types.AdaptiveTempLimitMax)
+		}
+		adaptive.TempLimit = *params.TempLimit
+	}
+
+	adaptive, _ = smartcontrol.NormalizeAdaptiveConfig(adaptive)
+	cfg.SmartControl.Adaptive = adaptive
+	a.refreshAdaptiveCurve(&cfg)
+
+	if err := a.configManager.Update(cfg); err != nil {
+		return smartcontrol.AdaptiveStatus{}, err
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	return smartcontrol.BuildAdaptiveStatus(cfg.SmartControl), nil
+}
+
+// ResetAdaptiveModel 清空 2.0 学到的热模型，倾向与开关保持不变。
+func (a *CoreApp) ResetAdaptiveModel() (smartcontrol.AdaptiveStatus, error) {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+
+	cfg := a.configManager.Get()
+	cfg.SmartControl.Adaptive = smartcontrol.ResetAdaptiveModel(cfg.SmartControl.Adaptive)
+	a.refreshAdaptiveCurve(&cfg)
+
+	if err := a.configManager.Update(cfg); err != nil {
+		return smartcontrol.AdaptiveStatus{}, err
+	}
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+	}
+	a.logInfo("已重置自适应学习 2.0 热模型")
+	return smartcontrol.BuildAdaptiveStatus(cfg.SmartControl), nil
+}
+
+// refreshAdaptiveCurve 用当前配置重算自动曲线并写回。传 nil 作为上一版曲线：
+// 这条路径只由显式的用户操作触发，应当一步到位，不受渐变限幅约束。
+func (a *CoreApp) refreshAdaptiveCurve(cfg *types.AppConfig) {
+	adaptive := cfg.SmartControl.Adaptive
+	adaptive.AutoCurve = smartcontrol.SynthesizeAdaptiveCurve(
+		adaptive.Model,
+		smartcontrol.DeriveAdaptiveTuning(adaptive),
+		cfg.SmartControl.NoiseProfile,
+		nil,
+	)
+	adaptive.AutoCurveUpdatedAt = time.Now().Unix()
+	cfg.SmartControl.Adaptive = adaptive
+}
+
 // SetAutoControl 设置智能变频
 func (a *CoreApp) SetAutoControl(enabled bool) error {
 	a.mutex.Lock()

@@ -136,7 +136,8 @@
     },
     "chart": {
       "fanCurve": "风扇转速曲线",
-      "openCurve": "曲线页"
+      "openCurve": "曲线页",
+      "adaptiveBadge": "2.0 生成"
     },
     "history": {
       "title": "温度与风扇历史",
@@ -165,7 +166,8 @@
       "smartDescription": "根据实时温度自动调节转速",
       "fixedDescription": "当前固定为 {{rpm}} RPM",
       "manualDescription": "可在设置页调整模式与参数",
-      "withProfile": "{{mode}}（{{profile}}）"
+      "withProfile": "{{mode}}（{{profile}}）",
+      "adaptiveDescription": "自适应学习 2.0 正在按你设定的倾向自动生成并修正曲线"
     },
     "bridgeState": {
       "runningOwned": "独占运行",
@@ -364,7 +366,8 @@
       },
       "series": {
         "base": "基础曲线",
-        "learned": "学习曲线"
+        "learned": "学习曲线",
+        "adaptive": "自适应 2.0"
       },
       "temperatureLabel": "温度: {{temperature}}°C"
     },
@@ -417,7 +420,9 @@
       "laptopGuardTitle": "笔记本风扇高转时缓慢降速",
       "laptopGuardDescription": "笔记本自身风扇仍接近最近的最高转速时，散热器每个采样周期最多降 60 RPM，避免温度一掉就急降速、温度回升后又要升速的来回摆动。仅在能读到笔记本风扇转速的机型上可用。",
       "laptopGuardToggleAria": "切换笔记本风扇高转时缓慢降速",
-      "predictiveToggleAria": "切换提前升速"
+      "predictiveToggleAria": "切换提前升速",
+      "supersededBadge": "已由 2.0 接管",
+      "supersededHint": "自适应学习 2.0 已开启，下面这些设置暂不生效。关闭 2.0 后会原样恢复。"
     },
     "noiseTest": {
       "title": "风扇噪音测试",
@@ -527,7 +532,8 @@
         "fri": "五",
         "sat": "六",
         "sun": "日"
-      }
+      },
+      "supersededHint": "自适应学习 2.0 已接管控温，分时方案切换的是用户曲线方案，在此期间不会影响实际转速。关闭 2.0 后恢复生效。"
     },
     "hints": {
       "dragPoint": "拖拽蓝色圆点调整转速",
@@ -657,6 +663,47 @@
       "learningReset": "已重置学习偏移",
       "learningResetDescription": "风扇曲线将完全按用户设定执行",
       "resetFailed": "重置失败"
+    },
+    "adaptive": {
+      "title": "自适应学习 2.0",
+      "badge": "自动曲线",
+      "active": "已接管",
+      "description": "不再需要你画曲线。它会在线辨识这台机器的散热特性，再按你设定的倾向自动生成并持续修正整条曲线。",
+      "toggleAria": "切换自适应学习 2.0",
+      "disabledHint": "开启后曲线将完全由算法生成，曲线编辑与自适应学习 1.0 会自动让位。随时关闭即可恢复手动曲线。",
+      "preferenceTitle": "倾向",
+      "preferenceDescription": "唯一需要你表达的偏好：向左更安静、允许温度高一些；向右更低温、接受风扇更吵。这里没有\"目标温度\"——算法权衡的是\"一度热值多少分贝\"，稳态落在哪里是权衡的结果，不会在某个温度上突然变脸。",
+      "anchors": {
+        "silent": "静音",
+        "balanced": "均衡",
+        "performance": "性能",
+        "extreme": "极致"
+      },
+      "derived": {
+        "rpmRange": "转速区间",
+        "model": "热模型",
+        "modelPower": "功耗级",
+        "modelBasic": "基础",
+        "atWarm": "70°C 时转速",
+        "atHot": "85°C 时转速"
+      },
+      "progressTitle": "学习进度",
+      "progressCount": "{{samples}} 个稳态样本",
+      "progressHint": "在不同负载下正常使用即可。风扇在稳定转速上待够久时会记录一次样本；学得越多，曲线越贴合这台机器。样本不足时会先沿用保守的内置曲线。",
+      "progress": {
+        "cold": "尚未开始",
+        "learning": "学习中",
+        "ready": "已就绪"
+      },
+      "limitTitle": "安全红线",
+      "limitDescription": "与倾向无关的硬约束：温度达到该值立即全速。算法会从 {{ceiling}}°C 附近开始逐步提高转速下限，而不是到点突然拉满。",
+      "resetTitle": "重置热模型",
+      "resetDescription": "换了机器、改了散热环境，或觉得学歪了，可以清空重新学。倾向设置会保留。",
+      "resetButton": "重新学习",
+      "resetDone": "热模型已重置，将重新开始学习",
+      "updateFailed": "更新自适应学习设置失败: {{message}}",
+      "chartNotice": "当前曲线由自适应学习 2.0 生成（紫色实线），无法手动拖动。灰色细线是你保存的手动曲线，关闭 2.0 后立即恢复使用。",
+      "shortTitle": "自适应 2.0"
     }
   },
   "controlPanel": {
@@ -731,7 +778,8 @@
       "toasts": {
         "profileSwitched": "温控曲线已切换",
         "profileSwitchFailed": "切换曲线失败: {{error}}"
-      }
+      },
+      "curveProfileAdaptiveDescription": "自适应学习 2.0 开启中，切换方案暂不影响实际控温，仅决定关闭 2.0 后使用哪条手动曲线。"
     },
     "device": {
       "sectionTitle": "设备设置",

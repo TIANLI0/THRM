@@ -570,6 +570,8 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   }, [isWindowsPlatform]);
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
+  // 自适应学习 2.0 不查用户曲线，曲线方案切换在它开启期间是空操作。
+  const adaptiveActive = !!(config as any).smartControl?.adaptive?.enabled;
   const isBs1 = deviceModel === 'BS1';
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
@@ -1942,7 +1944,9 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           <SettingRow
             icon={<Spline className="h-4 w-4" />}
             title={t('controlPanel.fan.curveProfileTitle')}
-            description={t('controlPanel.fan.curveProfileDescription')}
+            description={adaptiveActive
+              ? t('controlPanel.fan.curveProfileAdaptiveDescription')
+              : t('controlPanel.fan.curveProfileDescription')}
           >
             <FanCurveProfileSelect
               profiles={curveProfiles}

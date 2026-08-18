@@ -136,7 +136,8 @@
     },
     "chart": {
       "fanCurve": "Fan speed curve",
-      "openCurve": "Curve page"
+      "openCurve": "Curve page",
+      "adaptiveBadge": "Generated"
     },
     "history": {
       "title": "Temperature and fan history",
@@ -165,7 +166,8 @@
       "smartDescription": "Adjusts fan speed automatically based on real-time temperature",
       "fixedDescription": "Locked to {{rpm}} RPM",
       "manualDescription": "You can adjust the mode and parameters in Settings",
-      "withProfile": "{{mode}} ({{profile}})"
+      "withProfile": "{{mode}} ({{profile}})",
+      "adaptiveDescription": "Adaptive learning 2.0 is generating and refining the curve from your preference"
     },
     "bridgeState": {
       "runningOwned": "Running exclusively",
@@ -364,7 +366,8 @@
       },
       "series": {
         "base": "Base curve",
-        "learned": "Learned curve"
+        "learned": "Learned curve",
+        "adaptive": "Adaptive 2.0"
       },
       "temperatureLabel": "Temperature: {{temperature}}°C"
     },
@@ -417,7 +420,9 @@
       "laptopGuardTitle": "Ramp down slowly while laptop fans are high",
       "laptopGuardDescription": "While the laptop's own fans are still near their recent maximum, the cooling pad drops at most 60 RPM per sampling cycle. That avoids the back-and-forth where a temperature dip cuts pad speed, the temperature bounces back, and it has to ramp up again. Available only on laptops whose fan speed can be read.",
       "laptopGuardToggleAria": "Toggle slow ramp-down while laptop fans are high",
-      "predictiveToggleAria": "Toggle ramp up early"
+      "predictiveToggleAria": "Toggle ramp up early",
+      "supersededBadge": "Superseded by 2.0",
+      "supersededHint": "Adaptive learning 2.0 is on, so these settings are inactive. They are restored untouched when you turn 2.0 off."
     },
     "noiseTest": {
       "title": "Fan noise test",
@@ -527,7 +532,8 @@
         "fri": "Fri",
         "sat": "Sat",
         "sun": "Sun"
-      }
+      },
+      "supersededHint": "Adaptive learning 2.0 is in control. Schedules switch manual curve profiles, which have no effect on fan speed while 2.0 is on. They resume once you turn it off."
     },
     "hints": {
       "dragPoint": "Drag the blue points to adjust RPM",
@@ -657,6 +663,47 @@
       "learningReset": "Learned offsets reset",
       "learningResetDescription": "The fan curve will now follow your configured values exactly",
       "resetFailed": "Reset failed"
+    },
+    "adaptive": {
+      "title": "Adaptive Learning 2.0",
+      "badge": "Generated curve",
+      "active": "In control",
+      "description": "No curve drawing required. It identifies this machine's cooling behaviour online, then generates and keeps refining the whole curve from the preference you set.",
+      "toggleAria": "Toggle adaptive learning 2.0",
+      "disabledHint": "Once enabled the curve is generated entirely by the algorithm, and curve editing plus adaptive learning 1.0 step aside. Turn it off at any time to get your manual curve back.",
+      "preferenceTitle": "Preference",
+      "preferenceDescription": "The only choice you need to make: left is quieter and tolerates higher temperatures, right is cooler and accepts more fan noise. There is no target temperature — the algorithm weighs how many decibels a degree is worth, so where it settles is the result of that trade-off and never changes character at some threshold.",
+      "anchors": {
+        "silent": "Silent",
+        "balanced": "Balanced",
+        "performance": "Performance",
+        "extreme": "Extreme"
+      },
+      "derived": {
+        "rpmRange": "RPM range",
+        "model": "Thermal model",
+        "modelPower": "Power-based",
+        "modelBasic": "Basic",
+        "atWarm": "RPM at 70°C",
+        "atHot": "RPM at 85°C"
+      },
+      "progressTitle": "Learning progress",
+      "progressCount": "{{samples}} steady samples",
+      "progressHint": "Just use the machine normally under varying loads. Every time the fan holds a stable speed long enough, one sample is recorded; the more it learns, the better the curve fits this machine. Until then it stays close to the conservative built-in curve.",
+      "progress": {
+        "cold": "Not started",
+        "learning": "Learning",
+        "ready": "Ready"
+      },
+      "limitTitle": "Safety limit",
+      "limitDescription": "A hard constraint independent of preference: reaching this temperature goes to full speed. The floor starts rising gradually from around {{ceiling}}°C rather than jumping at the line.",
+      "resetTitle": "Reset thermal model",
+      "resetDescription": "Changed machines, changed cooling setup, or think it learned the wrong thing? Clear it and start over. Your preference is kept.",
+      "resetButton": "Relearn",
+      "resetDone": "Thermal model reset; learning starts over",
+      "updateFailed": "Failed to update adaptive learning: {{message}}",
+      "chartNotice": "This curve is generated by adaptive learning 2.0 (solid violet line) and cannot be dragged. The thin grey line is your saved manual curve, which comes back the moment you turn 2.0 off.",
+      "shortTitle": "Adaptive 2.0"
     }
   },
   "controlPanel": {
@@ -731,7 +778,8 @@
       "toasts": {
         "profileSwitched": "Temperature curve switched",
         "profileSwitchFailed": "Failed to switch curve: {{error}}"
-      }
+      },
+      "curveProfileAdaptiveDescription": "Adaptive learning 2.0 is on, so switching profiles does not affect fan control right now — it only picks the manual curve used after you turn 2.0 off."
     },
     "device": {
       "sectionTitle": "Device settings",

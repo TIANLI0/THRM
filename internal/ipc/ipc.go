@@ -69,6 +69,9 @@ const (
 	ReqExportFanCurveProfiles   RequestType = "ExportFanCurveProfiles"
 	ReqImportFanCurveProfiles   RequestType = "ImportFanCurveProfiles"
 	ReqResetLearnedOffsets      RequestType = "ResetLearnedOffsets"
+	ReqGetAdaptiveStatus        RequestType = "GetAdaptiveStatus"
+	ReqSetAdaptiveConfig        RequestType = "SetAdaptiveConfig"
+	ReqResetAdaptiveModel       RequestType = "ResetAdaptiveModel"
 	ReqPreviewRTSSPosition      RequestType = "PreviewRTSSPosition"
 
 	// 飞智空间站兼容
@@ -1001,6 +1004,15 @@ type SetLightStripParams struct {
 }
 
 // SetActiveFanCurveProfileParams 设置激活曲线方案参数
+// SetAdaptiveConfigParams 是自适应学习 2.0 的部分更新参数。
+// 三个字段都用指针：GUI 每次只改一项，nil 表示"这项别动"，
+// 否则零值会被当成"关掉自动模式"或"倾向设为 0"。
+type SetAdaptiveConfigParams struct {
+	Enabled    *bool `json:"enabled,omitempty"`
+	Preference *int  `json:"preference,omitempty"`
+	TempLimit  *int  `json:"tempLimit,omitempty"`
+}
+
 type SetActiveFanCurveProfileParams struct {
 	ID string `json:"id"`
 }

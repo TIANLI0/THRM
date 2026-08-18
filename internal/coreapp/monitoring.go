@@ -286,6 +286,7 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	// 每个曲线点对应一个稳态采样桶。
 	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
 	thermalPredictor := smartcontrol.NewThermalPredictor()
+	adaptiveEngine := smartcontrol.NewAdaptiveEngine()
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 	// 只统计"定时器等待"期间流逝的时间，不把本轮采样/控温的耗时算进去。
@@ -312,6 +313,7 @@ monitorLoop:
 			gap := now.Sub(lastTimerReset)
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
 				thermalPredictor.Reset()
+				adaptiveEngine.Reset()
 				resetTimer(updateInterval)
 				continue
 			}
@@ -329,6 +331,7 @@ monitorLoop:
 				lastControlTemp = -1
 				steadyObserver.Reset()
 				thermalPredictor.Reset()
+				adaptiveEngine.Reset()
 				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
 			}
 
@@ -464,10 +467,38 @@ monitorLoop:
 					steadyObserver = smartcontrol.NewStableObserver(len(cfg.FanCurve))
 				}
 
+				// 自适应学习 2.0 接管时，本轮使用的曲线与控温参数都由"热模型 + 倾向"
+				// 解算得到，用户曲线与 1.0 学习偏移一律不参与。tickCfg 只在本轮有效，
+				// 不写回配置，避免派生参数污染用户可见的设置。
+				activeCurve := cfg.FanCurve
+				tickCfg := smartCfg
+				adaptiveOn := smartcontrol.AdaptiveActive(smartCfg)
+				if adaptiveOn {
+					steadyObserver.Reset()
+					autoCurve, curveChanged := adaptiveEngine.Curve(smartCfg, now)
+					if len(autoCurve) > 0 {
+						activeCurve = autoCurve
+						if curveChanged {
+							smartCfg.Adaptive.AutoCurve = append([]types.FanCurvePoint(nil), autoCurve...)
+							smartCfg.Adaptive.AutoCurveUpdatedAt = now.Unix()
+							cfg.SmartControl = smartCfg
+							a.configManager.Set(cfg)
+							learningDirty = true
+							a.logDebug("自适应 2.0 重算曲线: 倾向=%d 样本=%d 置信度=%.2f 基线=%.1f°C",
+								smartCfg.Adaptive.Preference,
+								smartCfg.Adaptive.Model.Samples,
+								smartcontrol.AdaptiveModelConfidence(smartCfg.Adaptive.Model),
+								smartCfg.Adaptive.Model.Baseline,
+							)
+						}
+					}
+					tickCfg = smartcontrol.ApplyAdaptiveTuning(tickCfg, smartcontrol.DeriveAdaptiveTuning(smartCfg.Adaptive))
+				}
+
 				sampleTemp := temp.ControlTemp
 				sampleSpikeSuppressed := false
-				if smartCfg.FilterTransientSpike {
-					sampleTemp, sampleSpikeSuppressed = smartcontrol.FilterTransientSample(temp.ControlTemp, rawTempHistory, smartCfg.Hysteresis)
+				if tickCfg.FilterTransientSpike {
+					sampleTemp, sampleSpikeSuppressed = smartcontrol.FilterTransientSample(temp.ControlTemp, rawTempHistory, tickCfg.Hysteresis)
 				}
 				rawTempHistory = append(rawTempHistory, temp.ControlTemp)
 				if len(rawTempHistory) > 6 {
@@ -490,8 +521,8 @@ monitorLoop:
 
 				controlTemp := avgTemp
 				controlSpikeSuppressed := false
-				if smartCfg.FilterTransientSpike {
-					controlTemp, controlSpikeSuppressed = smartcontrol.FilterTransientSpike(avgTemp, recentAvgTemps, smartCfg.TargetTemp, smartCfg.Hysteresis)
+				if tickCfg.FilterTransientSpike {
+					controlTemp, controlSpikeSuppressed = smartcontrol.FilterTransientSpike(avgTemp, recentAvgTemps, tickCfg.TargetTemp, tickCfg.Hysteresis)
 				}
 				spikeSuppressed := sampleSpikeSuppressed || controlSpikeSuppressed
 				recentControlTemps = append(recentControlTemps, controlTemp)
@@ -503,8 +534,8 @@ monitorLoop:
 				// 得出"再过一会儿大概会到多少度"，据此提前查曲线升速。稳态学习仍使用
 				// learningControlTemp（实测值），避免把预测值写进长期学习偏移。
 				learningControlTemp := controlTemp
-				if smartcontrol.PredictiveBoostActive(smartCfg) {
-					prediction := thermalPredictor.Observe(temp, now, cfg.TempSource, smartCfg.TrendGain)
+				if smartcontrol.PredictiveBoostActive(tickCfg) {
+					prediction := thermalPredictor.Observe(temp, now, cfg.TempSource, tickCfg.TrendGain)
 					if prediction.ControlTemp > controlTemp {
 						controlTemp = prediction.ControlTemp
 						a.logDebug("预测控温: 实测=%d°C 预测=%d°C CPU+%.1f°C GPU+%.1f°C CPU功耗=%.1fW GPU功耗=%.1fW",
@@ -520,12 +551,12 @@ monitorLoop:
 					thermalPredictor.Reset()
 				}
 
-				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(cfg.FanCurve)
+				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(activeCurve)
 
-				baseRPM := temperature.CalculateTargetRPM(controlTemp, cfg.FanCurve)
+				baseRPM := temperature.CalculateTargetRPM(controlTemp, activeCurve)
 				prevTargetRPM := lastTargetRPM
 
-				targetRPM := smartcontrol.CalculateTargetRPM(controlTemp, cfg.FanCurve, smartCfg)
+				targetRPM := smartcontrol.CalculateTargetRPM(controlTemp, activeCurve, tickCfg)
 				if targetRPM <= 0 {
 					targetRPM = baseRPM
 				}
@@ -535,7 +566,7 @@ monitorLoop:
 				}
 
 				if shouldApplyRampLimit(targetRPM, prevTargetRPM) {
-					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, smartCfg.RampUpLimit, smartCfg.RampDownLimit)
+					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, tickCfg.RampUpLimit, tickCfg.RampDownLimit)
 					if targetRPM > 0 {
 						targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
 					}
@@ -548,7 +579,7 @@ monitorLoop:
 
 				// 笔记本风扇仍接近近期最高转速时，限制散热器单次的降速幅度，
 				// 避免“温度一掉就急降速→温度立刻回升→又得升速”的来回摆动。
-				if smartcontrol.LaptopFanGuardActive(smartCfg) {
+				if smartcontrol.LaptopFanGuardActive(tickCfg) {
 					guardedRPM, guarded := smartcontrol.ApplyLaptopFanGuard(targetRPM, prevTargetRPM, laptopFanRPM, laptopFanPeakRPM)
 					if guarded {
 						a.logDebug("笔记本风扇高转，限制降速: 笔记本=%dRPM 近期峰值=%dRPM 目标 %d→%d RPM", laptopFanRPM, laptopFanPeakRPM, targetRPM, guardedRPM)
@@ -561,7 +592,7 @@ monitorLoop:
 				if fanData != nil && fanData.CurrentRPM > 0 {
 					observedRPM = int(fanData.CurrentRPM)
 				}
-				if shouldSendTargetRPM(targetRPM, prevTargetRPM, smartCfg.MinRPMChange, fanData) {
+				if shouldSendTargetRPM(targetRPM, prevTargetRPM, tickCfg.MinRPMChange, fanData) {
 					ready, written := a.setAutomaticFanSpeed(targetRPM)
 					if written {
 						lastTargetRPM = targetRPM
@@ -583,41 +614,69 @@ monitorLoop:
 					}
 				}
 
-				if smartCfg.Learning && !spikeSuppressed {
-					steady := steadyObserver.Observe(learningControlTemp, observedRPM, cfg.FanCurve, smartCfg)
-					if steady.Ready && steady.BucketIdx >= 0 {
-						newOffsets, changed := smartcontrol.LearnSteadyOffset(
-							steady.BucketIdx,
-							steady.MeanTemp,
-							steady.MeanRPM,
-							steady.LocalEff,
-							steady.HaveEff,
-							cfg.FanCurve,
-							smartCfg.LearnedOffsets,
-							smartCfg,
-						)
-						if changed {
-							smartCfg.LearnedOffsets = newOffsets
-							cfg.SmartControl = smartCfg
-							storeSmartControlOffsetsForActiveProfile(&cfg)
-							a.configManager.Set(cfg)
-							learningDirty = true
-						}
+				switch {
+				case adaptiveOn:
+					if spikeSuppressed {
+						// 被判定为尖峰的采样点不是真实稳态，喂给模型会把一次瞬时抖动
+						// 记成"这个转速下就该这么热"，进而长期抬高整条曲线。
+						adaptiveEngine.Reset()
+						break
+					}
+					// 模型要学的是"下发了多少转速"与温度的对应关系。设备实测转速会
+					// 滞后于指令，稳态期间才与指令一致，因此这里用当前生效的指令值。
+					commandedRPM := lastTargetRPM
+					if commandedRPM <= 0 {
+						commandedRPM = targetRPM
+					}
+					if obs, ok := adaptiveEngine.Observe(learningControlTemp, commandedRPM, observedRPM, temp.CPUPower+temp.GPUPower); ok {
+						smartCfg.Adaptive.Model = smartcontrol.UpdateAdaptiveThermalModel(smartCfg.Adaptive.Model, obs)
+						cfg.SmartControl = smartCfg
+						a.configManager.Set(cfg)
+						learningDirty = true
+						a.logDebug("自适应 2.0 稳态样本: %d°C @ %dRPM 功耗=%.1fW 基线=%.1f°C 累计=%d",
+							obs.Temp, obs.RPM, obs.Power, smartCfg.Adaptive.Model.Baseline, smartCfg.Adaptive.Model.Samples)
 					}
 
-					if learningDirty && time.Since(lastLearningSave) >= 25*time.Second {
-						if err := a.configManager.Save(); err != nil {
-							a.logError("保存学习偏移失败: %v", err)
-						} else {
-							lastLearningSave = time.Now()
-							learningDirty = false
-							if a.ipcServer != nil {
-								a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+				case smartCfg.Learning:
+					if !spikeSuppressed {
+						steady := steadyObserver.Observe(learningControlTemp, observedRPM, cfg.FanCurve, smartCfg)
+						if steady.Ready && steady.BucketIdx >= 0 {
+							newOffsets, changed := smartcontrol.LearnSteadyOffset(
+								steady.BucketIdx,
+								steady.MeanTemp,
+								steady.MeanRPM,
+								steady.LocalEff,
+								steady.HaveEff,
+								cfg.FanCurve,
+								smartCfg.LearnedOffsets,
+								smartCfg,
+							)
+							if changed {
+								smartCfg.LearnedOffsets = newOffsets
+								cfg.SmartControl = smartCfg
+								storeSmartControlOffsetsForActiveProfile(&cfg)
+								a.configManager.Set(cfg)
+								learningDirty = true
 							}
 						}
 					}
-				} else if !smartCfg.Learning {
+
+				default:
 					steadyObserver.Reset()
+				}
+
+				// 落盘节流对 1.0 偏移与 2.0 模型是同一套：两者都在控温环里高频改写，
+				// 每次都写盘既伤 SSD 也会拖慢采样周期。
+				if learningDirty && time.Since(lastLearningSave) >= 25*time.Second {
+					if err := a.configManager.Save(); err != nil {
+						a.logError("保存学习状态失败: %v", err)
+					} else {
+						lastLearningSave = time.Now()
+						learningDirty = false
+						if a.ipcServer != nil {
+							a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+						}
+					}
 				}
 
 				if baseRPM > 0 {

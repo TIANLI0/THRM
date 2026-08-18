@@ -115,6 +115,11 @@ func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, 
 		changed = true
 	}
 
+	if adaptive, updated := NormalizeAdaptiveConfig(cfg.Adaptive); updated {
+		cfg.Adaptive = adaptive
+		changed = true
+	}
+
 	if sanitized, updated := sanitizeNoiseProfile(cfg.NoiseProfile); updated {
 		cfg.NoiseProfile = sanitized
 		changed = true

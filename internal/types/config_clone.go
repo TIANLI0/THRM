@@ -39,6 +39,8 @@ func (s SmartControlConfig) Clone() SmartControlConfig {
 	cloned.LearnedRateHeat = slices.Clone(s.LearnedRateHeat)
 	cloned.LearnedRateCool = slices.Clone(s.LearnedRateCool)
 	cloned.NoiseProfile = slices.Clone(s.NoiseProfile)
+	cloned.Adaptive.Model.Buckets = slices.Clone(s.Adaptive.Model.Buckets)
+	cloned.Adaptive.AutoCurve = slices.Clone(s.Adaptive.AutoCurve)
 	cloned.TargetTempByProfile = maps.Clone(s.TargetTempByProfile)
 	cloned.LearningBiasByProfile = maps.Clone(s.LearningBiasByProfile)
 

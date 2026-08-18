@@ -12,6 +12,11 @@ import {
   CreateRTSSAnchor,
   SetFanCurve,
   ResetLearnedOffsets,
+  GetAdaptiveStatus,
+  SetAdaptiveMode,
+  SetAdaptivePreference,
+  SetAdaptiveTempLimit,
+  ResetAdaptiveModel,
   GetFanCurve,
   SetAutoControl,
   GetAppVersion,
@@ -36,7 +41,7 @@ import {
   // SetWindowsAutoStart
 } from '../../../wailsjs/go/main/App';
 
-import { rtss, types } from '../../../wailsjs/go/models';
+import { rtss, smartcontrol, types } from '../../../wailsjs/go/models';
 
 import type {
   DeviceInfo,
@@ -123,6 +128,29 @@ class ApiService {
   // 清空学习到的曲线偏移；后端清零所有 LearnedOffsets。
   async resetLearnedOffsets(): Promise<void> {
     return await ResetLearnedOffsets();
+  }
+
+  /* ── 自适应学习 2.0 ── */
+
+  async getAdaptiveStatus(): Promise<smartcontrol.AdaptiveStatus> {
+    return await GetAdaptiveStatus();
+  }
+
+  async setAdaptiveMode(enabled: boolean): Promise<smartcontrol.AdaptiveStatus> {
+    return await SetAdaptiveMode(enabled);
+  }
+
+  async setAdaptivePreference(preference: number): Promise<smartcontrol.AdaptiveStatus> {
+    return await SetAdaptivePreference(preference);
+  }
+
+  async setAdaptiveTempLimit(tempLimit: number): Promise<smartcontrol.AdaptiveStatus> {
+    return await SetAdaptiveTempLimit(tempLimit);
+  }
+
+  // 清空 2.0 学到的热模型；倾向与开关保持不变。
+  async resetAdaptiveModel(): Promise<smartcontrol.AdaptiveStatus> {
+    return await ResetAdaptiveModel();
   }
 
   async getFanCurve(): Promise<types.FanCurvePoint[]> {

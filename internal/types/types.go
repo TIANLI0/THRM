@@ -498,6 +498,65 @@ type NoiseProfilePoint struct {
 	DB  float64 `json:"db"`  // 相对噪音水平 (dB)
 }
 
+/* ── 自适应学习 2.0 ──
+
+1.0 学的是"用户曲线上每个点该加减多少转速"，学习结果被曲线形状与偏移上限锁死，
+用户仍要先画一条像样的曲线。2.0 换掉学习对象：在线辨识这台机器自身的热模型
+（空载基线温度、各转速档位的每瓦温升、可达转速上限），再由"模型 + 一个倾向值"
+直接解算出整条曲线。用户只需要在"安静"和"低温"之间表达偏好，其余参数全部派生。 */
+
+const (
+	// AdaptivePreferenceMin/Max 是倾向滑块的取值范围：0 = 极致安静，100 = 极致低温。
+	AdaptivePreferenceMin     = 0
+	AdaptivePreferenceMax     = 100
+	DefaultAdaptivePreference = 50
+
+	// TempLimit 是与倾向无关的安全红线：达到即全速，倾向再安静也不例外。
+	AdaptiveTempLimitMin     = 75
+	AdaptiveTempLimitMax     = 100
+	DefaultAdaptiveTempLimit = 90
+)
+
+// AdaptiveThermalBucket 汇总某一转速档位上观测到的稳态热行为。
+// RisePerWatt 是有功耗读数时的主模型，Rise 是读不到功耗时的退化模型。
+type AdaptiveThermalBucket struct {
+	RPM         int     `json:"rpm"`         // 桶中心转速
+	RisePerWatt float64 `json:"risePerWatt"` // 每瓦稳态温升 (°C/W)
+	Rise        float64 `json:"rise"`        // 相对基线的稳态温升 (°C)
+	Weight      float64 `json:"weight"`      // 累计样本权重
+	PowerWeight float64 `json:"powerWeight"` // 其中带有效功耗读数的权重
+}
+
+// AdaptiveThermalModel 是在线辨识出的整机热模型。
+type AdaptiveThermalModel struct {
+	Baseline       float64                 `json:"baseline"`       // 空载基线温度 (°C)
+	Buckets        []AdaptiveThermalBucket `json:"buckets"`        // 按转速升序
+	MaxObservedRPM int                     `json:"maxObservedRpm"` // 实测可达的最高转速
+	Samples        int                     `json:"samples"`        // 累计稳态样本数
+	UpdatedAt      int64                   `json:"updatedAt"`      // 最近一次更新 (Unix 秒)
+}
+
+// AdaptiveConfig 是自适应学习 2.0 的配置。模型与倾向都是整机级的，
+// 不随曲线方案切换——2.0 根本不使用用户曲线。
+type AdaptiveConfig struct {
+	Enabled    bool `json:"enabled"`    // 自动模式：曲线完全由算法生成
+	Preference int  `json:"preference"` // 倾向 0(安静) .. 100(低温)
+	TempLimit  int  `json:"tempLimit"`  // 安全红线温度 (°C)
+
+	Model              AdaptiveThermalModel `json:"model"`
+	AutoCurve          []FanCurvePoint      `json:"autoCurve"`          // 最近一次合成的曲线
+	AutoCurveUpdatedAt int64                `json:"autoCurveUpdatedAt"` // 合成时间 (Unix 秒)
+}
+
+// GetDefaultAdaptiveConfig 返回自适应学习 2.0 的默认配置。
+func GetDefaultAdaptiveConfig() AdaptiveConfig {
+	return AdaptiveConfig{
+		Enabled:    false,
+		Preference: DefaultAdaptivePreference,
+		TempLimit:  DefaultAdaptiveTempLimit,
+	}
+}
+
 type SmartControlConfig struct {
 	Enabled                 bool              `json:"enabled"`                         // 智能耦合控制开关
 	Learning                bool              `json:"learning"`                        // 学习开关
@@ -530,6 +589,8 @@ type SmartControlConfig struct {
 
 	NoiseProfile          []NoiseProfilePoint `json:"noiseProfile"`          // 实测转速-噪音曲线(麦克风噪音测试结果)
 	NoiseProfileUpdatedAt int64               `json:"noiseProfileUpdatedAt"` // 噪音测试完成时间(Unix 秒)
+
+	Adaptive AdaptiveConfig `json:"adaptive"` // 自适应学习 2.0：热模型 + 倾向自动生成曲线
 }
 
 const DefaultRTSSUpdateIntervalMS = 1000
@@ -692,6 +753,7 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 		LearnedOffsetsCool:   coolOffsets,
 		LearnedRateHeat:      heatRate,
 		LearnedRateCool:      coolRate,
+		Adaptive:             GetDefaultAdaptiveConfig(),
 	}
 }
 
@@ -1018,7 +1080,7 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		GuiMonitoring:                    true,
 		CustomSpeedEnabled:               false,
 		CustomSpeedRPM:                   2000,
-		IgnoreDeviceOnReconnect:          true, // 默认开启，防止断连后误判用户手动切换
+		IgnoreDeviceOnReconnect:          true,  // 默认开启，防止断连后误判用户手动切换
 		FlydigiCompat:                    false, // 默认关闭：会改写设备安全描述符，必须由用户显式开启
 		RTSS:                             GetDefaultRTSSConfig(),
 		SpeedAvoidance:                   GetDefaultSpeedAvoidanceConfig(),

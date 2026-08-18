@@ -91,6 +91,63 @@ export namespace rtss {
 
 }
 
+export namespace smartcontrol {
+	
+	export class AdaptiveStatus {
+	    enabled: boolean;
+	    preference: number;
+	    tempLimit: number;
+	    ceilingTemp: number;
+	    rpmFloor: number;
+	    rpmCeil: number;
+	    confidence: number;
+	    samples: number;
+	    baseline: number;
+	    usingPower: boolean;
+	    curve: types.FanCurvePoint[];
+	    updatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdaptiveStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.preference = source["preference"];
+	        this.tempLimit = source["tempLimit"];
+	        this.ceilingTemp = source["ceilingTemp"];
+	        this.rpmFloor = source["rpmFloor"];
+	        this.rpmCeil = source["rpmCeil"];
+	        this.confidence = source["confidence"];
+	        this.samples = source["samples"];
+	        this.baseline = source["baseline"];
+	        this.usingPower = source["usingPower"];
+	        this.curve = this.convertValues(source["curve"], types.FanCurvePoint);
+	        this.updatedAt = source["updatedAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace theme {
 	
 	export class Meta {
@@ -121,6 +178,120 @@ export namespace theme {
 }
 
 export namespace types {
+	
+	export class FanCurvePoint {
+	    temperature: number;
+	    rpm: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FanCurvePoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.temperature = source["temperature"];
+	        this.rpm = source["rpm"];
+	    }
+	}
+	export class AdaptiveThermalBucket {
+	    rpm: number;
+	    risePerWatt: number;
+	    rise: number;
+	    weight: number;
+	    powerWeight: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdaptiveThermalBucket(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.rpm = source["rpm"];
+	        this.risePerWatt = source["risePerWatt"];
+	        this.rise = source["rise"];
+	        this.weight = source["weight"];
+	        this.powerWeight = source["powerWeight"];
+	    }
+	}
+	export class AdaptiveThermalModel {
+	    baseline: number;
+	    buckets: AdaptiveThermalBucket[];
+	    maxObservedRpm: number;
+	    samples: number;
+	    updatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdaptiveThermalModel(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.baseline = source["baseline"];
+	        this.buckets = this.convertValues(source["buckets"], AdaptiveThermalBucket);
+	        this.maxObservedRpm = source["maxObservedRpm"];
+	        this.samples = source["samples"];
+	        this.updatedAt = source["updatedAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class AdaptiveConfig {
+	    enabled: boolean;
+	    preference: number;
+	    tempLimit: number;
+	    model: AdaptiveThermalModel;
+	    autoCurve: FanCurvePoint[];
+	    autoCurveUpdatedAt: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AdaptiveConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.enabled = source["enabled"];
+	        this.preference = source["preference"];
+	        this.tempLimit = source["tempLimit"];
+	        this.model = this.convertValues(source["model"], AdaptiveThermalModel);
+	        this.autoCurve = this.convertValues(source["autoCurve"], FanCurvePoint);
+	        this.autoCurveUpdatedAt = source["autoCurveUpdatedAt"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	
 	export class RGBColor {
 	    r: number;
@@ -219,6 +390,7 @@ export namespace types {
 	    learnedRateCool: number[];
 	    noiseProfile: NoiseProfilePoint[];
 	    noiseProfileUpdatedAt: number;
+	    adaptive: AdaptiveConfig;
 	
 	    static createFrom(source: any = {}) {
 	        return new SmartControlConfig(source);
@@ -256,6 +428,7 @@ export namespace types {
 	        this.learnedRateCool = source["learnedRateCool"];
 	        this.noiseProfile = this.convertValues(source["noiseProfile"], NoiseProfilePoint);
 	        this.noiseProfileUpdatedAt = source["noiseProfileUpdatedAt"];
+	        this.adaptive = this.convertValues(source["adaptive"], AdaptiveConfig);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -405,20 +578,6 @@ export namespace types {
 		    }
 		    return a;
 		}
-	}
-	export class FanCurvePoint {
-	    temperature: number;
-	    rpm: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new FanCurvePoint(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.temperature = source["temperature"];
-	        this.rpm = source["rpm"];
-	    }
 	}
 	export class LegionFnQSupportCache {
 	    checked: boolean;

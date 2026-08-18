@@ -10,12 +10,20 @@ func getCurveEdgeRPMBounds(curve []types.FanCurvePoint) (int, int) {
 // 纯曲线查表，再暗中改写目标转速只会让曲线与实际转速对不上。开关状态本身仍然保留。
 
 // PredictiveBoostActive 判断"提前升速"当前是否应生效。
+// 2.0 接管时它无条件开启：这两个子开关本就是"要不要让算法改写输出"的表达，
+// 而 2.0 的整条曲线都由算法给出，再让用户单独关掉前馈没有意义。
 func PredictiveBoostActive(cfg types.SmartControlConfig) bool {
+	if AdaptiveActive(cfg) {
+		return true
+	}
 	return cfg.Learning && cfg.PredictiveBoost
 }
 
 // LaptopFanGuardActive 判断"笔记本风扇高转时缓慢降速"当前是否应生效。
 func LaptopFanGuardActive(cfg types.SmartControlConfig) bool {
+	if AdaptiveActive(cfg) {
+		return true
+	}
 	return cfg.Learning && cfg.LaptopFanGuard
 }
 

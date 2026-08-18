@@ -25,6 +25,7 @@ import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
 import { clipHistoryToRecentWindow, downsampleHistoryPoints, HOME_CHART_WINDOW_MS, type TemperatureHistoryPoint } from '../lib/temperature-history';
 import { getManualGearLabel, getReportedMaxRpm } from '../lib/manualGearPresets';
+import { adaptivePreferenceLabelKey } from '../lib/adaptive-preference';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
 import { ToggleSwitch, Button } from './ui/index';
@@ -350,12 +351,16 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
   curve,
   currentTemp,
   onOpen,
+  adaptive = false,
 }: {
   curve: types.FanCurvePoint[] | undefined;
   currentTemp: number | undefined;
   onOpen?: () => void;
+  /** 曲线来自自适应学习 2.0：换配色并加标记，避免被误认为是用户自己画的那条。 */
+  adaptive?: boolean;
 }) {
   const { t } = useTranslation();
+  const strokeColor = adaptive ? 'var(--chart-adaptive)' : 'var(--chart-primary)';
 
   const geometry = useMemo(() => {
     const points = Array.isArray(curve)
@@ -410,7 +415,14 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
     >
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs font-semibold text-foreground">{t('deviceStatus.chart.fanCurve')}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="text-xs font-semibold text-foreground">{t('deviceStatus.chart.fanCurve')}</div>
+            {adaptive && (
+              <span className="rounded px-1 py-px text-[10px] font-medium text-violet-600 ring-1 ring-inset ring-violet-500/40 dark:text-violet-300">
+                {t('deviceStatus.chart.adaptiveBadge')}
+              </span>
+            )}
+          </div>
           <div className="text-[11px] text-muted-foreground">RPM</div>
         </div>
         {onOpen && (
@@ -431,8 +443,8 @@ const MiniFanCurveChart = memo(function MiniFanCurveChart({
               </g>
             );
           })}
-          <polygon points={areaPoints} fill="var(--chart-primary)" opacity="0.14" />
-          <polyline points={linePoints} fill="none" stroke="var(--chart-primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          <polygon points={areaPoints} fill={strokeColor} opacity="0.14" />
+          <polyline points={linePoints} fill="none" stroke={strokeColor} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           {currentX !== null && (
             <line x1={currentX} y1={pad.top} x2={currentX} y2={pad.top + plotHeight} stroke="var(--chart-temperature-indicator)" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.9" />
           )}
@@ -703,13 +715,29 @@ export default function DeviceStatus({
   const isBs1Model = deviceModel === 'BS1';
   const deviceModelName = isBs1Model ? 'BS1' : isBs3ProModel ? 'BS3 PRO' : isBs3Model ? 'BS3' : isBs2ProModel ? 'BS2 PRO' : isBs2Model ? 'BS2' : t('deviceStatus.device.unknown');
   const deviceImageSrc = isBs1Model ? '/bs2.png' : isBs2Model ? '/bs2.png' : '/bs2pro.png';
+  // 自适应学习 2.0 接管时，用户曲线与曲线方案都不参与控温，
+  // 首页必须跟着换成实际生效的那条曲线，否则这张卡说的就不是机器正在做的事。
+  const adaptiveConfig = (config.smartControl as any)?.adaptive;
+  const adaptiveActive = !!(config.autoControl && adaptiveConfig?.enabled);
+  const adaptiveCurve = Array.isArray(adaptiveConfig?.autoCurve) ? adaptiveConfig.autoCurve as types.FanCurvePoint[] : [];
+  const showAdaptiveCurve = adaptiveActive && adaptiveCurve.length > 0;
+  const homeCurve = showAdaptiveCurve ? adaptiveCurve : config.fanCurve;
+
   const modeTitle = config.autoControl ? t('deviceStatus.mode.smartControl') : config.customSpeedEnabled ? t('deviceStatus.mode.fixedSpeed') : t('deviceStatus.mode.manualStrategy');
-  const modeDesc = config.autoControl
-    ? t('deviceStatus.mode.smartDescription')
-    : config.customSpeedEnabled
-      ? t('deviceStatus.mode.fixedDescription', { rpm: config.customSpeedRPM || fanData?.currentRpm || '--' })
-      : t('deviceStatus.mode.manualDescription');
-  const modeDisplayTitle = activeCurveProfileName ? t('deviceStatus.mode.withProfile', { mode: modeTitle, profile: activeCurveProfileName }) : modeTitle;
+  const modeDesc = adaptiveActive
+    ? t('deviceStatus.mode.adaptiveDescription')
+    : config.autoControl
+      ? t('deviceStatus.mode.smartDescription')
+      : config.customSpeedEnabled
+        ? t('deviceStatus.mode.fixedDescription', { rpm: config.customSpeedRPM || fanData?.currentRpm || '--' })
+        : t('deviceStatus.mode.manualDescription');
+  // 2.0 下曲线方案是死的，把它换成真正决定行为的倾向档位。这里不再套「智能控制（…）」
+  // 的外壳：自适应本身就是一种智能控制，重复说一遍只会把这个窄格子撑到换行。
+  const modeDisplayTitle = adaptiveActive
+    ? `${t('fanCurve.adaptive.shortTitle')} · ${t(adaptivePreferenceLabelKey(adaptiveConfig?.preference ?? 50))}`
+    : activeCurveProfileName
+      ? t('deviceStatus.mode.withProfile', { mode: modeTitle, profile: activeCurveProfileName })
+      : modeTitle;
   const fanSpinDuration = getFanSpinDuration(fanData?.currentRpm);
   const maxRpmInfo = useMemo(() => getReportedMaxRpm(fanData?.gearSettings, fanData?.maxGear), [fanData?.gearSettings, fanData?.maxGear]);
   const deviceExtremeRPM = deviceSettings?.gearRpmTable?.find((item) => item.label === 'extreme')?.rpm;
@@ -1008,7 +1036,10 @@ export default function DeviceStatus({
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('deviceStatus.stats.controlMode')}
               </div>
-              <div className={clsx('text-sm font-semibold', config.autoControl ? 'text-primary' : 'text-amber-600 dark:text-amber-400')}>
+              <div
+                className={clsx('truncate text-sm font-semibold', config.autoControl ? 'text-primary' : 'text-amber-600 dark:text-amber-400')}
+                title={modeDisplayTitle}
+              >
                 {modeDisplayTitle}
               </div>
             </div>
@@ -1075,7 +1106,7 @@ export default function DeviceStatus({
           transition={{ delay: 0.2, duration: 0.3 }}
           className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)] min-[1800px]:gap-4"
         >
-          <MiniFanCurveChart curve={config.fanCurve} currentTemp={referenceTemp} onOpen={onOpenCurveEditor} />
+          <MiniFanCurveChart curve={homeCurve} currentTemp={referenceTemp} onOpen={onOpenCurveEditor} adaptive={showAdaptiveCurve} />
           <TemperatureHistoryPanel
             points={temperatureHistory}
             enabled={temperatureHistoryEnabled}

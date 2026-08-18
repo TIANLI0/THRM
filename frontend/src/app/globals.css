@@ -52,6 +52,8 @@
   --chart-primary-glow: rgba(47, 109, 246, 0.36);
   --chart-point-shadow: rgba(0, 0, 0, 0.1);
   --chart-temperature-indicator: #ef4444;
+  /* 自适应学习 2.0 生成的曲线：与主曲线拉开色相，避免两条线混淆 */
+  --chart-adaptive: #8b5cf6;
   --chart-tooltip-bg: rgba(255, 255, 255, 0.72);
   --chart-tooltip-border: transparent;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
@@ -153,6 +155,7 @@
   --chart-primary-glow: rgba(255, 75, 38, 0.42);
   --chart-point-shadow: rgba(0, 0, 0, 0.45);
   --chart-temperature-indicator: #ff7048;
+  --chart-adaptive: #a78bfa;
   --chart-tooltip-bg: rgba(17, 22, 29, 0.72);
   --chart-tooltip-border: #303845;
   --chart-tooltip-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
