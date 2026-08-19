@@ -230,7 +230,8 @@ jobs:
       # Sign only release-shaped builds. Pull requests and ordinary branch
       # artifacts remain unsigned development artifacts. Component signing
       # requests happen before NSIS packaging so the installer contains the
-      # signed application binaries; the final request signs the installer.
+      # signed application binaries; four SignPath requests cover the three
+      # Windows executables and the final installer.
       - name: Prepare THRM.exe for SignPath
         if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
         shell: pwsh
