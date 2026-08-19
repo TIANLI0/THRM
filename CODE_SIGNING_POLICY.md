@@ -4,13 +4,15 @@
 
 ## Status
 
-**Current status: application to the SignPath Foundation is pending.**
+**Current status: the SignPath Foundation review is complete and the THRM OSS organization is
+active.** The repository is wired for automatic SignPath signing on release-shaped GitHub
+Actions runs. The current OSS organization uses a self-signed test certificate while SignPath
+reviews the technical setup and imports the production certificate.
 
-Until the application is approved, Windows release assets are published **unsigned**, and
-Windows SmartScreen may warn on first run. Verify downloads using the checksums published
-with each [GitHub Release](https://github.com/TIANLI0/THRM/releases).
-
-Once approved, this section will state the first signed version and the certificate subject.
+The self-signed certificate is suitable for testing only: it is not trusted by Windows until
+the certificate is installed on the test device, and it must not be treated as a production
+release certificate. The workflow can switch to the production policy without changing the
+artifact flow once SignPath makes that policy available.
 
 ## Signing provider
 
@@ -53,6 +55,19 @@ release path.
 - **Logs:** every run is public at
   [Actions](https://github.com/TIANLI0/THRM/actions/workflows/build-and-release.yml)
 
+Release-shaped Windows runs perform three SignPath requests in sequence:
+
+1. Sign `THRM.exe`.
+2. Sign `THRM Core.exe`.
+3. Rebuild the NSIS installer from those signed binaries, then sign
+   `THRM-amd64-installer.exe`.
+
+The workflow uploads each executable as a non-archived GitHub Actions artifact, waits for the
+SignPath request to complete, and replaces the local build output with the returned signed
+artifact. The portable ZIP is created only after these replacements, so it contains the signed
+application binaries. Pull requests and ordinary branch builds remain unsigned development
+artifacts.
+
 All signed artifacts carry product name and version metadata, generated from
 [`build/windows/info.json`](build/windows/info.json) and the version declared in
 [`wails.json`](wails.json).
@@ -64,7 +79,7 @@ All signed artifacts carry product name and version metadata, generated from
 | `THRM-amd64-installer.exe` | NSIS installer (recommended) |
 | `THRM.exe` | Main application (GUI) |
 | `THRM Core.exe` | Background core service |
-| `THRM-windows-portable.zip` | Portable archive containing the above |
+| `THRM-windows-portable.zip` | Portable archive containing the signed application binaries and unsigned third-party components |
 
 Linux artifacts (`.tar.gz`, `.deb`) are not covered by this certificate.
 
@@ -91,8 +106,10 @@ Signed binaries are distributed **only** through official channels:
 Builds obtained anywhere else are not endorsed by this project. THRM does not sign or
 distribute builds produced by third parties.
 
-Development builds published as GitHub Actions artifacts or `nightly-*` pre-releases are **not
-signed** and are not covered by this policy.
+Development builds published from pull requests or ordinary branch pushes are **not signed** and
+are not covered by this policy. Manual preview releases and tagged releases use the configured
+SignPath policy; while the test certificate is active, those artifacts are test-signed rather
+than production-signed.
 
 ## Privacy
 

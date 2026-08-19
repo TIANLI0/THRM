@@ -168,10 +168,10 @@ THRM 的 Windows 发布包由 [SignPath.io](https://signpath.io/) 免费提供�
 
 签名证书以 SignPath Foundation 的名义签发，用于证明发布包由 GitHub Actions 从本仓库的公开源码自动构建。构建流程、签名范围和团队角色详见 **[代码签名策略](CODE_SIGNING_POLICY.md)**。
 
-请只从 [GitHub Releases](https://github.com/TIANLI0/THRM/releases) 下载；`nightly-*` 预发布版本和 CI 构建产物不签名。
+请只从 [GitHub Releases](https://github.com/TIANLI0/THRM/releases) 下载；Pull Request、普通分支构建和 CI 临时构建不签名。带标签的正式发布和通过 workflow_dispatch 生成的预发布会自动提交到 SignPath 签名。
 
 > [!NOTE]
-> 目前 SignPath Foundation 申请仍在审核中，发布包暂未签名，首次运行时 Windows SmartScreen 可能弹出提示。请使用 Release 页面附带的校验和验证下载文件。审核通过后本节会更新。
+> SignPath Foundation 已完成项目审核，当前 OSS 组织先使用自签名测试证书完成自动签名链路验证。自签名证书不会被 Windows 默认信任；在生产证书导入前，测试版仍可能触发 SmartScreen。生产证书就绪后只需将 SignPath 策略切换到生产签名策略，工作流无需重新设计。
 
 ### Linux
 

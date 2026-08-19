@@ -135,7 +135,17 @@ jobs:
     if: needs.prepare-release.outputs.should_build == 'true'
     runs-on: windows-latest
     permissions:
+      actions: read
       contents: read
+    env:
+      # The organization ID is a public SignPath identifier. Keep the API token
+      # in the repository secret SIGNPATH_API_TOKEN; never put it in this file.
+      SIGNPATH_ORGANIZATION_ID: 996137cc-9b10-4b1c-92d9-308ba50a5369
+      SIGNPATH_PROJECT_SLUG: thrm
+      # The OSS organization currently has the self-signed test certificate.
+      # Switch this to release-signing after SignPath imports the production CA
+      # certificate and the corresponding policy is enabled.
+      SIGNPATH_SIGNING_POLICY_SLUG: test-signing
 
     steps:
       - name: Checkout
@@ -196,6 +206,145 @@ jobs:
         env:
           THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
         run: build.bat
+
+      # Sign only release-shaped builds. Pull requests and ordinary branch
+      # artifacts remain unsigned development artifacts. The first two signing
+      # requests happen before NSIS packaging so the installer contains the
+      # signed application binaries; the final request signs the installer.
+      - name: Prepare THRM.exe for SignPath
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/signing-input/thrm | Out-Null
+          Copy-Item build/bin/THRM.exe build/signing-input/thrm/THRM.exe -Force
+
+      - name: Upload THRM.exe for SignPath
+        id: upload-thrm
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-thrm-${{ github.run_id }}
+          path: build/signing-input/thrm/THRM.exe
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign THRM.exe with SignPath
+        id: sign-thrm
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-thrm.outputs.artifact-id }}
+          wait-for-completion: true
+          skip-decompress: true
+          output-artifact-directory: build/signed/thrm
+
+      - name: Replace THRM.exe with the signed artifact
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem build/signed/thrm -Filter 'THRM.exe' -File -Recurse | Select-Object -First 1
+          if (-not $signed) { throw 'SignPath did not return THRM.exe' }
+          Copy-Item $signed.FullName build/bin/THRM.exe -Force
+
+      - name: Prepare THRM Core.exe for SignPath
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/signing-input/core | Out-Null
+          Copy-Item 'build/bin/THRM Core.exe' 'build/signing-input/core/THRM Core.exe' -Force
+
+      - name: Upload THRM Core.exe for SignPath
+        id: upload-core
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-thrm-core-${{ github.run_id }}
+          path: 'build/signing-input/core/THRM Core.exe'
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign THRM Core.exe with SignPath
+        id: sign-core
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-core.outputs.artifact-id }}
+          wait-for-completion: true
+          skip-decompress: true
+          output-artifact-directory: build/signed/core
+
+      - name: Replace THRM Core.exe with the signed artifact
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem build/signed/core -Filter 'THRM Core.exe' -File -Recurse | Select-Object -First 1
+          if (-not $signed) { throw 'SignPath did not return THRM Core.exe' }
+          Copy-Item $signed.FullName 'build/bin/THRM Core.exe' -Force
+
+      - name: Rebuild the NSIS installer from signed binaries
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          Push-Location build/windows/installer
+          try {
+            & makensis `
+              '-DARG_WAILS_AMD64_BINARY=..\..\bin\THRM.exe' `
+              '-DCORE_EXECUTABLE_SOURCE=..\..\bin\THRM Core.exe' `
+              'project.nsi'
+            if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Prepare installer for SignPath
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/signing-input/installer | Out-Null
+          Copy-Item build/bin/THRM-amd64-installer.exe build/signing-input/installer/THRM-amd64-installer.exe -Force
+
+      - name: Upload installer for SignPath
+        id: upload-installer
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-thrm-installer-${{ github.run_id }}
+          path: build/signing-input/installer/THRM-amd64-installer.exe
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign installer with SignPath
+        id: sign-installer
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          skip-decompress: true
+          output-artifact-directory: build/signed/installer
+
+      - name: Replace installer with the signed artifact
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem build/signed/installer -Filter 'THRM-amd64-installer.exe' -File -Recurse | Select-Object -First 1
+          if (-not $signed) { throw 'SignPath did not return THRM-amd64-installer.exe' }
+          Copy-Item $signed.FullName build/bin/THRM-amd64-installer.exe -Force
 
       - name: Collect release files
         shell: pwsh
