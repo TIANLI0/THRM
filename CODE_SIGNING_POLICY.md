@@ -4,10 +4,18 @@
 
 ## Status
 
-**Current status: the SignPath Foundation review is complete and the THRM OSS organization is
-active.** The repository is wired for automatic SignPath signing on release-shaped GitHub
-Actions runs. The current OSS organization uses a self-signed test certificate while SignPath
-completes the production certificate setup.
+**Current status: the SignPath Foundation review is complete and the repository workflow is
+ready for automatic signing.** The GitHub App, repository secret, test certificate, project,
+and test signing policy are configured. SignPath still needs to enable the predefined
+`GitHub.com` Trusted Build System for the OSS organization and link it to the `THRM` project;
+until that organization-side step is complete, the connector rejects the signing request
+before a signing request is created.
+
+The first validation tag, `v0.0.0-signpath-test.1`, confirmed that GitHub can build the Windows
+artifacts and upload them to Actions, but did not produce a release because SignPath returned
+`Could not authorize against SignPath API`. This is an organization configuration blocker,
+not a build or workflow failure. Once `GitHub.com` is enabled and linked, rerun the same tag
+workflow to complete the test signing.
 
 The self-signed certificate is suitable for testing only: it is not trusted by Windows until
 the certificate is installed on the test device, and it must not be treated as a production
@@ -111,6 +119,14 @@ Signed binaries are distributed **only** through official channels:
 
 Builds obtained anywhere else are not endorsed by this project. THRM does not sign or
 distribute builds produced by third parties.
+
+### SignPath organization prerequisites
+
+The SignPath organization must contain the predefined Trusted Build System **GitHub.com**, and
+that system must be linked to the `THRM` project. The SignPath GitHub App must also be installed
+for `TIANLI0/THRM`. A missing or unlinked Trusted Build System causes the connector to reject
+the request before certificate or policy processing; adding a custom Trusted Build System named
+`GitHub.com` is not equivalent to enabling the predefined connector.
 
 Development builds published from pull requests or ordinary branch pushes are **not signed** and
 are not covered by this policy. Manual preview releases and tagged releases use the configured
