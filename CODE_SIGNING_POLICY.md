@@ -69,7 +69,7 @@ Tags containing `signpath-test` or ending in `-test` are deliberately published 
 pre-releases. Their release notes carry a visible test notice explaining that the artifacts use
 the self-signed test certificate and are not production releases.
 
-Release-shaped Windows runs perform five SignPath requests in sequence:
+Release-shaped Windows runs perform four SignPath requests in sequence:
 
 1. Sign `THRM.exe`.
 2. Sign `THRM Core.exe`.
