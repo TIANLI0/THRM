@@ -173,7 +173,7 @@ THRM 的 Windows 发布包由 [SignPath.io](https://signpath.io/) 免费提供�
 用于验证自动签名链路的标签（例如 `v0.0.0-signpath-test.1`）会创建 GitHub 预发布，更新日志会明确标注“测试签名”；这类版本仅供验证，不代表生产发布。
 
 > [!NOTE]
-> SignPath Foundation 已完成项目审核，当前工作流、GitHub App、项目、策略和测试证书均已配置。首次测试已确认 Windows 构建与 artifact 上传成功，但 SignPath 组织尚未启用并关联预定义的 `GitHub.com` Trusted Build System，因此测试版尚未生成签名 Release；完成该组织侧配置后可直接重跑同一测试 tag。自签名证书不会被 Windows 默认信任；在生产证书导入前，测试版仍可能触发 SmartScreen。
+> SignPath Foundation 已完成项目审核，当前使用 `THRM [OSS]` 组织、预定义的 `GitHub.com` Trusted Build System 和专用 `CI builds` 用户。测试 tag 已验证 Windows 构建、三个 Windows 文件的自动签名以及测试预发布生成。自签名证书不会被 Windows 默认信任；在生产证书导入前，测试版仍可能触发 SmartScreen。
 
 ### Linux
 

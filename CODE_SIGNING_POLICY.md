@@ -22,6 +22,12 @@ the certificate is installed on the test device, and it must not be treated as a
 release certificate. The workflow can switch to the production policy without changing the
 artifact flow once SignPath makes that policy available.
 
+The active SignPath organization is **THRM [OSS]** (`edf9fbb2-1f9a-4920-84d0-3b3322208d7f`).
+The separate `Tianli` trial organization is not used by this repository. GitHub Actions
+authenticates with the dedicated `CI builds` SignPath CI user, whose `Submitter` role is
+granted for the `test-signing` policy; the token is stored only in the GitHub repository
+secret `SIGNPATH_API_TOKEN`.
+
 ## Signing provider
 
 Free code signing provided by [SignPath.io](https://signpath.io/), certificate by
