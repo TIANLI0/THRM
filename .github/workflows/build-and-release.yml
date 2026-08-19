@@ -114,17 +114,36 @@ jobs:
             if has_effective_changes "${GITHUB_SHA}"; then
               normalized_tag="${GITHUB_REF_NAME#v}"
               normalized_tag="${normalized_tag#V}"
-              {
-                echo "should_build=true"
-                echo "should_publish_release=true"
-                echo "release_type=stable"
-                echo "is_prerelease=false"
-                echo "release_tag=${GITHUB_REF_NAME}"
-                echo "release_name=${GITHUB_REF_NAME}"
-                echo "release_label=formal release"
-                echo "release_guidance=This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
-                echo "build_version=$normalized_tag"
-              } >> "$GITHUB_OUTPUT"
+              normalized_tag_lc="${normalized_tag,,}"
+
+              # A SignPath test tag must never look like a stable release. It
+              # creates a GitHub pre-release and the final notes add an
+              # explicit self-signed-certificate test notice.
+              if [[ "$normalized_tag_lc" == *signpath-test* || "$normalized_tag_lc" == *-test* ]]; then
+                {
+                  echo "should_build=true"
+                  echo "should_publish_release=true"
+                  echo "release_type=prerelease"
+                  echo "is_prerelease=true"
+                  echo "release_tag=${GITHUB_REF_NAME}"
+                  echo "release_name=SignPath test pre-release ${GITHUB_REF_NAME}"
+                  echo "release_label=SignPath test pre-release"
+                  echo "release_guidance=This is a SignPath integration-test pre-release. State clearly that it uses a self-signed test certificate, is not a production release, and may trigger Windows warnings. Do not describe it as stable or trusted."
+                  echo "build_version=$normalized_tag"
+                } >> "$GITHUB_OUTPUT"
+              else
+                {
+                  echo "should_build=true"
+                  echo "should_publish_release=true"
+                  echo "release_type=stable"
+                  echo "is_prerelease=false"
+                  echo "release_tag=${GITHUB_REF_NAME}"
+                  echo "release_name=${GITHUB_REF_NAME}"
+                  echo "release_label=formal release"
+                  echo "release_guidance=This is a formal release. Emphasize stable delivery and user-visible changes, but only state facts supported by the commit data."
+                  echo "build_version=$normalized_tag"
+                } >> "$GITHUB_OUTPUT"
+              fi
             fi
           else
             echo "should_build=true" >> "$GITHUB_OUTPUT"
@@ -967,6 +986,7 @@ jobs:
           RELEASE_NAME: ${{ needs.prepare-release.outputs.release_name }}
           RELEASE_TAG: ${{ needs.prepare-release.outputs.release_tag }}
           RELEASE_DATE: ${{ needs.prepare-release.outputs.release_date }}
+          RELEASE_LABEL: ${{ needs.prepare-release.outputs.release_label }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -1023,6 +1043,15 @@ jobs:
             $fallbackCommitLines = @(Get-Content 'build/release-context/ai-commits.txt')
             $fallbackFileLines = @(Get-Content 'build/release-context/ai-files.txt')
             $notes = New-FallbackNotes -ReleaseName $env:RELEASE_NAME -ReleaseTag $env:RELEASE_TAG -ReleaseDate $env:RELEASE_DATE -CommitLines $fallbackCommitLines -FileLines $fallbackFileLines
+          }
+
+          if ($env:RELEASE_LABEL -eq 'SignPath test pre-release') {
+            $testNotice = @(
+              '> ⚠️ 测试说明：此版本仅用于验证 SignPath 自动签名链路，使用自签名测试证书，不是生产发布；Windows 默认不会信任该证书，可能显示安全提示。'
+              '> ⚠️ Test notice: this build is only for validating the SignPath automated-signing pipeline. It uses a self-signed test certificate, is not a production release, and may show Windows security warnings.'
+              ''
+            ) -join [Environment]::NewLine
+            $notes = $testNotice + [Environment]::NewLine + $notes.Trim()
           }
 
           $notesRelativePath = 'build/release-context/release-notes.md'

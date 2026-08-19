@@ -7,7 +7,7 @@
 **Current status: the SignPath Foundation review is complete and the THRM OSS organization is
 active.** The repository is wired for automatic SignPath signing on release-shaped GitHub
 Actions runs. The current OSS organization uses a self-signed test certificate while SignPath
-reviews the technical setup and imports the production certificate.
+completes the production certificate setup.
 
 The self-signed certificate is suitable for testing only: it is not trusted by Windows until
 the certificate is installed on the test device, and it must not be treated as a production
@@ -55,6 +55,10 @@ release path.
 - **Logs:** every run is public at
   [Actions](https://github.com/TIANLI0/THRM/actions/workflows/build-and-release.yml)
 
+Tags containing `signpath-test` or ending in `-test` are deliberately published as GitHub
+pre-releases. Their release notes carry a visible test notice explaining that the artifacts use
+the self-signed test certificate and are not production releases.
+
 Release-shaped Windows runs perform three SignPath requests in sequence:
 
 1. Sign `THRM.exe`.
@@ -85,7 +89,9 @@ Linux artifacts (`.tar.gz`, `.deb`) are not covered by this certificate.
 
 ## Team roles
 
-Signing requires manual approval by a designated Approver. No release is signed automatically.
+The current `test-signing` policy has no approval gate, so the configured GitHub Actions release
+workflow submits and completes test signing automatically. When SignPath enables the production
+policy, its approval requirements must be reflected here before switching the workflow policy.
 
 | Role | Held by |
 | --- | --- |

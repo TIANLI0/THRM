@@ -170,6 +170,8 @@ THRM 的 Windows 发布包由 [SignPath.io](https://signpath.io/) 免费提供�
 
 请只从 [GitHub Releases](https://github.com/TIANLI0/THRM/releases) 下载；Pull Request、普通分支构建和 CI 临时构建不签名。带标签的正式发布和通过 workflow_dispatch 生成的预发布会自动提交到 SignPath 签名。
 
+用于验证自动签名链路的标签（例如 `v0.0.0-signpath-test.1`）会创建 GitHub 预发布，更新日志会明确标注“测试签名”；这类版本仅供验证，不代表生产发布。
+
 > [!NOTE]
 > SignPath Foundation 已完成项目审核，当前 OSS 组织先使用自签名测试证书完成自动签名链路验证。自签名证书不会被 Windows 默认信任；在生产证书导入前，测试版仍可能触发 SmartScreen。生产证书就绪后只需将 SignPath 策略切换到生产签名策略，工作流无需重新设计。
 
@@ -611,7 +613,7 @@ bun run build
 
 Pull Request 和推送到主要分支时，GitHub Actions 会分别构建 Windows 与 Linux 版本。
 
-推送 `v*` 或 `V*` 标签后，发布流程会自动生成：
+推送 `v*` 或 `V*` 标签后，发布流程会自动生成；标签包含 `signpath-test` 或以 `-test` 结尾时会标记为测试预发布：
 
 ```text
 THRM-amd64-installer.exe
