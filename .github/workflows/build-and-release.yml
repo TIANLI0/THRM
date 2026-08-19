@@ -159,7 +159,8 @@ jobs:
     env:
       # The organization ID is a public SignPath identifier. Keep the API token
       # in the repository secret SIGNPATH_API_TOKEN; never put it in this file.
-      SIGNPATH_ORGANIZATION_ID: 996137cc-9b10-4b1c-92d9-308ba50a5369
+      # THRM [OSS] organization (not the separate Tianli trial organization).
+      SIGNPATH_ORGANIZATION_ID: edf9fbb2-1f9a-4920-84d0-3b3322208d7f
       SIGNPATH_PROJECT_SLUG: thrm
       # The OSS organization currently has the self-signed test certificate.
       # Switch this to release-signing after SignPath imports the production CA
