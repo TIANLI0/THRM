@@ -228,7 +228,7 @@ jobs:
         run: build.bat
 
       # Sign only release-shaped builds. Pull requests and ordinary branch
-      # artifacts remain unsigned development artifacts. The first two signing
+      # artifacts remain unsigned development artifacts. Component signing
       # requests happen before NSIS packaging so the installer contains the
       # signed application binaries; the final request signs the installer.
       - name: Prepare THRM.exe for SignPath
@@ -310,6 +310,46 @@ jobs:
           $signed = Get-ChildItem build/signed/core -Filter 'THRM Core.exe' -File -Recurse | Select-Object -First 1
           if (-not $signed) { throw 'SignPath did not return THRM Core.exe' }
           Copy-Item $signed.FullName 'build/bin/THRM Core.exe' -Force
+
+      - name: Prepare THRM TempBridge.exe for SignPath
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/signing-input/tempbridge | Out-Null
+          Copy-Item 'build/bin/bridge/THRM TempBridge.exe' 'build/signing-input/tempbridge/THRM TempBridge.exe' -Force
+
+      - name: Upload THRM TempBridge.exe for SignPath
+        id: upload-tempbridge
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-thrm-tempbridge-${{ github.run_id }}
+          path: 'build/signing-input/tempbridge/THRM TempBridge.exe'
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign THRM TempBridge.exe with SignPath
+        id: sign-tempbridge
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-tempbridge.outputs.artifact-id }}
+          wait-for-completion: true
+          skip-decompress: true
+          output-artifact-directory: build/signed/tempbridge
+
+      - name: Replace THRM TempBridge.exe with the signed artifact
+        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem build/signed/tempbridge -Filter 'THRM TempBridge.exe' -File -Recurse | Select-Object -First 1
+          if (-not $signed) { throw 'SignPath did not return THRM TempBridge.exe' }
+          Copy-Item $signed.FullName 'build/bin/bridge/THRM TempBridge.exe' -Force
 
       - name: Rebuild the NSIS installer from signed binaries
         if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true) }}

@@ -5,17 +5,13 @@
 ## Status
 
 **Current status: the SignPath Foundation review is complete and the repository workflow is
-ready for automatic signing.** The GitHub App, repository secret, test certificate, project,
-and test signing policy are configured. SignPath still needs to enable the predefined
-`GitHub.com` Trusted Build System for the OSS organization and link it to the `THRM` project;
-until that organization-side step is complete, the connector rejects the signing request
-before a signing request is created.
+ready for automatic signing.** The active `THRM [OSS]` organization, GitHub App, repository
+secret, predefined `GitHub.com` Trusted Build System, test certificate, project, and test
+signing policy are configured. The dedicated `CI builds` user submits the signing requests.
 
-The first validation tag, `v0.0.0-signpath-test.1`, confirmed that GitHub can build the Windows
-artifacts and upload them to Actions, but did not produce a release because SignPath returned
-`Could not authorize against SignPath API`. This is an organization configuration blocker,
-not a build or workflow failure. Once `GitHub.com` is enabled and linked, rerun the same tag
-workflow to complete the test signing.
+The validation tag `v0.0.0-signpath-test.2` completed successfully and published a GitHub
+test pre-release. It verified Windows builds, automatic signing of `THRM.exe`, `THRM Core.exe`,
+`THRM TempBridge.exe`, and the NSIS installer, plus the signed portable archive.
 
 The self-signed certificate is suitable for testing only: it is not trusted by Windows until
 the certificate is installed on the test device, and it must not be treated as a production
@@ -73,11 +69,12 @@ Tags containing `signpath-test` or ending in `-test` are deliberately published 
 pre-releases. Their release notes carry a visible test notice explaining that the artifacts use
 the self-signed test certificate and are not production releases.
 
-Release-shaped Windows runs perform three SignPath requests in sequence:
+Release-shaped Windows runs perform five SignPath requests in sequence:
 
 1. Sign `THRM.exe`.
 2. Sign `THRM Core.exe`.
-3. Rebuild the NSIS installer from those signed binaries, then sign
+3. Sign `THRM TempBridge.exe`.
+4. Rebuild the NSIS installer from those signed binaries, then sign
    `THRM-amd64-installer.exe`.
 
 The workflow uploads each executable as a non-archived GitHub Actions artifact, waits for the
@@ -97,6 +94,7 @@ All signed artifacts carry product name and version metadata, generated from
 | `THRM-amd64-installer.exe` | NSIS installer (recommended) |
 | `THRM.exe` | Main application (GUI) |
 | `THRM Core.exe` | Background core service |
+| `bridge/THRM TempBridge.exe` | Windows temperature bridge |
 | `THRM-windows-portable.zip` | Portable archive containing the signed application binaries and unsigned third-party components |
 
 Linux artifacts (`.tar.gz`, `.deb`) are not covered by this certificate.

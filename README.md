@@ -158,6 +158,8 @@ PawnIO_setup.exe
 bridge/
 ```
 
+便携版的 `bridge/THRM TempBridge.exe` 也包含在自动签名范围内。
+
 Windows 温度监控使用 LibreHardwareMonitor 和 PawnIO。安装程序会处理所需组件；如果便携版无法读取 CPU 温度，可以手动运行目录中的 `PawnIO_setup.exe`。
 
 ### 代码签名
