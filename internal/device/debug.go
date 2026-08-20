@@ -16,6 +16,13 @@ const (
 
 func DebugCommandPresets() []types.DeviceDebugCommandPreset {
 	return []types.DeviceDebugCommandPreset{
+		{Name: "Read firmware version", CommandHex: "01", Description: "0x01, query the four-component firmware version"},
+		{Name: "Read initialization state", CommandHex: "02", Description: "0x02, query firmware initialization state"},
+		{Name: "Read device identifier", CommandHex: "04", Description: "0x04, query the six-byte factory device identifier"},
+		{Name: "Read controller capability", CommandHex: "07", Description: "0x07, query controller capability tier 1/2/3"},
+		{Name: "Read runtime profile", CommandHex: "09", Description: "0x09, query the raw persisted runtime profile byte"},
+		{Name: "Read identity block", CommandHex: "0B", Description: "0x0B, query the firmware identity marker and device identifier"},
+		{Name: "Read RPM state", CommandHex: "22", Description: "0x22, query measured and target RPM"},
 		{Name: "Read gear RPM table", CommandHex: "27", Description: "0x27, query saved gear RPM profile table"},
 		{Name: "Read work status", CommandHex: "25", Description: "0x25, query current work mode and gear state"},
 		{Name: "Read RGB status", CommandHex: "45", Description: "0x45, query RGB/dynamic status"},
@@ -58,6 +65,9 @@ func (m *Manager) recordDebugFrame(direction, transport string, raw []byte) uint
 		debugFrame.ChecksumOK = frameInfo.ChecksumOK
 		debugFrame.Description = deviceproto.CommandDescription(frameInfo.Command)
 		decoded := deviceproto.DecodeFrame(frameInfo)
+		if direction == "tx" {
+			decoded = deviceproto.DecodeRequest(frameInfo)
+		}
 		debugFrame.Decoded = decoded.Summary
 		debugFrame.Parsed = decoded
 	} else {
@@ -167,6 +177,9 @@ func (b *BLEManager) recordDebugFrame(direction, transport string, raw []byte) u
 		debugFrame.ChecksumOK = frameInfo.ChecksumOK
 		debugFrame.Description = deviceproto.CommandDescription(frameInfo.Command)
 		decoded := deviceproto.DecodeFrame(frameInfo)
+		if direction == "tx" {
+			decoded = deviceproto.DecodeRequest(frameInfo)
+		}
 		debugFrame.Decoded = decoded.Summary
 		debugFrame.Parsed = decoded
 	} else {
