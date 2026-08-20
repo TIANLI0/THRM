@@ -523,7 +523,7 @@ jobs:
           [ -n "$VER" ] || VER="dev"
           echo "Packaging version: $VER"
 
-          ICON_SRC="frontend/public/brand/appicon.png"
+          ICON_SRC="build/appicon.png"
           RULES_SRC="scripts/99-flydigi-fan.rules"
           DIST="build/dist"
           rm -rf "$DIST" build/stage build/deb

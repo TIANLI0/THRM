@@ -714,7 +714,7 @@ export default function DeviceStatus({
   const isBs2Model = deviceModel === 'BS2' || normalizedProductId === '0X1001';
   const isBs1Model = deviceModel === 'BS1';
   const deviceModelName = isBs1Model ? 'BS1' : isBs3ProModel ? 'BS3 PRO' : isBs3Model ? 'BS3' : isBs2ProModel ? 'BS2 PRO' : isBs2Model ? 'BS2' : t('deviceStatus.device.unknown');
-  const deviceImageSrc = isBs1Model ? '/bs2.png' : isBs2Model ? '/bs2.png' : '/bs2pro.png';
+  const deviceImageSrc = isBs1Model ? '/bs2.webp' : isBs2Model ? '/bs2.webp' : '/bs2pro.webp';
   // 自适应学习 2.0 接管时，用户曲线与曲线方案都不参与控温，
   // 首页必须跟着换成实际生效的那条曲线，否则这张卡说的就不是机器正在做的事。
   const adaptiveConfig = (config.smartControl as any)?.adaptive;
@@ -800,7 +800,7 @@ export default function DeviceStatus({
       <div className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5 min-[1800px]:p-5">
         <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
           <img
-            src="/theme/ice-operator-banner.png"
+            src="/theme/ice-operator-banner.webp"
             alt=""
             draggable={false}
             className="glacier-operator-art h-full w-full object-cover object-right opacity-[0.58] mix-blend-multiply"

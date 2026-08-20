@@ -680,7 +680,7 @@ export default function AppShell({
                 style={NO_DRAG_STYLE}
               >
                 <img
-                  src="/brand/wordmark-light.png"
+                  src="/brand/wordmark-light.webp"
                   alt={BRAND.name}
                   draggable={false}
                   className={clsx(
@@ -689,7 +689,7 @@ export default function AppShell({
                   )}
                 />
                 <img
-                  src="/brand/wordmark-dark.png"
+                  src="/brand/wordmark-dark.webp"
                   alt={BRAND.name}
                   draggable={false}
                   className={clsx(

@@ -19,7 +19,7 @@ install -Dm755 "$PROJECT_ROOT/build/thrm" "$INSTALL_DIR/thrm"
 install -Dm755 "$PROJECT_ROOT/build/thrm-core" "$INSTALL_DIR/thrm-core"
 
 # 2. Install application icon
-ICON_SRC="$PROJECT_ROOT/frontend/public/brand/appicon.png"
+ICON_SRC="$PROJECT_ROOT/build/appicon.png"
 if [ -f "$ICON_SRC" ]; then
     echo "--- Installing application icon ---"
     mkdir -p "$ICON_DIR"

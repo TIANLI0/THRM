@@ -34,7 +34,7 @@ source=(
   "thrm-core::file://${startdir}/build/thrm-core"
   "99-flydigi-fan.rules::file://${startdir}/scripts/99-flydigi-fan.rules"
   "thrm.desktop::file://${startdir}/packaging/linux/thrm.desktop"
-  "thrm.png::file://${startdir}/frontend/public/brand/appicon.png"
+  "thrm.png::file://${startdir}/build/appicon.png"
   'LICENSE'
 )
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
