@@ -78,6 +78,10 @@ class ApiService {
     return await (window as any).go?.main?.App?.RefreshDeviceSettings?.();
   }
 
+  async reinitializeDeviceFirmware(factoryReset = false): Promise<DeviceSettings | null> {
+    return await (window as any).go?.main?.App?.ReinitializeDeviceFirmware?.(factoryReset);
+  }
+
   // 配置管理
   async getConfig(): Promise<types.AppConfig> {
     return await GetConfig();

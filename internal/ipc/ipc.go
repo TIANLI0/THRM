@@ -56,6 +56,7 @@ const (
 	ReqGetDeviceStatus       RequestType = "GetDeviceStatus"
 	ReqGetCurrentFanData     RequestType = "GetCurrentFanData"
 	ReqRefreshDeviceSettings RequestType = "RefreshDeviceSettings"
+	ReqReinitializeFirmware  RequestType = "ReinitializeFirmware"
 
 	// 配置相关
 	ReqGetConfig                RequestType = "GetConfig"

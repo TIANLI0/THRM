@@ -1,11 +1,13 @@
 package coreapp
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
+	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -796,41 +798,90 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 	}
 	defer a.deviceControlMutex.Unlock()
 
+	if err := a.reapplyDeviceConfigLocked("重连"); err != nil {
+		a.logError("重连后部分配置重放失败: %v", err)
+	}
+}
+
+// reapplyDeviceConfigLocked reapplies every App-owned device setting. Callers
+// must hold deviceControlMutex; this is shared by reconnect and firmware
+// maintenance so 0x03/0x06 side effects cannot leak into the visible state.
+func (a *CoreApp) reapplyDeviceConfigLocked(reason string) error {
 	cfg := a.configManager.Get()
+	var replayErrors []error
 
 	// 重新应用智能变频配置
 	if cfg.AutoControl {
-		a.logInfo("重新启动智能变频")
+		targetRPM, exact := a.automaticReplayTargetRPM(cfg)
+		if exact {
+			a.logInfo("%s后恢复智能变频实时目标: %d RPM", reason, targetRPM)
+		} else {
+			a.logInfo("%s后按当前温度恢复智能变频目标: %d RPM", reason, targetRPM)
+		}
+		if !a.deviceManager.SetCustomFanSpeed(targetRPM) {
+			replayErrors = append(replayErrors, fmt.Errorf("重新应用智能变频目标失败: %d RPM", targetRPM))
+		}
 	} else if cfg.CustomSpeedEnabled {
 		// 重新应用自定义转速
 		a.logInfo("重新应用自定义转速: %d RPM", cfg.CustomSpeedRPM)
 		if !a.deviceManager.SetCustomFanSpeed(cfg.CustomSpeedRPM) {
-			a.logError("重新应用自定义转速失败")
+			replayErrors = append(replayErrors, fmt.Errorf("重新应用自定义转速失败"))
+		}
+	} else {
+		level := a.getRememberedManualLevel(cfg.ManualGear, cfg.ManualLevel)
+		rpm := cfg.ResolveGearRPM(cfg.ManualGear, level)
+		a.logInfo("重新应用手动挡位: %s %s (%d RPM)", cfg.ManualGear, level, rpm)
+		if !a.deviceManager.SetManualGearRPM(cfg.ManualGear, level, rpm) {
+			replayErrors = append(replayErrors, fmt.Errorf("重新应用手动挡位失败"))
 		}
 	}
 
 	// 以下功能仅 BS2/BS2PRO 支持
 	if !a.deviceManager.IsBS1() {
-		// 重新应用挡位灯配置
-		if cfg.GearLight {
-			a.logInfo("重新开启挡位灯")
-			if !a.deviceManager.SetGearLight(true) {
-				a.logError("重新开启挡位灯失败")
-			}
+		// true 和 false 都必须重放，否则固件保留的旧状态会与 App 配置相反。
+		a.logInfo("重新应用挡位灯: %t", cfg.GearLight)
+		if !a.deviceManager.SetGearLight(cfg.GearLight) {
+			replayErrors = append(replayErrors, fmt.Errorf("重新应用挡位灯失败"))
+		}
+		if !a.deviceManager.SetSmartStartStop(cfg.SmartStartStop) {
+			replayErrors = append(replayErrors, fmt.Errorf("重新应用智能启停失败: %s", cfg.SmartStartStop))
 		}
 
 		if err := a.applyConfiguredLightStrip(); err != nil {
-			a.logError("重连后重新应用灯带配置失败: %v", err)
+			replayErrors = append(replayErrors, fmt.Errorf("重新应用灯带配置: %w", err))
 		}
 	}
 
 	// 重新应用通电自启动配置（BS1 和 BS2/BS2PRO 都支持）
-	if cfg.PowerOnStart {
-		a.logInfo("重新开启通电自启动")
-		if !a.deviceManager.SetPowerOnStart(true) {
-			a.logError("重新开启通电自启动失败")
-		}
+	a.logInfo("重新应用通电自启动: %t", cfg.PowerOnStart)
+	if !a.deviceManager.SetPowerOnStart(cfg.PowerOnStart) {
+		replayErrors = append(replayErrors, fmt.Errorf("重新应用通电自启动失败"))
 	}
+	return errors.Join(replayErrors...)
+}
+
+func (a *CoreApp) automaticReplayTargetRPM(cfg types.AppConfig) (targetRPM int, exact bool) {
+	// Before 0x03/0x06 the latest 0xEF target is the exact result of the full
+	// automatic controller (including adaptive offsets and ramp limiting). The
+	// maintenance notification is normally suppressed while the command lock is
+	// held, so prefer this value and preserve a legitimate 0 RPM target.
+	if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil && fanData.CurrentMode&0x01 == 1 {
+		return int(fanData.TargetRPM), true
+	}
+	a.mutex.RLock()
+	controlTemp := a.currentTemp.ControlTemp
+	if controlTemp <= 0 {
+		controlTemp = a.currentTemp.MaxTemp
+	}
+	a.mutex.RUnlock()
+	if controlTemp <= 0 {
+		if len(cfg.FanCurve) > 0 {
+			return cfg.FanCurve[0].RPM, false
+		}
+		defaultCurve := types.GetDefaultFanCurve()
+		return defaultCurve[0].RPM, false
+	}
+	return temperature.CalculateTargetRPM(controlTemp, cfg.FanCurve), false
 }
 
 // GetDeviceStatus 获取设备状态
@@ -877,6 +928,43 @@ func (a *CoreApp) RefreshDeviceSettings() (*types.DeviceSettings, error) {
 		a.ipcServer.BroadcastEvent(ipc.EventDeviceSettingsUpdate, settings)
 	}
 	return &settings, err
+}
+
+// ReinitializeDeviceFirmware runs a maintenance command, restores every
+// App-owned control/light setting affected by it, then returns verified readback.
+// 0x03 selects fixed gear 1 on first initialization; 0x06 additionally resets
+// the four RPM slots and rebuilds runtime, startup and LED/RGB state.
+func (a *CoreApp) ReinitializeDeviceFirmware(factoryReset bool) (*types.DeviceSettings, error) {
+	if !a.lockDeviceControlIfReady() {
+		return nil, fmt.Errorf("设备尚未就绪或正在挂起")
+	}
+	defer a.deviceControlMutex.Unlock()
+
+	var err error
+	if factoryReset {
+		err = a.deviceManager.FactoryReinitializeFirmware()
+	} else {
+		err = a.deviceManager.InitializeFirmwareController()
+	}
+	if err != nil {
+		return nil, err
+	}
+	replayErr := a.reapplyDeviceConfigLocked("固件维护")
+
+	settings, queryErr := a.deviceManager.QueryDeviceSettings()
+	if queryErr != nil && !settings.Available {
+		return nil, queryErr
+	}
+	if replayErr != nil {
+		settings.ReadErrors = append(settings.ReadErrors, "配置重放: "+replayErr.Error())
+	}
+	a.mutex.Lock()
+	a.deviceSettings = &settings
+	a.mutex.Unlock()
+	if a.ipcServer != nil {
+		a.ipcServer.BroadcastEvent(ipc.EventDeviceSettingsUpdate, settings)
+	}
+	return &settings, errors.Join(replayErr, queryErr)
 }
 
 // isConnectionAttemptCurrent keeps an old connect/recovery attempt from

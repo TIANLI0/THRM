@@ -93,6 +93,8 @@ export function QuitApp():Promise<void>;
 
 export function RefreshDeviceSettings():Promise<types.DeviceSettings>;
 
+export function ReinitializeDeviceFirmware(arg1:boolean):Promise<types.DeviceSettings>;
+
 export function ReinstallPawnIO():Promise<Record<string, any>>;
 
 export function ResetAdaptiveModel():Promise<smartcontrol.AdaptiveStatus>;

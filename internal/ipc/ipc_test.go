@@ -167,7 +167,7 @@ func TestGetCoreLockFilePath(t *testing.T) {
 func TestRequestTypeConstants_Distinct(t *testing.T) {
 	allTypes := []RequestType{
 		ReqConnect, ReqDisconnect, ReqGetDeviceStatus, ReqGetCurrentFanData,
-		ReqRefreshDeviceSettings, ReqGetConfig, ReqUpdateConfig,
+		ReqRefreshDeviceSettings, ReqReinitializeFirmware, ReqGetConfig, ReqUpdateConfig,
 		ReqSetFanCurve, ReqGetFanCurve, ReqGetFanCurveProfiles,
 		ReqSetActiveFanCurveProfile, ReqSaveFanCurveProfile, ReqDeleteFanCurveProfile,
 		ReqExportFanCurveProfiles, ReqImportFanCurveProfiles, ReqResetLearnedOffsets,

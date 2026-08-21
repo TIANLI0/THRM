@@ -78,6 +78,24 @@ func (a *App) RefreshDeviceSettings() (*DeviceSettings, error) {
 	return &settings, nil
 }
 
+// ReinitializeDeviceFirmware runs controller initialization. Passing true also
+// resets RPM/runtime/startup/LED state; Core restores the current App config
+// before returning the fresh readback.
+func (a *App) ReinitializeDeviceFirmware(factoryReset bool) (*DeviceSettings, error) {
+	resp, err := a.sendRequest(ipc.ReqReinitializeFirmware, factoryReset)
+	if err != nil {
+		return nil, err
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("%s", resp.Error)
+	}
+	var settings DeviceSettings
+	if err := json.Unmarshal(resp.Data, &settings); err != nil {
+		return nil, err
+	}
+	return &settings, nil
+}
+
 // GetAvailableGears 获取可用挡位
 func (a *App) GetAvailableGears() map[string][]GearCommand {
 	resp, err := a.sendRequest(ipc.ReqGetAvailableGears, nil)

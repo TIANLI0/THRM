@@ -39,6 +39,19 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(settings)
 
+	case ipc.ReqReinitializeFirmware:
+		var factoryReset bool
+		if len(req.Data) > 0 && string(req.Data) != "null" {
+			if err := json.Unmarshal(req.Data, &factoryReset); err != nil {
+				return a.errorResponse("解析固件重新初始化参数失败: " + err.Error())
+			}
+		}
+		settings, err := a.ReinitializeDeviceFirmware(factoryReset)
+		if err != nil {
+			return a.errorResponse(err.Error())
+		}
+		return a.dataResponse(settings)
+
 	// 配置相关
 	case ipc.ReqGetConfig:
 		cfg := a.configManager.Get()

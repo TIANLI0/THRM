@@ -161,7 +161,17 @@ function clampRTSSPosition(value: number): number {
 }
 
 // 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
-const DANGEROUS_DEBUG_COMMANDS = new Set<number>([0xed, 0xee, 0xf0, 0xf1, 0xf2]);
+const DANGEROUS_DEBUG_COMMANDS = new Set<number>([
+  0x03, // initializes controller and can select fixed gear 1
+  0x05, // clears only the firmware initialization latch
+  0x06, // resets RPM slots plus runtime/startup/LED state
+  0xed,
+  0xee,
+  0xf0,
+  0xf1,
+  0xf2,
+]);
+const FIRMWARE_MAINTENANCE_COMMANDS = new Set<number>([0x03, 0x05, 0x06]);
 
 // 从用户输入中解析出命令字节：兼容 "27" 与 "5A A5 27 02 29"（带帧头时命令为第三字节）。
 function parseDebugCommandByte(input: string): number | null {
@@ -500,6 +510,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [debugCommandLoading, setDebugCommandLoading] = useState(false);
   const debugCommandByte = useMemo(() => parseDebugCommandByte(debugCommandInput), [debugCommandInput]);
   const isDangerousDebugCommand = debugCommandByte !== null && DANGEROUS_DEBUG_COMMANDS.has(debugCommandByte);
+  const isFirmwareMaintenanceCommand = debugCommandByte !== null && FIRMWARE_MAINTENANCE_COMMANDS.has(debugCommandByte);
   const [showCustomSpeedWarning, setShowCustomSpeedWarning] = useState(false);
   // 安装目录/用户目录下发现的自定义主题（用于「界面主题」下拉动态渲染）
   const [customThemes, setCustomThemes] = useState<ThemeMeta[]>([]);
@@ -2654,7 +2665,11 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                   </div>
                   <div className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-red-600 dark:text-red-400">
                     <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
-                    {isDangerousDebugCommand ? (
+                    {isFirmwareMaintenanceCommand ? (
+                      <span className="font-semibold">
+                        固件维护命令 0x{debugCommandByte?.toString(16).toUpperCase().padStart(2, '0')} 会改变设备运行状态；0x03 可能切到固定一挡，0x05 只清除初始化锁存，0x06 会重置四挡转速、启动设置和灯光状态。直接发送不会自动恢复 APP 配置。
+                      </span>
+                    ) : isDangerousDebugCommand ? (
                       <span className="font-semibold">
                         高危命令 0x{debugCommandByte?.toString(16).toUpperCase().padStart(2, '0')}：直接操作固件底层/调试寄存器，误用可能导致设备异常甚至变砖，请确认后再发送。
                       </span>

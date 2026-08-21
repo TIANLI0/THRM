@@ -170,6 +170,10 @@ export function RefreshDeviceSettings() {
   return window['go']['main']['App']['RefreshDeviceSettings']();
 }
 
+export function ReinitializeDeviceFirmware(arg1) {
+  return window['go']['main']['App']['ReinitializeDeviceFirmware'](arg1);
+}
+
 export function ReinstallPawnIO() {
   return window['go']['main']['App']['ReinstallPawnIO']();
 }
