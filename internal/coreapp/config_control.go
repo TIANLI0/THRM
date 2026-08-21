@@ -364,28 +364,39 @@ func (a *CoreApp) SetManualGear(gear, level string) bool {
 	cfg := a.configManager.Get()
 	cfg.ManualGear = gear
 	cfg.ManualLevel = level
-	if cfg.ManualGearLevels == nil {
-		cfg.ManualGearLevels = map[string]string{}
-	}
+	cfg.ManualGearLevels = cloneManualGearLevels(cfg.ManualGearLevels)
 	cfg.ManualGearLevels[gear] = normalizeManualLevel(level)
 	types.NormalizeManualGearRPM(&cfg)
 	rpm := cfg.ResolveGearRPM(gear, level)
-	a.configManager.Update(cfg)
+	if !a.lockDeviceControlIfReady() {
+		return false
+	}
+	applied := a.deviceManager.SetManualGearRPM(gear, level, rpm)
+	a.deviceControlMutex.Unlock()
+	if !applied {
+		return false
+	}
+	if err := a.configManager.Update(cfg); err != nil {
+		a.logError("保存手动挡位配置失败: %v", err)
+		return false
+	}
 	a.rememberManualGearLevel(gear, level)
 
 	if a.ipcServer != nil {
 		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
 	}
 
-	return a.deviceManager.SetManualGearRPM(gear, level, rpm)
+	return true
 }
 
 // SetCustomSpeed 设置自定义转速
 func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
+	if enabled && (rpm < 0 || rpm > 5000) {
+		return fmt.Errorf("自定义转速需在 0..5000 RPM 之间")
+	}
 	a.mutex.Lock()
-	defer a.mutex.Unlock()
-
 	cfg := a.configManager.Get()
+	connected := a.isConnected
 
 	if enabled {
 		if cfg.AutoControl {
@@ -395,20 +406,53 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 		cfg.CustomSpeedEnabled = true
 		cfg.CustomSpeedRPM = rpm
 
-		if a.isConnected {
-			a.safeGo("setCustomFanSpeed", func() {
-				a.deviceManager.SetCustomFanSpeed(rpm)
-			})
-		}
 	} else {
 		cfg.CustomSpeedEnabled = false
 	}
+	a.mutex.Unlock()
 
-	a.configManager.Set(cfg)
+	if connected {
+		if !a.lockDeviceControlIfReady() {
+			return fmt.Errorf("设备尚未就绪或正在挂起")
+		}
+		if enabled {
+			if !a.deviceManager.SetCustomFanSpeed(rpm) {
+				a.deviceControlMutex.Unlock()
+				return fmt.Errorf("固件拒绝了自定义转速设置")
+			}
+		} else {
+			// Leaving custom control must also leave firmware realtime mode and
+			// restore the selected fixed gear; changing only the config flag left
+			// the fan running indefinitely at the old custom target.
+			if !a.deviceManager.SetFanSpeed(0) {
+				a.deviceControlMutex.Unlock()
+				return fmt.Errorf("退出固件实时转速模式失败")
+			}
+			level := a.getRememberedManualLevel(cfg.ManualGear, cfg.ManualLevel)
+			manualRPM := cfg.ResolveGearRPM(cfg.ManualGear, level)
+			if !a.deviceManager.SetManualGearRPM(cfg.ManualGear, level, manualRPM) {
+				a.deviceControlMutex.Unlock()
+				return fmt.Errorf("恢复手动挡位失败")
+			}
+		}
+		a.deviceControlMutex.Unlock()
+	}
+
+	a.mutex.Lock()
+	latestCfg := a.configManager.Get()
+	if enabled {
+		latestCfg.AutoControl = false
+		latestCfg.CustomSpeedEnabled = true
+		latestCfg.CustomSpeedRPM = rpm
+	} else {
+		latestCfg.CustomSpeedEnabled = false
+	}
+	a.configManager.Set(latestCfg)
 	err := a.configManager.Save()
+	a.mutex.Unlock()
 
 	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
+		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, latestCfg)
 	}
 
 	return err
