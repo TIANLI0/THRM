@@ -452,8 +452,8 @@ func ValidateFanCurve(curve []types.FanCurvePoint) error {
 		if point.Temperature > types.FanCurveMaxTemperature {
 			return fmt.Errorf("风扇曲线第%d个点温度超出范围(最高%d°C)", i+1, types.FanCurveMaxTemperature)
 		}
-		if point.RPM < 0 || point.RPM > 4000 {
-			return fmt.Errorf("风扇曲线第%d个点RPM超出范围(0-4000)", i+1)
+		if point.RPM < 0 || point.RPM > 5000 {
+			return fmt.Errorf("风扇曲线第%d个点RPM超出范围(0-5000)", i+1)
 		}
 	}
 

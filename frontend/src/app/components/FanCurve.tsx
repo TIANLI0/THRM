@@ -2230,7 +2230,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   value={speedAvoidance.minRpm}
                   onChange={(value) => updateSpeedAvoidance({ minRpm: value })}
                   min={800}
-                  max={4500}
+                  max={5000}
                   step={50}
                   suffix="RPM"
                   disabled={featureConfigLoading}
@@ -2246,7 +2246,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
                   value={speedAvoidance.maxRpm}
                   onChange={(value) => updateSpeedAvoidance({ maxRpm: value })}
                   min={800}
-                  max={4500}
+                  max={5000}
                   step={50}
                   suffix="RPM"
                   disabled={featureConfigLoading}

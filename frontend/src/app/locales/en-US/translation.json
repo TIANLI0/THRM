@@ -181,6 +181,7 @@
     },
     "maxRpmHint": {
       "bs1": "BS1 can reach up to 3000 RPM in overclock mode.",
+      "max5000": "The custom speed ceiling is set to 5000 RPM.",
       "max4000": "The overclock ceiling is unlocked. Maximum fan speed is 4000 RPM.",
       "max3300": "The current maximum is the strong gear at 3300 RPM. Use a PD 27W charger to unlock the upper limit.",
       "max2760": "The current maximum is the standard gear at 2760 RPM. Use a PD 27W charger to unlock the upper limit.",

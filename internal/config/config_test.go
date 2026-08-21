@@ -155,11 +155,22 @@ func TestValidateFanCurve_DecreasingRPM(t *testing.T) {
 
 func TestValidateFanCurve_OutOfRange(t *testing.T) {
 	curve := []types.FanCurvePoint{
-		{Temperature: 30, RPM: 5000},
-		{Temperature: 50, RPM: 5000},
+		{Temperature: 30, RPM: 5001},
+		{Temperature: 50, RPM: 5001},
 	}
 	if err := ValidateFanCurve(curve); err == nil {
 		t.Error("ValidateFanCurve should fail for RPM out of range")
+	}
+}
+
+func TestValidateFanCurve_Accepts5000RPM(t *testing.T) {
+	curve := []types.FanCurvePoint{
+		{Temperature: 30, RPM: 0},
+		{Temperature: 50, RPM: 1000},
+		{Temperature: 90, RPM: 5000},
+	}
+	if err := ValidateFanCurve(curve); err != nil {
+		t.Fatalf("ValidateFanCurve rejected 0..5000 RPM curve: %v", err)
 	}
 }
 

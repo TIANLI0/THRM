@@ -113,7 +113,7 @@ export const getManualGearHighLevelRpm = (gear?: string | null): number | undefi
 
 // 自定义挡位转速约束（与后端 types.ManualGearMinRPM/MaxRPM 保持一致）
 export const MANUAL_GEAR_RPM_MIN = 800;
-export const MANUAL_GEAR_RPM_MAX = 4500;
+export const MANUAL_GEAR_RPM_MAX = 5000;
 
 export type ManualGearRpmMap = Record<string, Record<string, number>>;
 

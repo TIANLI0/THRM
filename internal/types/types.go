@@ -889,7 +889,8 @@ var (
 // BS1DeviceName BS1 蓝牙设备名称
 const BS1DeviceName = "Flydigi BS1"
 
-// GearCommands 预设挡位命令
+// GearCommands 是 App 的 12 个虚拟预设；固件只有 4 个硬件槽位。
+// 选择低/中/高时，App 会把对应 RPM 写入该大挡位的同一个硬件槽位并立即切换。
 var GearCommands = map[string][]GearCommand{
 	"静音": {
 		{"1挡低", buildGearRPMCommand(0, 1300), 1300},
@@ -917,10 +918,10 @@ func buildGearRPMCommand(gear int, rpm int) []byte {
 	return deviceproto.BuildFrame(deviceproto.CmdSetGearRPM, byte(gear), byte(rpm), byte(rpm>>8))
 }
 
-// 手动挡位转速约束（固件不上报最高转速, 也不做上限裁剪, 由 App 约束）
+// 手动挡位转速约束。协议字段可容纳更高数值，App 开放到 5000 RPM。
 const (
 	ManualGearMinRPM = 800  // 自定义挡位转速下限
-	ManualGearMaxRPM = 4500 // 自定义挡位转速上限
+	ManualGearMaxRPM = 5000 // 自定义挡位转速上限
 )
 
 // ManualGearOrder 四个大挡位从低到高顺序
@@ -929,7 +930,8 @@ var ManualGearOrder = []string{"静音", "标准", "强劲", "超频"}
 // ManualLevelOrder 每个大挡位的小挡位从低到高顺序
 var ManualLevelOrder = []string{"低", "中", "高"}
 
-// DefaultManualGearRPM 出厂默认的 12 个挡位转速 (gear -> level -> rpm)
+// DefaultManualGearRPM 是 App 的 12 个虚拟预设，不是固件中的 12 个槽位。
+// 固件 0x06 的四个默认值 1700/2400/3000/4000 分别对应前三挡“中”和超频“高”。
 var DefaultManualGearRPM = map[string]map[string]int{
 	"静音": {"低": 1300, "中": 1700, "高": 1900},
 	"标准": {"低": 2100, "中": 2400, "高": 2700},

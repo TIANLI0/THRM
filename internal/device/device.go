@@ -813,15 +813,19 @@ func (m *Manager) SetFanSpeed(rpm int) bool {
 		return false
 	}
 
-	if rpm < 0 || rpm > 4000 {
+	if rpm < 0 || rpm > 5000 {
 		return false
 	}
 
 	return m.setRealtimeFanSpeedLocked(rpm, "风扇转速")
 }
 
-// SetCustomFanSpeed 设置自定义风扇转速（无限制）
+// SetCustomFanSpeed 设置自定义风扇转速。协议字段是 uint16，App 开放 0..5000 RPM。
 func (m *Manager) SetCustomFanSpeed(rpm int) bool {
+	if rpm < 0 || rpm > 5000 {
+		m.logError("自定义转速超出有效范围: %d RPM", rpm)
+		return false
+	}
 	if m.IsBS1() {
 		if err := m.bleManager.SetFanSpeed(rpm); err != nil {
 			m.logError("BS1 设置自定义转速失败: %v", err)
@@ -836,8 +840,6 @@ func (m *Manager) SetCustomFanSpeed(rpm int) bool {
 	if !m.isConnected || m.device == nil {
 		return false
 	}
-
-	m.logWarn("警告：设置自定义转速 %d RPM（无上下限限制）", rpm)
 
 	return m.setRealtimeFanSpeedLocked(rpm, "自定义风扇转速")
 }

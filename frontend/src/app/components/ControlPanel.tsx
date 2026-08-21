@@ -2006,7 +2006,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                       value={customSpeedInput}
                       onChange={(e) => setCustomSpeedInput(Number(e.target.value))}
                       className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
-                      min={1000} max={4000} step={50}
+                      min={0} max={5000} step={50}
                     />
                     <Button variant="primary" size="sm" onClick={() => handleCustomSpeedApply(true, customSpeedInput)} className="bg-amber-600 hover:bg-amber-700 text-white">
                       {t('common.actions.apply')}

@@ -779,7 +779,9 @@ export default function DeviceStatus({
                   : '';
   const maxRpmHint = isBs1Model
     ? t('deviceStatus.maxRpmHint.bs1')
-    : maxGearHighLevelRpm === 4000
+    : maxGearHighLevelRpm === 5000
+      ? t('deviceStatus.maxRpmHint.max5000')
+      : maxGearHighLevelRpm === 4000
       ? t('deviceStatus.maxRpmHint.max4000')
       : maxGearHighLevelRpm === 3300
         ? t('deviceStatus.maxRpmHint.max3300')
