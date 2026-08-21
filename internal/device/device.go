@@ -75,6 +75,10 @@ func realtimeWriteErrorsExpired(lastErrorAt, now time.Time) bool {
 const (
 	maxConsecutiveReadErrors          = 20
 	maxConsecutiveRealtimeWriteErrors = 3
+	realtimeWakeKickRPM               = 1700
+	realtimeWakeKickDuration          = 450 * time.Millisecond
+	realtimeWakeVerifyDelay           = 3 * time.Second
+	gearSelectionVerifyTimeout        = 1400 * time.Millisecond
 	hidReadPollInterval               = 100 * time.Millisecond
 	// hidIdleReadPollInterval 是后台空闲（无 GUI 连接且未开启智能控温）时的轮询间隔。
 	// HID 句柄设为非阻塞后，读循环靠"空转即休眠"来避免占满 CPU，这意味着常驻
@@ -101,20 +105,25 @@ func modelNameForProductID(productID uint16) string {
 
 // Manager 设备管理器
 type Manager struct {
-	device           *hid.Device
-	isConnected      bool
-	productID        uint16 // 当前连接的产品ID
-	deviceType       string // "hid" 或 "ble"
-	lastDeviceType   string // last successful transport, retained across disconnects
-	mutex            sync.RWMutex
-	logger           types.Logger
-	currentFanData   atomic.Pointer[types.FanData]
-	connectionGen    atomic.Uint64
-	debugCapture     atomic.Bool
-	idlePolling      atomic.Bool
-	lastCommandedRPM int
-	hasCommandedRPM  bool
-	realtimeMode     bool
+	device              *hid.Device
+	isConnected         bool
+	productID           uint16 // 当前连接的产品ID
+	deviceType          string // "hid" 或 "ble"
+	lastDeviceType      string // last successful transport, retained across disconnects
+	mutex               sync.RWMutex
+	logger              types.Logger
+	currentFanData      atomic.Pointer[types.FanData]
+	connectionGen       atomic.Uint64
+	debugCapture        atomic.Bool
+	idlePolling         atomic.Bool
+	lastCommandedRPM    int
+	hasCommandedRPM     bool
+	realtimeMode        bool
+	realtimeWakeGen     uint64
+	lightConfig         types.LightStripConfig
+	hasLightConfig      bool
+	smartLightPreset    byte
+	hasSmartLightPreset bool
 
 	consecutiveRealtimeWriteErrors int
 	realtimeWriteRecoveryScheduled bool
@@ -144,6 +153,7 @@ type Manager struct {
 	debugSeq    uint64
 	debugFrames []types.DeviceDebugFrame
 	queryMutex  sync.Mutex
+	responses   *responseBroker
 }
 
 // NewManager 创建新的设备管理器
@@ -151,6 +161,7 @@ func NewManager(logger types.Logger) *Manager {
 	return &Manager{
 		logger:     logger,
 		bleManager: NewBLEManager(logger),
+		responses:  newResponseBroker(),
 	}
 }
 
@@ -439,6 +450,7 @@ func (m *Manager) detachStalledHID(dev *hid.Device) {
 }
 
 func (m *Manager) resetRealtimeControlStateLocked() {
+	m.realtimeWakeGen++
 	m.lastCommandedRPM = 0
 	m.hasCommandedRPM = false
 	m.realtimeMode = false
@@ -617,13 +629,26 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 			continue
 		}
 
-		m.recordDebugFrame("rx", types.DeviceTypeHID, buffer[:n])
+		raw := buffer[:n]
+		m.recordDebugFrame("rx", types.DeviceTypeHID, raw)
+		if frame, ok := deviceproto.ParseFrame(raw); ok && frame.ChecksumOK {
+			m.responses.deliver(frame)
+		}
 		fanData := m.parseFanData(buffer, n)
 		if fanData != nil {
 			// A monitor from a detached pre-suspend handle can unblock after a
 			// replacement connection has been established. Do not let that old
 			// handle overwrite the fresh connection's status cache.
-			m.mutex.RLock()
+			//
+			// Several firmware setters publish 0xEF before their command ACK. The
+			// sender holds m.mutex while waiting for that ACK, so blocking here
+			// would prevent the monitor from reading the very next HID report and
+			// deadlock the transaction. Dropping this intermediate notification is
+			// safe: the ACK remains authoritative and normal periodic status reports
+			// refresh the cache immediately afterward.
+			if !m.mutex.TryRLock() {
+				continue
+			}
 			active := m.isConnected && m.device == device
 			m.mutex.RUnlock()
 			if !active {
@@ -634,12 +659,13 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 				// A physical gear change or a reconnect places the device back in
 				// gear mode. The next software target must send a fresh realtime
 				// mode-entry command rather than assuming the old session remains.
-				m.mutex.Lock()
-				if m.device == device {
-					m.realtimeMode = false
-					m.hasCommandedRPM = false
+				if m.mutex.TryLock() {
+					if m.device == device {
+						m.realtimeMode = false
+						m.hasCommandedRPM = false
+					}
+					m.mutex.Unlock()
 				}
-				m.mutex.Unlock()
 			}
 
 			// 无锁原子写
@@ -701,36 +727,24 @@ func (m *Manager) finalizeMonitor(device *hid.Device, done chan struct{}) {
 
 // parseFanData 解析风扇数据
 func (m *Manager) parseFanData(data []byte, length int) *types.FanData {
-	if length < 11 {
+	if length <= 0 || length > len(data) {
 		return nil
 	}
-
-	// 检查同步头
-	magic := binary.BigEndian.Uint16(data[1:3])
-	if magic != 0x5AA5 {
+	frame, ok := deviceproto.ParseFrame(data[:length])
+	if !ok || !frame.ChecksumOK || frame.Command != deviceproto.CmdStatusNotify || len(frame.Payload) < 7 {
 		return nil
 	}
-
-	if data[3] != 0xEF {
-		return nil
-	}
-
+	payload := frame.Payload
 	fanData := &types.FanData{
-		ReportID:     data[0],
-		MagicSync:    magic,
-		Command:      data[3],
-		Status:       data[4],
-		GearSettings: data[5],
-		CurrentMode:  data[6],
-		Reserved1:    data[7],
-	}
-
-	// 解析转速 (小端序)
-	if length >= 10 {
-		fanData.CurrentRPM = binary.LittleEndian.Uint16(data[8:10])
-	}
-	if length >= 12 {
-		fanData.TargetRPM = binary.LittleEndian.Uint16(data[10:12])
+		ReportID:     frame.ReportID,
+		MagicSync:    0x5AA5,
+		Command:      frame.Command,
+		FrameLength:  frame.Length,
+		GearSettings: payload[0],
+		CurrentMode:  payload[1],
+		Reserved1:    payload[2],
+		CurrentRPM:   binary.LittleEndian.Uint16(payload[3:5]),
+		TargetRPM:    binary.LittleEndian.Uint16(payload[5:7]),
 	}
 
 	// 解析挡位设置
@@ -838,23 +852,34 @@ func (m *Manager) SetCustomFanSpeed(rpm int) bool {
 // every temperature tick can interrupt the active control session and has been
 // observed to make some HID stacks unstable while the app is in the background.
 func (m *Manager) setRealtimeFanSpeedLocked(rpm int, name string) bool {
-	if rpm == 0 && m.hasCommandedRPM && m.lastCommandedRPM == 0 && !m.realtimeMode {
+	if m.hasCommandedRPM && m.lastCommandedRPM == rpm && m.realtimeMode {
 		return true
 	}
+	wakingFromZero := m.hasCommandedRPM && m.lastCommandedRPM == 0 && rpm > 0
 
 	if !m.realtimeMode {
-		if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
+		if err := m.sendHIDAckLocked(deviceproto.CmdEnterRealtimeRPM, nil, 1, 3); err != nil {
 			m.noteRealtimeWriteResultLocked(false)
 			m.logError("进入实时转速模式失败: %v", err)
 			return false
 		}
-		time.Sleep(50 * time.Millisecond)
 		m.realtimeMode = true
 	}
 
-	speedBytes := make([]byte, 2)
-	binary.LittleEndian.PutUint16(speedBytes, uint16(rpm))
-	if err := m.writeHIDFrameLocked(deviceproto.CmdSetRealtimeRPM, speedBytes, hidControlReportLen); err != nil {
+	// A stopped rotor can fail to start when the curve asks for a low target such
+	// as 1000 RPM. Keep the realtime session alive at zero, then use the factory
+	// quiet-gear RPM as a short start pulse before settling at the exact curve
+	// target. This preserves true 0 RPM and does not rewrite any gear/RGB setting.
+	if wakingFromZero && rpm < realtimeWakeKickRPM {
+		if err := m.sendRealtimeTargetLocked(realtimeWakeKickRPM); err != nil {
+			m.realtimeMode = false
+			m.noteRealtimeWriteResultLocked(false)
+			m.logError("发送风扇唤醒脉冲失败: %v", err)
+			return false
+		}
+		time.Sleep(realtimeWakeKickDuration)
+	}
+	if err := m.sendRealtimeTargetLocked(rpm); err != nil {
 		// The target write leaves the hardware state unknown. Force a full mode
 		// handshake for the next retry instead of assuming the first command stuck.
 		m.realtimeMode = false
@@ -863,26 +888,106 @@ func (m *Manager) setRealtimeFanSpeedLocked(rpm int, name string) bool {
 		return false
 	}
 
-	if rpm == 0 {
-		time.Sleep(50 * time.Millisecond)
-		if err := m.writeHIDFrameLocked(deviceproto.CmdExitRealtimeRPM, nil, hidControlReportLen); err != nil {
-			m.realtimeMode = false
-			m.noteRealtimeWriteResultLocked(false)
-			m.logError("退出实时转速模式失败: %v", err)
-			return false
-		}
-		m.realtimeMode = false
-	}
-
 	m.lastCommandedRPM = rpm
 	m.hasCommandedRPM = true
+	m.realtimeWakeGen++
+	wakeGeneration := m.realtimeWakeGen
 	m.noteRealtimeWriteResultLocked(true)
 	if rpm == 0 {
-		m.logDebug("已关闭风扇（RPM=0 + 退出实时模式）")
+		// Do not send 0x24 here. Leaving realtime mode after a zero target was the
+		// sequence associated with occasional non-recoverable wake failures.
+		m.logDebug("已设置真正的 0 RPM，并保持实时控制会话以便后续唤醒")
 	} else {
 		m.logDebug("已设置%s: %d RPM", name, rpm)
 	}
+	if wakingFromZero {
+		m.scheduleRealtimeWakeVerificationLocked(rpm, wakeGeneration)
+	}
 	return true
+}
+
+func (m *Manager) sendRealtimeTargetLocked(rpm int) error {
+	payload := []byte{byte(rpm), byte(rpm >> 8)}
+	return m.sendHIDAckLocked(deviceproto.CmdSetRealtimeRPM, payload, 1)
+}
+
+// scheduleRealtimeWakeVerificationLocked checks the actual tachometer after a
+// zero-to-positive transition. The fallback deliberately uses only mode/gear
+// commands; it never invokes 0x06, so user presets and lighting stay intact.
+func (m *Manager) scheduleRealtimeWakeVerificationLocked(targetRPM int, generation uint64) {
+	go func() {
+		time.Sleep(realtimeWakeVerifyDelay)
+
+		m.mutex.Lock()
+		defer m.mutex.Unlock()
+		if !m.isConnected || m.device == nil || !m.realtimeMode ||
+			m.realtimeWakeGen != generation || m.lastCommandedRPM != targetRPM {
+			return
+		}
+		fanData := m.currentFanData.Load()
+		if fanData == nil || fanData.CurrentRPM > 0 {
+			return
+		}
+
+		m.logWarn("目标 %d RPM 但风扇仍为 0 RPM，执行无损软唤醒", targetRPM)
+		if err := m.recoverRealtimeWakeLocked(targetRPM); err != nil {
+			m.noteRealtimeWriteResultLocked(false)
+			m.logError("风扇软唤醒失败: %v", err)
+			return
+		}
+		m.noteRealtimeWriteResultLocked(true)
+		m.logInfo("风扇软唤醒序列已完成，目标 %d RPM", targetRPM)
+	}()
+}
+
+func (m *Manager) recoverRealtimeWakeLocked(targetRPM int) error {
+	if err := m.sendHIDAckLocked(deviceproto.CmdExitRealtimeRPM, nil, 1, 2); err != nil {
+		return fmt.Errorf("退出实时模式: %w", err)
+	}
+	m.realtimeMode = false
+
+	// Re-selecting the currently active fixed gear asks the firmware to run its
+	// normal motor start path without changing the user's gear RPM table or their
+	// preferred gear. We immediately return to realtime mode and exact target.
+	wakeGear := fixedGearForWake(m.currentFanData.Load())
+	if err := m.sendHIDAckLocked(deviceproto.CmdSetFixedGear, []byte{wakeGear}, 1); err != nil {
+		return fmt.Errorf("触发固定挡位启动: %w", err)
+	}
+	time.Sleep(realtimeWakeKickDuration)
+	if err := m.sendHIDAckLocked(deviceproto.CmdEnterRealtimeRPM, nil, 1, 3); err != nil {
+		return fmt.Errorf("重新进入实时模式: %w", err)
+	}
+	m.realtimeMode = true
+
+	kickRPM := max(targetRPM, realtimeWakeKickRPM)
+	if err := m.sendRealtimeTargetLocked(kickRPM); err != nil {
+		return fmt.Errorf("发送恢复启动脉冲: %w", err)
+	}
+	if kickRPM != targetRPM {
+		time.Sleep(realtimeWakeKickDuration)
+		if err := m.sendRealtimeTargetLocked(targetRPM); err != nil {
+			return fmt.Errorf("恢复曲线目标: %w", err)
+		}
+	}
+	return nil
+}
+
+func fixedGearForWake(data *types.FanData) byte {
+	if data == nil {
+		return 1
+	}
+	switch data.GearSettings & 0x0f {
+	case 0x08:
+		return 1
+	case 0x0a:
+		return 2
+	case 0x0c:
+		return 3
+	case 0x0e:
+		return 4
+	default:
+		return 1
+	}
 }
 
 func (m *Manager) noteRealtimeWriteResultLocked(success bool) {
@@ -935,7 +1040,7 @@ func (m *Manager) EnterAutoMode() error {
 	}
 
 	// 发送进入实时转速模式的命令
-	if err := m.writeHIDFrameLocked(deviceproto.CmdEnterRealtimeRPM, nil, hidControlReportLen); err != nil {
+	if err := m.sendHIDAckLocked(deviceproto.CmdEnterRealtimeRPM, nil, 1, 3); err != nil {
 		return fmt.Errorf("进入自动模式失败: %v", err)
 	}
 	m.realtimeMode = true
@@ -995,12 +1100,12 @@ func (m *Manager) SetManualGear(gear, level string) bool {
 		return false
 	}
 
-	// 发送命令，确保第一个字节是ReportID
-	cmdWithReportID := append([]byte{0x02}, selectedCommand.Command...)
-
-	m.recordDebugFrame("tx", types.DeviceTypeHID, cmdWithReportID)
-	_, err := m.device.Write(cmdWithReportID)
-	if err != nil {
+	frame, ok := deviceproto.ParseFrame(selectedCommand.Command)
+	if !ok {
+		m.logError("挡位 %s %s 的预设命令无效", gear, level)
+		return false
+	}
+	if err := m.sendHIDAckLocked(frame.Command, frame.Payload, 1); err != nil {
 		m.logError("设置挡位 %s %s 失败: %v", gear, level, err)
 		return false
 	}
@@ -1032,19 +1137,69 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	if !m.isConnected || m.device == nil {
 		return false
 	}
-
-	cmd := types.BuildGearRPMCommand(idx, rpm)
-	cmdWithReportID := append([]byte{0x02}, cmd...)
-
-	m.recordDebugFrame("tx", types.DeviceTypeHID, cmdWithReportID)
-	if _, err := m.device.Write(cmdWithReportID); err != nil {
+	if rpm < types.ManualGearMinRPM || rpm > types.ManualGearMaxRPM {
+		m.logError("手动挡位转速超出有效范围: %d RPM", rpm)
+		return false
+	}
+	payload := []byte{byte(idx), byte(rpm), byte(rpm >> 8)}
+	// 0x26 always writes a valid slot and can still return ACK=1 when this
+	// controller tier refuses to select that gear. Register for 0xEF before the
+	// write because the firmware publishes status before its command ACK.
+	statusWaiter := m.responses.register(deviceproto.CmdStatusNotify)
+	ack, err := m.sendHIDCommandAndWaitLocked(deviceproto.CmdSetGearRPM, payload, hidControlReportLen, deviceResponseTimeout)
+	if err == nil {
+		err = validateACK(ack, 1)
+	}
+	if err != nil {
+		m.responses.cancel(statusWaiter)
 		m.logError("设置挡位 %s %s (%d RPM) 失败: %v", gear, level, rpm, err)
+		return false
+	}
+	if actualGear, err := m.waitForSelectedGearLocked(statusWaiter, idx+1, gearSelectionVerifyTimeout); err != nil {
+		if actualGear > 0 {
+			m.logError("挡位 %s 的 RPM 已写入，但设备实际仍在挡位 %d: %v", gear, actualGear, err)
+		} else {
+			m.logError("挡位 %s 的 RPM 已写入，但无法确认设备已切换: %v", gear, err)
+		}
 		return false
 	}
 
 	m.logInfo("设置挡位成功: %s %s (自定义转速: %d RPM)", gear, level, rpm)
 	m.resetRealtimeControlStateLocked()
 	return true
+}
+
+func statusSelectedGear(frame deviceproto.Frame) (gear int, manual bool, ok bool) {
+	if frame.Command != deviceproto.CmdStatusNotify || !frame.ChecksumOK || len(frame.Payload) < 2 {
+		return 0, false, false
+	}
+	return deviceproto.DecodeSelectedGear(frame.Payload[0]), frame.Payload[1]&0x01 == 0, true
+}
+
+func (m *Manager) waitForSelectedGearLocked(first *responseWaiter, expectedGear int, timeout time.Duration) (int, error) {
+	deadline := time.Now().Add(timeout)
+	waiter := first
+	lastGear := 0
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return lastGear, fmt.Errorf("等待挡位 %d 状态确认超时", expectedGear)
+		}
+		frame, err := waitForResponse(m.responses, waiter, remaining)
+		if err != nil {
+			return lastGear, err
+		}
+		gear, manual, ok := statusSelectedGear(frame)
+		if ok {
+			lastGear = gear
+			if manual && gear == expectedGear {
+				return gear, nil
+			}
+		}
+		// A periodic frame may have raced just before the command. Keep waiting
+		// until the firmware confirms the requested manual gear or the deadline.
+		waiter = m.responses.register(deviceproto.CmdStatusNotify)
+	}
 }
 
 // SetGearLight 设置挡位灯
@@ -1065,7 +1220,7 @@ func (m *Manager) SetGearLight(enabled bool) bool {
 	if enabled {
 		payload = 0x01
 	}
-	if err := m.writeHIDFrameLocked(deviceproto.CmdGearLight, []byte{payload}, hidControlReportLen); err != nil {
+	if err := m.sendHIDAckLocked(deviceproto.CmdGearLight, []byte{payload}, 1); err != nil {
 		m.logError("设置挡位灯失败: %v", err)
 		return false
 	}
@@ -1097,7 +1252,7 @@ func (m *Manager) SetPowerOnStart(enabled bool) bool {
 		payload = 0x02
 	}
 
-	if err := m.writeHIDFrameLocked(deviceproto.CmdSetPowerOnStart, []byte{payload}, hidControlReportLen); err != nil {
+	if err := m.sendHIDAckLocked(deviceproto.CmdSetPowerOnStart, []byte{payload}, 1); err != nil {
 		m.logError("设置通电自启动失败: %v", err)
 		return false
 	}
@@ -1131,7 +1286,7 @@ func (m *Manager) SetSmartStartStop(mode string) bool {
 		return false
 	}
 
-	if err := m.writeHIDFrameLocked(deviceproto.CmdSetSmartStartStop, []byte{payload}, hidControlReportLen); err != nil {
+	if err := m.sendHIDAckLocked(deviceproto.CmdSetSmartStartStop, []byte{payload}, 1); err != nil {
 		m.logError("设置智能启停失败: %v", err)
 		return false
 	}

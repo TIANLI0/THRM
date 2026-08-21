@@ -243,7 +243,8 @@ type FanData struct {
 	ReportID     uint8  `json:"reportId"`
 	MagicSync    uint16 `json:"magicSync"`
 	Command      uint8  `json:"command"`
-	Status       uint8  `json:"status"`
+	FrameLength  uint8  `json:"frameLength"`
+	Status       uint8  `json:"status,omitempty"` // BS1 status byte; BS2PRO uses FrameLength instead.
 	GearSettings uint8  `json:"gearSettings"`
 	CurrentMode  uint8  `json:"currentMode"`
 	Reserved1    uint8  `json:"reserved1"`

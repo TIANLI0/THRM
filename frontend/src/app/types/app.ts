@@ -17,7 +17,8 @@ export interface FanData {
   reportId: number;
   magicSync: number;
   command: number;
-  status: number;
+  frameLength: number;
+  status?: number;
   gearSettings: number;
   currentMode: number;
   reserved1: number;

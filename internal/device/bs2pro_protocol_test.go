@@ -75,7 +75,7 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	// Handle EF status notification (device may respond with status instead of direct reply)
 	if parsed.Command == 0xEF {
 		t.Log("Device responded with EF status notification (async mode)")
-		if len(parsed.Payload) >= 5 {
+		if len(parsed.Payload) >= 7 {
 			currentRPM := uint16(parsed.Payload[3]) | uint16(parsed.Payload[4])<<8
 			targetRPM := uint16(parsed.Payload[5]) | uint16(parsed.Payload[6])<<8
 			t.Logf("Status: gearSettings=0x%02X workMode=0x%02X currentRPM=%d targetRPM=%d",

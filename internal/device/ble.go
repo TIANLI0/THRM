@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 	"tinygo.org/x/bluetooth"
 )
@@ -34,6 +35,7 @@ type BLEManager struct {
 	debugFrames  []types.DeviceDebugFrame
 	debugCapture atomic.Bool
 	queryMutex   sync.Mutex
+	responses    *responseBroker
 	scanTimeout  time.Duration
 }
 
@@ -55,6 +57,7 @@ func NewBLEManager(logger types.Logger) *BLEManager {
 		logger:      logger,
 		stopChan:    make(chan struct{}),
 		scanTimeout: defaultBLEScanTimeout,
+		responses:   newResponseBroker(),
 	}
 }
 
@@ -251,6 +254,9 @@ func (b *BLEManager) enableNotifications() {
 		}()
 
 		b.recordDebugFrame("rx", types.DeviceTypeBLE, buf)
+		if frame, ok := deviceproto.ParseFrame(buf); ok && frame.ChecksumOK {
+			b.responses.deliver(frame)
+		}
 		fanData := b.parseBS1Notification(buf)
 		if fanData != nil {
 			b.mutex.Lock()
@@ -274,35 +280,21 @@ func (b *BLEManager) enableNotifications() {
 // BS1 格式: [5A A5] [EF] [0B] [gearSettings] [mode] [reserved] [currentRPM_LE] [targetRPM_LE] ...
 // 与 BS2/BS2PRO 类似，但没有 ReportID 前缀
 func (b *BLEManager) parseBS1Notification(data []byte) *types.FanData {
-	if len(data) < 9 {
+	frame, ok := deviceproto.ParseFrame(data)
+	if !ok || !frame.ChecksumOK || frame.Command != deviceproto.CmdStatusNotify || len(frame.Payload) < 7 {
 		return nil
 	}
-
-	// 检查同步头
-	if data[0] != 0x5A || data[1] != 0xA5 {
-		return nil
-	}
-
-	if data[2] != 0xEF {
-		return nil
-	}
-
+	payload := frame.Payload
 	fanData := &types.FanData{
 		ReportID:     0, // BS1 没有 ReportID
 		MagicSync:    0x5AA5,
-		Command:      data[2],
-		Status:       data[3],
-		GearSettings: data[4],
-		CurrentMode:  data[5],
-		Reserved1:    data[6],
-	}
-
-	// 解析转速 (小端序)
-	if len(data) >= 9 {
-		fanData.CurrentRPM = binary.LittleEndian.Uint16(data[7:9])
-	}
-	if len(data) >= 11 {
-		fanData.TargetRPM = binary.LittleEndian.Uint16(data[9:11])
+		Command:      frame.Command,
+		FrameLength:  frame.Length,
+		GearSettings: payload[0],
+		CurrentMode:  payload[1],
+		Reserved1:    payload[2],
+		CurrentRPM:   binary.LittleEndian.Uint16(payload[3:5]),
+		TargetRPM:    binary.LittleEndian.Uint16(payload[5:7]),
 	}
 
 	// 解析挡位设置（与 BS2/BS2PRO 相同的编码）

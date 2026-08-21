@@ -1402,7 +1402,8 @@ export namespace types {
 	    reportId: number;
 	    magicSync: number;
 	    command: number;
-	    status: number;
+	    frameLength: number;
+	    status?: number;
 	    gearSettings: number;
 	    currentMode: number;
 	    reserved1: number;
@@ -1421,6 +1422,7 @@ export namespace types {
 	        this.reportId = source["reportId"];
 	        this.magicSync = source["magicSync"];
 	        this.command = source["command"];
+	        this.frameLength = source["frameLength"];
 	        this.status = source["status"];
 	        this.gearSettings = source["gearSettings"];
 	        this.currentMode = source["currentMode"];
