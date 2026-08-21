@@ -467,44 +467,45 @@ func (a *CoreApp) SetSmartStartStop(mode string) bool {
 
 // SetBrightness 设置亮度
 func (a *CoreApp) SetBrightness(percentage int) bool {
-	if !a.deviceManager.SetBrightness(percentage) {
+	if percentage < 0 || percentage > 100 {
 		return false
 	}
-
 	cfg := a.configManager.Get()
-	cfg.Brightness = percentage
-	a.configManager.Update(cfg)
-
-	// 广播配置更新
-	if a.ipcServer != nil {
-		a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, cfg)
-	}
-	return true
+	lightCfg, _ := normalizeLightStripConfig(cfg.LightStrip)
+	lightCfg.Brightness = percentage
+	return a.SetLightStrip(lightCfg) == nil
 }
 
 // SetLightStrip 设置灯带
 func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 	lightCfg, _ = normalizeLightStripConfig(lightCfg)
 
-	// 配置的读-改-写必须在锁内完成，且 isConnected 也要在锁内取快照：
-	// 托盘回调、快捷键与 IPC 请求都会并发调到这里，无锁时会丢更新。
-	// 设备写入放到锁外，避免多帧 RGB 命令期间阻塞托盘状态刷新等其它持锁者。
+	a.mutex.RLock()
+	connected := a.isConnected
+	a.mutex.RUnlock()
+	if connected {
+		if !a.lockDeviceControlIfReady() {
+			return fmt.Errorf("设备尚未就绪或正在挂起")
+		}
+		err := a.applyLightStripToDevice(lightCfg)
+		a.deviceControlMutex.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Persist only after a connected device has acknowledged the complete RGB
+	// upload; otherwise a rejected write would make the UI claim a state that
+	// was never applied. Offline changes are intentionally saved for reconnect.
 	a.mutex.Lock()
 	cfg := a.configManager.Get()
 	cfg.LightStrip = lightCfg
+	cfg.Brightness = lightCfg.Brightness
 	a.configManager.Set(cfg)
 	saveErr := a.configManager.Save()
-	connected := a.isConnected
 	a.mutex.Unlock()
-
 	if saveErr != nil {
 		return saveErr
-	}
-
-	if connected {
-		if err := a.deviceManager.SetLightStrip(lightCfg); err != nil {
-			return err
-		}
 	}
 
 	if a.ipcServer != nil {
@@ -526,7 +527,26 @@ func (a *CoreApp) applyConfiguredLightStrip() error {
 		}
 	}
 
-	return a.deviceManager.SetLightStrip(lightCfg)
+	return a.applyLightStripToDevice(lightCfg)
+}
+
+// applyLightStripToDevice runs while deviceControlMutex is held. Smart-temp
+// mode starts with firmware preset 1, then immediately catches up to the latest
+// known computer temperature instead of waiting for the next monitor tick.
+func (a *CoreApp) applyLightStripToDevice(lightCfg types.LightStripConfig) error {
+	if err := a.deviceManager.SetLightStrip(lightCfg); err != nil {
+		return err
+	}
+	if lightCfg.Mode != "smart_temp" {
+		return nil
+	}
+	a.mutex.RLock()
+	maxTemperature := a.currentTemp.MaxTemp
+	a.mutex.RUnlock()
+	if maxTemperature <= 0 {
+		return nil
+	}
+	return a.deviceManager.UpdateSmartTemperatureLight(maxTemperature)
 }
 
 func normalizeLightStripConfig(cfg types.LightStripConfig) (types.LightStripConfig, bool) {

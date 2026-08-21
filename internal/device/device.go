@@ -144,11 +144,6 @@ type Manager struct {
 	onFanDataUpdate func(data *types.FanData)
 	onDisconnect    func()
 
-	// lightCmdBuf 是发送灯效命令时复用的 65 字节缓冲。
-	// Why: 一次设灯效要发 30+ 帧，旧实现每帧 append + make，~35 次堆分配。
-	// 该缓冲只在持有 m.mutex 的灯效命令路径上使用，是线程安全的。
-	lightCmdBuf [65]byte
-
 	debugMutex  sync.Mutex
 	debugSeq    uint64
 	debugFrames []types.DeviceDebugFrame
@@ -1311,23 +1306,16 @@ func (m *Manager) SetBrightness(percentage int) bool {
 	if percentage < 0 || percentage > 100 {
 		return false
 	}
-
-	switch percentage {
-	case 0:
-		payload := []byte{0x1C, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-		if err := m.writeHIDFrameLocked(0x47, payload, hidControlReportLen); err != nil {
-			m.logError("设置亮度失败: %v", err)
-			return false
-		}
-	case 100:
-		if err := m.writeHIDFrameLocked(0x43, nil, hidControlReportLen); err != nil {
-			m.logError("设置亮度失败: %v", err)
-			return false
-		}
-	default:
+	cfg := m.lightConfig
+	if !m.hasLightConfig {
+		cfg = types.GetDefaultLightStripConfig()
+	}
+	cfg.Brightness = percentage
+	if err := m.setLightStripLocked(cfg); err != nil {
+		m.logError("设置亮度失败: %v", err)
 		return false
 	}
-
+	m.rememberLightConfigLocked(cfg)
 	return true
 }
 

@@ -826,7 +826,7 @@
       "effectMode": "ライティング効果",
       "animationSpeed": "アニメーション速度",
       "brightness": "明るさ",
-      "smartTempWarning": "スマート制御モードではデバイスがライティング効果を自動制御するため、カラーと明るさの調整はできません。",
+      "smartTempWarning": "PC の CPU/GPU 最高温度に応じてアプリが内蔵アニメーションを切り替えるため、カラーと明るさは手動調整できません。",
       "colorLabel": "カラー {{index}}",
       "applyHintConnected": "適用後すぐに反映されます",
       "applyHintDisconnected": "次回接続時に自動適用されます"

@@ -446,6 +446,19 @@ monitorLoop:
 			}
 
 			controlReady := a.isDeviceControlReady()
+			if cfg.LightStrip.Mode == "smart_temp" && temp.MaxTemp > 0 && controlReady {
+				// Smart lighting is host-driven: the cooler firmware exposes native
+				// green/yellow/red animations through 0x44, but it cannot read the
+				// computer's CPU/GPU temperature by itself. The device manager applies
+				// hysteresis and suppresses duplicate writes.
+				if a.lockDeviceControlIfReady() {
+					err := a.deviceManager.UpdateSmartTemperatureLight(temp.MaxTemp)
+					a.deviceControlMutex.Unlock()
+					if err != nil {
+						a.logError("智能温控灯效更新失败: %v", err)
+					}
+				}
+			}
 			if cfg.AutoControl && controlReady && invalidControlTempCount >= 3 && !safeFallbackActive {
 				_, safeRPM := smartcontrol.GetCurveRPMBounds(cfg.FanCurve)
 				if safeRPM <= 0 {
@@ -593,7 +606,6 @@ monitorLoop:
 						targetRPM = guardedRPM
 					}
 				}
-
 				fanData := a.deviceManager.GetCurrentFanData()
 				observedRPM := targetRPM
 				if fanData != nil && fanData.CurrentRPM > 0 {

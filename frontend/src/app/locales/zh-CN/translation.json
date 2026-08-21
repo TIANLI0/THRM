@@ -827,7 +827,7 @@
       "effectMode": "效果模式",
       "animationSpeed": "动画速度",
       "brightness": "亮度",
-      "smartTempWarning": "智能温控模式由设备自动控制灯效，不支持手动调节颜色与亮度。",
+      "smartTempWarning": "软件会根据电脑 CPU/GPU 最高温度自动切换设备内置动画，不支持手动调节颜色与亮度。",
       "colorLabel": "颜色 {{index}}",
       "applyHintConnected": "应用后立即生效",
       "applyHintDisconnected": "下次连接时自动生效"

@@ -827,7 +827,7 @@
       "effectMode": "Effect mode",
       "animationSpeed": "Animation speed",
       "brightness": "Brightness",
-      "smartTempWarning": "In Smart Temp mode the device controls lighting automatically, so color and brightness cannot be adjusted manually.",
+      "smartTempWarning": "The app switches built-in animations using the computer's highest CPU/GPU temperature, so color and brightness cannot be adjusted manually.",
       "colorLabel": "Color {{index}}",
       "applyHintConnected": "Takes effect immediately after applying",
       "applyHintDisconnected": "Will apply automatically on next connection"
