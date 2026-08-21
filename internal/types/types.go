@@ -274,17 +274,43 @@ type DeviceDebugFrame struct {
 
 // DeviceSettings contains settings read back from the device firmware.
 type DeviceSettings struct {
-	Available    bool               `json:"available"`
-	Source       string             `json:"source"`
-	ReadAt       string             `json:"readAt"`
-	Model        string             `json:"model,omitempty"`
-	GearRPMTable []DeviceGearRPM    `json:"gearRpmTable,omitempty"`
-	WorkMode     string             `json:"workMode,omitempty"`
-	WorkModeName string             `json:"workModeName,omitempty"`
-	RGBState     string             `json:"rgbState,omitempty"`
-	RGBStateName string             `json:"rgbStateName,omitempty"`
-	Status       *DeviceStatusRead  `json:"status,omitempty"`
-	RawFrames    []DeviceDebugFrame `json:"rawFrames,omitempty"`
+	Available                bool               `json:"available"`
+	Source                   string             `json:"source"`
+	ReadAt                   string             `json:"readAt"`
+	ReadErrors               []string           `json:"readErrors,omitempty"`
+	Model                    string             `json:"model,omitempty"`
+	DeviceCPUModel           string             `json:"deviceCpuModel,omitempty"`
+	DeviceCPUModelSource     string             `json:"deviceCpuModelSource,omitempty"`
+	HIDManufacturer          string             `json:"hidManufacturer,omitempty"`
+	HIDProduct               string             `json:"hidProduct,omitempty"`
+	HIDSerialNumber          string             `json:"hidSerialNumber,omitempty"`
+	HIDReleaseNumber         uint16             `json:"hidReleaseNumber,omitempty"`
+	HIDReleaseNumberHex      string             `json:"hidReleaseNumberHex,omitempty"`
+	FirmwareVersion          string             `json:"firmwareVersion,omitempty"`
+	FirmwareVersionRaw       string             `json:"firmwareVersionRaw,omitempty"`
+	FirmwareReadStatus       string             `json:"firmwareReadStatus,omitempty"` // ready/failed/unsupported
+	FirmwareReadError        string             `json:"firmwareReadError,omitempty"`
+	DeviceIdentifier         string             `json:"deviceIdentifier,omitempty"`
+	IdentityMarker           string             `json:"identityMarker,omitempty"`
+	IdentityHex              string             `json:"identityHex,omitempty"`
+	ConfigState              string             `json:"configState,omitempty"`
+	ConfigStateName          string             `json:"configStateName,omitempty"`
+	ControllerCapabilityTier *int               `json:"controllerCapabilityTier,omitempty"`
+	RuntimeProfileRaw        *int               `json:"runtimeProfileRaw,omitempty"`
+	MeasuredRPM              *int               `json:"measuredRpm,omitempty"`
+	TargetRPM                *int               `json:"targetRpm,omitempty"`
+	GearRPMTable             []DeviceGearRPM    `json:"gearRpmTable,omitempty"`
+	QueriedWorkState         string             `json:"queriedWorkState,omitempty"`
+	QueriedWorkStateName     string             `json:"queriedWorkStateName,omitempty"`
+	LiveModeFlags            string             `json:"liveModeFlags,omitempty"`
+	LiveModeName             string             `json:"liveModeName,omitempty"`
+	ActiveGear               int                `json:"activeGear,omitempty"`
+	SelectedGear             int                `json:"selectedGear,omitempty"`
+	RealtimeActive           *bool              `json:"realtimeActive,omitempty"`
+	RGBState                 string             `json:"rgbState,omitempty"`
+	RGBStateName             string             `json:"rgbStateName,omitempty"`
+	Status                   *DeviceStatusRead  `json:"status,omitempty"`
+	RawFrames                []DeviceDebugFrame `json:"rawFrames,omitempty"`
 }
 
 type DeviceGearRPM struct {

@@ -719,6 +719,19 @@ func (a *CoreApp) connectDeviceOnce(generation uint64, manual bool) bool {
 			}
 			a.ipcServer.BroadcastEvent(ipc.EventDeviceConnected, eventPayload)
 		}
+		// A spontaneous 0xEF often proves readiness before the detailed query is
+		// attempted. In that path settings is nil and the GUI previously never
+		// received firmwareVersion even though a manual debug query could read it.
+		// Complete the readback after isConnected has been published so the normal
+		// settings event updates both an already-open GUI and future status calls.
+		if settings == nil || settings.FirmwareVersion == "" {
+			a.safeGo("refreshDeviceSettings@connect", func() {
+				time.Sleep(100 * time.Millisecond)
+				if _, err := a.RefreshDeviceSettings(); err != nil {
+					a.logError("连接后补充读取固件详细信息失败: %v", err)
+				}
+			})
+		}
 		a.recordTimelineEvent(types.TimelineEventTypeMode, types.TimelineKeyDeviceConnected)
 
 		// BS1 不支持灯带。配置写入只能在连接已就绪时发生，

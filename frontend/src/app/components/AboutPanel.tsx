@@ -13,6 +13,7 @@ import { BrowserOpenURL } from '../../../wailsjs/runtime/runtime';
 import {
   ChevronDown,
   Code2,
+  Cpu,
   Download,
   ExternalLink,
   Heart,
@@ -30,6 +31,8 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { apiService } from '../services/api';
+import { useAppStore } from '../store/app-store';
+import type { DeviceSettings } from '../types/app';
 import { SiGithub } from 'react-icons/si';
 import { Badge, Button, ScrollArea } from './ui/index';
 
@@ -142,6 +145,13 @@ function isLatestVersion(currentVersion: string, latestVersion: string) {
 
 const PANEL_CLASS =
   'min-w-0 rounded-[26px] border border-border/70 bg-card/90 shadow-sm shadow-black/[0.025]';
+// 关于页所有信息块共用一套外观（同样的圆角、描边、内边距、图标底座和标签字号），
+// 左侧主卡片和右侧更新侧栏才会看起来是同一套设计语言。
+const INFO_TILE_CLASS =
+  'rounded-2xl border border-border/60 bg-background/60 px-4 py-3.5';
+const INFO_ICON_CLASS =
+  'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary';
+const INFO_LABEL_CLASS = 'text-xs font-medium text-muted-foreground';
 const LINK_ROW_CLASS =
   'group flex w-full cursor-pointer items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40';
 
@@ -206,7 +216,7 @@ function VersionValue({ value, canCopy, onCopy, copyLabel }: VersionValueProps) 
       disabled={!canCopy}
       onClick={onCopy}
       title={canCopy ? copyLabel : undefined}
-      className="mt-2 block w-full overflow-hidden text-left text-lg font-semibold leading-tight text-foreground transition-colors enabled:cursor-pointer enabled:hover:text-primary disabled:cursor-default"
+      className="mt-1 block w-full overflow-hidden text-left text-lg font-semibold leading-tight text-foreground transition-colors enabled:cursor-pointer enabled:hover:text-primary disabled:cursor-default"
     >
       <span ref={boxRef} className="block overflow-hidden">
         <span
@@ -222,7 +232,13 @@ function VersionValue({ value, canCopy, onCopy, copyLabel }: VersionValueProps) 
 
 export default function AboutPanel() {
   const { t } = useTranslation();
+  const isDeviceConnected = useAppStore((state) => state.isConnected);
+  const deviceModel = useAppStore((state) => state.deviceModel);
+  const storeDeviceSettings = useAppStore((state) => state.deviceSettings);
   const [appVersion, setAppVersion] = useState('');
+  const [queriedDeviceSettings, setQueriedDeviceSettings] = useState<DeviceSettings | null>(null);
+  const [firmwareRefreshing, setFirmwareRefreshing] = useState(false);
+  const [firmwareQueryError, setFirmwareQueryError] = useState('');
   const [releaseChannel, setReleaseChannel] =
     useState<ReleaseChannel>('stable');
   const [latestReleaseTag, setLatestReleaseTag] = useState('');
@@ -251,15 +267,95 @@ export default function AboutPanel() {
   const sponsorPopupRef = useRef<HTMLDivElement | null>(null);
   const sponsorHoverTimerRef = useRef<number | null>(null);
 
+  const refreshFirmwareDetails = useCallback(async () => {
+    setFirmwareRefreshing(true);
+    setFirmwareQueryError('');
+    try {
+      const settings = await apiService.refreshDeviceSettings();
+      if (settings) setQueriedDeviceSettings(settings);
+      if (!settings?.firmwareVersion && settings?.firmwareReadStatus !== 'unsupported') {
+        setFirmwareQueryError(
+          settings?.firmwareReadError || t('aboutPanel.version.firmwareReadFailed'),
+        );
+      }
+    } catch (error) {
+      setFirmwareQueryError(
+        error instanceof Error && error.message
+          ? error.message
+          : t('aboutPanel.version.firmwareReadFailed'),
+      );
+    } finally {
+      setFirmwareRefreshing(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (!isDeviceConnected) {
+      setQueriedDeviceSettings(null);
+      setFirmwareQueryError('');
+      setFirmwareRefreshing(false);
+      return;
+    }
+    if (storeDeviceSettings?.firmwareVersion) {
+      setQueriedDeviceSettings(null);
+      setFirmwareQueryError('');
+      return;
+    }
+
+    let cancelled = false;
+    setFirmwareRefreshing(true);
+    setFirmwareQueryError('');
+    void apiService.refreshDeviceSettings().then((settings) => {
+      if (cancelled) return;
+      if (settings) setQueriedDeviceSettings(settings);
+      if (!settings?.firmwareVersion && settings?.firmwareReadStatus !== 'unsupported') {
+        setFirmwareQueryError(settings?.firmwareReadError || t('aboutPanel.version.firmwareReadFailed'));
+      }
+    }).catch((error) => {
+      if (!cancelled) {
+        setFirmwareQueryError(error instanceof Error && error.message ? error.message : t('aboutPanel.version.firmwareReadFailed'));
+      }
+    }).finally(() => {
+      if (!cancelled) setFirmwareRefreshing(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDeviceConnected, storeDeviceSettings?.firmwareVersion, t]);
+
+  const displayedDeviceSettings = storeDeviceSettings?.firmwareVersion
+    ? storeDeviceSettings
+    : queriedDeviceSettings || storeDeviceSettings;
+  const firmwareVersion = displayedDeviceSettings?.firmwareVersion || '';
+  const firmwareError = firmwareQueryError || displayedDeviceSettings?.firmwareReadError || '';
+  const firmwareUnsupported = displayedDeviceSettings?.firmwareReadStatus === 'unsupported';
+
+  const specItems = useMemo(
+    () => [
+      {
+        icon: ShieldCheck,
+        title: 'MIT License',
+        desc: t('aboutPanel.specs.license'),
+      },
+      {
+        icon: Monitor,
+        title: 'Windows / Linux',
+        desc: t('aboutPanel.specs.platform'),
+      },
+      { icon: Wifi, title: 'BS1 — BS3 Pro', desc: t('aboutPanel.specs.models') },
+    ],
+    [t],
+  );
+
   const supportMethods = useMemo(
     () => [
       {
         label: t('aboutPanel.sponsor.methods.alipay'),
-        image: '/support/alipay.jpg',
+        image: '/support/alipay.webp',
       },
       {
         label: t('aboutPanel.sponsor.methods.wechat'),
-        image: '/support/wechat.png',
+        image: '/support/wechat.webp',
       },
     ],
     [t],
@@ -594,42 +690,33 @@ export default function AboutPanel() {
         />
 
         <div className="relative grid lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="flex min-w-0 flex-col px-6 pt-7 pb-5 sm:px-8 sm:pt-8 sm:pb-6 lg:px-10 lg:pt-8 lg:pb-6">
+          <div className="flex min-w-0 flex-col px-6 pt-6 pb-5 sm:px-8 sm:pt-7 sm:pb-5 lg:px-10 lg:pt-7 lg:pb-5">
             <h1 className="sr-only">
               {t('aboutPanel.title', { name: BRAND.name })}
             </h1>
 
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[24px] border border-border/60 bg-background/75 p-2.5 shadow-sm backdrop-blur">
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-7 sm:gap-y-4">
+              <div className="shrink-0">
                 <img
-                  src="/brand/appicon.png"
-                  alt={t('aboutPanel.images.logoAlt', { name: BRAND.name })}
-                  className="h-full w-full object-contain"
+                  src="/brand/wordmark-light.webp"
+                  alt={t('aboutPanel.images.wordmarkAlt', { name: BRAND.name })}
+                  className="h-auto w-50 max-w-full object-contain dark:hidden sm:w-57.5"
+                  draggable={false}
+                />
+                <img
+                  src="/brand/wordmark-dark.webp"
+                  alt={t('aboutPanel.images.wordmarkAlt', { name: BRAND.name })}
+                  className="hidden h-auto w-50 max-w-full object-contain dark:block sm:w-57.5"
                   draggable={false}
                 />
               </div>
 
-              <div className="min-w-0 flex-1 pt-0.5">
-                <img
-                  src="/brand/wordmark-light.png"
-                  alt={t('aboutPanel.images.wordmarkAlt', { name: BRAND.name })}
-                  className="h-auto w-57.5 max-w-full object-contain dark:hidden sm:w-65"
-                  draggable={false}
-                />
-                <img
-                  src="/brand/wordmark-dark.png"
-                  alt={t('aboutPanel.images.wordmarkAlt', { name: BRAND.name })}
-                  className="hidden h-auto w-57.5 max-w-full object-contain dark:block sm:w-65"
-                  draggable={false}
-                />
-
-                <p className="mt-5 max-w-172 text-[15px] leading-7 text-muted-foreground">
-                  {t('aboutPanel.description', { name: BRAND.name })}
-                </p>
-              </div>
+              <p className="grow basis-64 text-[15px] leading-7 text-muted-foreground">
+                {t('aboutPanel.description', { name: BRAND.name })}
+              </p>
             </div>
 
-            <div className="mt-7 flex flex-wrap gap-2.5">
+            <div className="mt-5 flex flex-wrap gap-2.5">
               <Button
                 variant="primary"
                 size="sm"
@@ -671,41 +758,103 @@ export default function AboutPanel() {
               </div>
             </div>
 
-            <div className="mt-auto grid gap-0 pt-6 sm:grid-cols-3">
-              <div className="flex items-center gap-3 border-t border-border/60 py-3 sm:border-r sm:pr-5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <ShieldCheck className="h-4 w-4" />
-                </div>
-                <div className="text-sm font-semibold text-foreground">
-                  MIT License
-                </div>
+            <div
+              className={`mt-4 flex grow flex-wrap items-center gap-x-8 gap-y-4 ${INFO_TILE_CLASS}`}
+            >
+              <div className={INFO_ICON_CLASS}>
+                <Cpu className="h-4.5 w-4.5" />
               </div>
 
-              <div className="flex items-center gap-3 border-t border-border/60 py-3 sm:border-r sm:px-5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Monitor className="h-4 w-4" />
+              <div className="min-w-0">
+                <div className={INFO_LABEL_CLASS}>
+                  {t('aboutPanel.version.deviceFirmware')}
                 </div>
-                <div className="text-sm font-semibold text-foreground">
-                  Windows / Linux
-                </div>
+                {firmwareVersion ? (
+                  <VersionValue
+                    value={firmwareVersion}
+                    canCopy
+                    onCopy={() => copyVersion(firmwareVersion)}
+                    copyLabel={t('aboutPanel.version.copyFirmwareTooltip')}
+                  />
+                ) : isDeviceConnected && firmwareUnsupported ? (
+                  <div className="mt-1 text-sm font-medium leading-tight text-muted-foreground">
+                    {t('aboutPanel.version.firmwareUnsupported')}
+                  </div>
+                ) : isDeviceConnected && firmwareError && !firmwareRefreshing ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="max-w-80 truncate text-sm font-medium text-destructive" title={firmwareError}>
+                      {t('aboutPanel.version.firmwareReadFailed')}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void refreshFirmwareDetails()}
+                      icon={<RefreshCw className="h-3.5 w-3.5" />}
+                    >
+                      {t('aboutPanel.version.firmwareRetry')}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-lg font-semibold leading-tight text-muted-foreground">
+                    {isDeviceConnected
+                      ? t('aboutPanel.version.firmwareReading')
+                      : t('aboutPanel.version.firmwareDisconnected')}
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-3 border-t border-border/60 py-3 sm:pl-5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Wifi className="h-4 w-4" />
+              {displayedDeviceSettings?.deviceIdentifier && (
+                <div className="min-w-0 flex-1">
+                  <div className={INFO_LABEL_CLASS}>
+                    {t('aboutPanel.version.deviceIdentifierLabel')}
+                  </div>
+                  <div className="mt-1 truncate text-lg font-medium leading-tight tabular-nums text-foreground/80">
+                    {displayedDeviceSettings.deviceIdentifier}
+                  </div>
                 </div>
-                <div className="text-sm font-semibold text-foreground">
-                  BS1 — BS3 Pro
-                </div>
+              )}
+
+              <div className="ml-auto shrink-0">
+                <Badge variant={firmwareVersion ? 'info' : 'default'}>
+                  {deviceModel || t('aboutPanel.version.noDevice')}
+                </Badge>
               </div>
+            </div>
+
+            <div className="grid grow gap-3 pt-4 sm:grid-cols-3">
+              {specItems.map(({ icon: Icon, title, desc }) => (
+                <div
+                  key={title}
+                  className={`flex items-center gap-3 ${INFO_TILE_CLASS}`}
+                >
+                  <div className={INFO_ICON_CLASS}>
+                    <Icon className="h-4.5 w-4.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-foreground">
+                      {title}
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {desc}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <aside className="border-t border-border/60 bg-background/45 p-5 backdrop-blur-sm sm:p-6 lg:border-l lg:border-t-0 lg:p-7">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <RefreshCw className="h-4 w-4 text-primary" />
-                <span>{t('aboutPanel.version.checkUpdate')}</span>
+          <aside className="flex flex-col border-t border-border/60 bg-background/45 p-5 backdrop-blur-sm sm:p-6 sm:pb-5 lg:border-l lg:border-t-0 lg:p-7 lg:pb-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <RefreshCw className="h-5 w-5 shrink-0 text-primary" />
+                <div className="min-w-0">
+                  <div className="text-[15px] font-semibold leading-tight text-foreground">
+                    {t('aboutPanel.version.checkUpdate')}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {t('aboutPanel.version.checkUpdateSubtitle')}
+                  </div>
+                </div>
               </div>
 
               {hasNewVersion && (
@@ -715,9 +864,9 @@ export default function AboutPanel() {
               )}
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-border/60 bg-card/80 p-4">
-                <div className="text-[11px] font-medium uppercase tracking-[0.13em] text-muted-foreground">
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-border/60 bg-card/80 px-4 py-3">
+                <div className={INFO_LABEL_CLASS}>
                   {t('aboutPanel.version.current', { version: '' }).trim()}
                 </div>
                 {(() => {
@@ -734,11 +883,11 @@ export default function AboutPanel() {
                 })()}
               </div>
 
-              <div className="relative rounded-2xl border border-border/60 bg-card/80 p-4">
+              <div className="relative rounded-2xl border border-border/60 bg-card/80 px-4 py-3">
                 {hasNewVersion && (
                   <span className="absolute right-3 top-3 h-2 w-2 rounded-full bg-red-500" />
                 )}
-                <div className="text-[11px] font-medium uppercase tracking-[0.13em] text-muted-foreground">
+                <div className={INFO_LABEL_CLASS}>
                   {t('aboutPanel.version.latest', { version: '' }).trim()}
                 </div>
                 {(() => {
@@ -799,7 +948,7 @@ export default function AboutPanel() {
               </p>
             )}
 
-            <div className="mt-5 flex flex-col gap-2.5">
+            <div className="mt-auto flex flex-col gap-2.5 pt-4">
               {hasNewVersion && installerUrl ? (
                 <Button
                   variant="primary"

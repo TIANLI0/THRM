@@ -826,6 +826,11 @@ export default function DeviceStatus({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-base min-[1800px]:text-lg font-semibold text-foreground">{deviceModelName}</span>
+                {deviceSettings?.firmwareVersion && (
+                  <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
+                    FW {deviceSettings.firmwareVersion}
+                  </span>
+                )}
                 <span
                   className={clsx(
                     'rounded-md px-2 py-0.5 text-[11px] font-semibold',
@@ -845,6 +850,20 @@ export default function DeviceStatus({
                     <Settings className="h-3 w-3" />
                   )}
                   <span>{t('deviceStatus.hero.modeLine', { mode: modeTitle, description: modeDesc })}</span>
+                </div>
+              )}
+              {isConnected && deviceSettings?.firmwareVersion && (
+                <div
+                  className="mt-1 text-[11px] text-muted-foreground/80"
+                  title={[
+                    `Firmware: ${deviceSettings.firmwareVersion}`,
+                    deviceSettings.deviceIdentifier ? `Device ID: ${deviceSettings.deviceIdentifier}` : '',
+                    deviceSettings.configStateName ? `State: ${deviceSettings.configStateName} (${deviceSettings.configState || '--'})` : '',
+                    deviceSettings.controllerCapabilityTier ? `Controller tier: ${deviceSettings.controllerCapabilityTier}` : '',
+                    deviceSettings.identityMarker ? `Identity marker: ${deviceSettings.identityMarker}` : '',
+                  ].filter(Boolean).join('\n')}
+                >
+                  {deviceSettings.deviceIdentifier ? `Device ID ${deviceSettings.deviceIdentifier}` : `Firmware ${deviceSettings.firmwareVersionRaw || deviceSettings.firmwareVersion}`}
                 </div>
               )}
               {!isConnected && (
