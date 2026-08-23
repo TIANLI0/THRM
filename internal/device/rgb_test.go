@@ -147,3 +147,24 @@ func equalBytes(got, want []byte) bool {
 	}
 	return true
 }
+
+// 固件的灯效缓冲区容量在流状态结构里写死为 256 字节，而 0x47 的固件分支完全不做
+// 边界检查。按协议文档的 31 帧下发就是 310 字节，会越过缓冲区末尾写进紧随其后的
+// 关键帧渲染表。帧数必须刚好覆盖固件会读的 184 字节，且不超出容量。
+func TestLightUploadStaysInsideFirmwareBuffer(t *testing.T) {
+	const firmwareStreamCapacity = 256
+
+	uploaded := lightUploadFrameCount * lightUploadFrameSize
+	if uploaded > firmwareStreamCapacity {
+		t.Fatalf("上传 %d 字节超出固件缓冲区容量 %d 字节", uploaded, firmwareStreamCapacity)
+	}
+
+	// 固件重排循环读到的最大偏移是 6 + 5*30 + 9*3 = 183。
+	highestRead := lightColorDataOffset + (lightLEDCount-1)*lightKeyframeCount*3 + (lightKeyframeCount-1)*3 + 2
+	if uploaded <= highestRead {
+		t.Fatalf("上传 %d 字节覆盖不到固件会读的最高偏移 %d", uploaded, highestRead)
+	}
+	if uploaded-highestRead > lightUploadFrameSize {
+		t.Fatalf("上传 %d 字节比固件需要的多出超过一帧（最高读取偏移 %d）", uploaded, highestRead)
+	}
+}

@@ -32,6 +32,49 @@ var basicDeviceSettingsQueryCommands = []byte{
 	deviceproto.CmdRGBStatus,
 }
 
+/* ── 控制器能力档位（0x07）──
+
+固件用它决定"这条挡位选择命令到底要不要真的换挡"，而且 0x08 与 0x26 的规则并不
+一样。两条分支都在写完之后照常回 ACK=1，所以主机光看 ACK 判断不出挡位有没有生效。
+
+	0x08  档位 1 时拒绝挡位 4；其它档位全部放行
+	0x26  档位 1 只放行挡位 1..2；档位 2 放行 1..3；其它档位全部放行
+*/
+
+// MaxGearForFixedGearCommand 返回 0x08 会真正选中的最高挡位。
+func MaxGearForFixedGearCommand(tier int) int {
+	if tier == 1 {
+		return 3
+	}
+	return 4
+}
+
+// MaxGearForGearRPMCommand 返回 0x26 会真正选中的最高挡位。
+func MaxGearForGearRPMCommand(tier int) int {
+	switch tier {
+	case 1:
+		return 2
+	case 2:
+		return 3
+	default:
+		return 4
+	}
+}
+
+// noteControllerTier 缓存 0x07 读回的能力档位，供挡位命令在下发前自检。
+func (m *Manager) noteControllerTier(tier int) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.controllerTier = tier
+	m.hasControllerTier = true
+}
+
+// controllerTierLocked 返回已知的能力档位。第二个返回值为 false 表示尚未读取过，
+// 此时不做下发前拦截，仍由 0xEF 状态确认兜底。
+func (m *Manager) controllerTierLocked() (int, bool) {
+	return m.controllerTier, m.hasControllerTier
+}
+
 // All HID models (BS2/BS2PRO/BS3/BS3PRO) expose the same controller command
 // set for detailed firmware readback and maintenance. BS1 is the only model
 // that remains on the reduced BLE command profile.
@@ -121,6 +164,12 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	// 本来就处于目标状态时可以完全跳过 0x46，省掉一次固件数据闪存擦写。
 	if settings.RGBStateName == "on" || settings.RGBStateName == "off" {
 		m.NoteRGBEnabledFromDevice(settings.RGBStateName == "on")
+	}
+	if settings.ControllerCapabilityTier != nil {
+		tier := *settings.ControllerCapabilityTier
+		m.noteControllerTier(tier)
+		maxGear := MaxGearForGearRPMCommand(tier)
+		settings.MaxSelectableGear = &maxGear
 	}
 
 	settings.Available = settings.FirmwareVersion != "" || settings.DeviceIdentifier != "" || len(settings.GearRPMTable) > 0 || settings.QueriedWorkState != "" || settings.Status != nil

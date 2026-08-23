@@ -140,10 +140,13 @@ type Manager struct {
 	// acknowledged value lets the host drop the redundant writes that a
 	// reconnect replay would otherwise issue, which is the main source of
 	// back-to-back flash cycles during a reconnect.
-	rgbEnabled       bool
-	hasRGBEnabled    bool
-	gearLightEnabled bool
-	hasGearLight     bool
+	rgbEnabled    bool
+	hasRGBEnabled bool
+	// controllerTier 是 0x07 读回的控制器能力档位，决定哪些挡位真的能选中。
+	controllerTier    int
+	hasControllerTier bool
+	gearLightEnabled  bool
+	hasGearLight      bool
 
 	consecutiveRealtimeWriteErrors int
 	realtimeWriteRecoveryScheduled bool
@@ -1166,6 +1169,20 @@ func (m *Manager) SetManualGear(gear, level string) bool {
 		m.logError("挡位 %s %s 的预设命令无效", gear, level)
 		return false
 	}
+	// 固件的 0x08 分支不校验 payload：任何字节都会被直接写进当前挡位字段。
+	// 预设表出错时不能把非法挡位号送进设备。
+	if frame.Command == deviceproto.CmdSetFixedGear {
+		if len(frame.Payload) != 1 || frame.Payload[0] < 1 || frame.Payload[0] > 4 {
+			m.logError("挡位 %s %s 的预设命令携带了非法挡位号: %v", gear, level, frame.Payload)
+			return false
+		}
+		if tier, known := m.controllerTierLocked(); known {
+			if maxGear := MaxGearForFixedGearCommand(tier); int(frame.Payload[0]) > maxGear {
+				m.logError("控制器能力档位 %d 最高只能选到挡位 %d，设备会忽略挡位 %d 但仍回 ACK", tier, maxGear, frame.Payload[0])
+				return false
+			}
+		}
+	}
 	if err := m.sendHIDAckLocked(frame.Command, frame.Payload, 1); err != nil {
 		m.logError("设置挡位 %s %s 失败: %v", gear, level, err)
 		return false
@@ -1201,6 +1218,14 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	if rpm < types.ManualGearMinRPM || rpm > types.ManualGearMaxRPM {
 		m.logError("手动挡位转速超出有效范围: %d RPM", rpm)
 		return false
+	}
+	// 0x26 会照常回 ACK=1 并写入转速，但在能力档位不允许时静默跳过换挡。
+	// 提前拦住能给出确切原因，而不是等 0xEF 确认超时后报一句"无法确认已切换"。
+	if tier, known := m.controllerTierLocked(); known {
+		if maxGear := MaxGearForGearRPMCommand(tier); idx+1 > maxGear {
+			m.logError("控制器能力档位 %d 最高只能选到挡位 %d，设备会写入 %s 的转速但不会切换过去", tier, maxGear, gear)
+			return false
+		}
 	}
 	defer m.beginTransaction()()
 

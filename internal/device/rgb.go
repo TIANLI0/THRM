@@ -12,11 +12,26 @@ const (
 	lightSpeedMedium byte = 0x0A
 	lightSpeedSlow   byte = 0x0F
 
-	lightLEDCount         = 6
-	lightKeyframeCount    = 10
-	lightUploadFrameCount = 31
-	lightUploadFrameSize  = 10
-	lightColorDataOffset  = 6
+	lightLEDCount        = 6
+	lightKeyframeCount   = 10
+	lightUploadFrameSize = 10
+	lightColorDataOffset = 6
+
+	// lightProgramSize 是固件真正会读回的程序字节数：6 字节头部，加上
+	// 灯珠主序的颜色区（6 颗灯 × 10 关键帧 × RGB）。重排循环取到的最大偏移是
+	// 6 + 5*30 + 9*3 = 183，所以 184 字节就覆盖了全部内容。
+	lightProgramSize = lightColorDataOffset + lightLEDCount*lightKeyframeCount*3
+
+	// lightUploadFrameCount 是需要下发的 0x47 帧数。
+	//
+	// 这里必须比协议文档里的 31 帧少。固件的灯效缓冲区容量写在流状态结构
+	// （RAM 0x20002604）的第四个字里，实测镜像值为 0x100 = 256 字节；而 0x47 的
+	// 固件分支是 copy(*stream + index*10, payload+1, 10)，既不检查索引上界也不检查
+	// 容量——只有分块写 0x42 才比较 stream[1] + len <= stream[3]。下发 31 帧就是
+	// 310 字节，会越过缓冲区末尾 54 字节，直接写进紧随其后的关键帧渲染表
+	// （0x20004AC8）。按 184 字节取整到帧边界只需 19 帧，既落在容量内，
+	// 又完整覆盖固件会读的每一个字节，还省掉 12 次命令往返。
+	lightUploadFrameCount = (lightProgramSize + lightUploadFrameSize - 1) / lightUploadFrameSize
 )
 
 // lightProgram mirrors the firmware upload buffer. Bytes 0..5 are the header:

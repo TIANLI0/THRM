@@ -270,8 +270,9 @@ firstKeyframe = 0。各预设覆盖 lastKeyframe 与 transitionTicks。
 注意 transitionTicks 依次是 10 / 6 / 2：温度越高，流光跑得越快。
 4 是纯红常亮（两个关键帧同色）。5 是红到粉的三帧流光。
 
-预设 5 在生成前调用 0x755a 取设备型号变体，变体 1 与其它变体用两张不同的表；
-这里用的是变体 1 的表。 */
+预设 5 在生成前调用 0x755a 读运行配置字节——也就是命令 0x09 返回、命令 0x0A 写入的
+那个值。等于 1 时用红→粉的表，否则用白色高光跑在深蓝底上的表。设备复位后该字节
+默认为 0，所以蓝色那张才是常见情况。 */
 
 /** 关键帧颜色表，索引为 [led][keyframe]，十六进制字符串。 */
 interface FirmwarePreset {
@@ -303,7 +304,24 @@ const FIRMWARE_PRESETS: Record<number, FirmwarePreset> = {
     base: '#FF0000',
     frames: Array.from({ length: LIGHT_LED_COUNT }, () => ['#FF0000', '#FF0000']),
   },
+  // 占位：预设 5 的实际表由 runtime profile 决定，见 PRESET_5_BY_PROFILE。
   5: {
+    transitionTicks: 10,
+    base: '#000050',
+    frames: [
+      ['#FFFFFF', '#1E1EA0', '#000050'],
+      ['#000050', '#FFFFFF', '#1E1EA0'],
+      ['#000050', '#1E1EA0', '#FFFFFF'],
+      ['#FFFFFF', '#1E1EA0', '#000050'],
+      ['#000050', '#FFFFFF', '#1E1EA0'],
+      ['#000050', '#1E1EA0', '#FFFFFF'],
+    ],
+  },
+};
+
+/** 预设 5 的两张表，按运行配置字节（命令 0x09/0x0A）选择。 */
+const PRESET_5_BY_PROFILE: Record<'one' | 'other', FirmwarePreset> = {
+  one: {
     transitionTicks: 10,
     base: '#FF0000',
     frames: [
@@ -315,7 +333,15 @@ const FIRMWARE_PRESETS: Record<number, FirmwarePreset> = {
       ['#FFB8B8', '#FF5F5F', '#FF0000'],
     ],
   },
+  other: FIRMWARE_PRESETS[5],
 };
+
+function presetEntry(preset: number, runtimeProfile?: number | null): FirmwarePreset | undefined {
+  if (preset === 5) {
+    return runtimeProfile === 1 ? PRESET_5_BY_PROFILE.one : PRESET_5_BY_PROFILE.other;
+  }
+  return FIRMWARE_PRESETS[preset];
+}
 
 /** 固件为原生预设写死的亮度。 */
 const SMART_TEMP_PRESET_BRIGHTNESS = 100;
@@ -329,13 +355,13 @@ function hexToRgb(hex: string): RGB {
 }
 
 /** 该预设的底色，用于界面色块。 */
-export function smartTempPresetBaseColor(preset: number): RGB | null {
-  const entry = FIRMWARE_PRESETS[preset];
+export function smartTempPresetBaseColor(preset: number, runtimeProfile?: number | null): RGB | null {
+  const entry = presetEntry(preset, runtimeProfile);
   return entry ? hexToRgb(entry.base) : null;
 }
 
-/** 预设 5 随设备型号变体使用不同的颜色表，界面需要提示这一点。 */
-export function smartTempPresetVariesByModel(preset: number): boolean {
+/** 预设 5 的颜色表随运行配置字节切换，界面需要提示这一点。 */
+export function smartTempPresetDependsOnRuntimeProfile(preset: number): boolean {
   return preset === 5;
 }
 
@@ -343,8 +369,8 @@ export function smartTempPresetVariesByModel(preset: number): boolean {
  * 还原固件为该原生预设生成的程序。返回的程序可直接交给 sampleLightProgram，
  * 与自定义灯效走完全相同的插值路径——因为设备端本来就是同一条路径。
  */
-export function buildSmartTempPresetProgram(preset: number): LightProgram | null {
-  const entry = FIRMWARE_PRESETS[preset];
+export function buildSmartTempPresetProgram(preset: number, runtimeProfile?: number | null): LightProgram | null {
+  const entry = presetEntry(preset, runtimeProfile);
   if (!entry) return null;
 
   const keyframes = entry.frames[0].length;

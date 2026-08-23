@@ -140,3 +140,26 @@ func TestStatusSelectedGearUsesEFBitField(t *testing.T) {
 		t.Fatalf("realtime status = gear %d manual %t ok %t", gear, manual, ok)
 	}
 }
+
+// 固件按控制器能力档位决定挡位选择命令要不要真的换挡，而且 0x08 与 0x26 的规则
+// 不一样；两条分支都照常回 ACK=1，所以主机必须自己知道上界。
+func TestGearLimitsFollowControllerTier(t *testing.T) {
+	tests := []struct {
+		tier       int
+		fixedGear  int
+		gearRPMCmd int
+	}{
+		{tier: 1, fixedGear: 3, gearRPMCmd: 2},
+		{tier: 2, fixedGear: 4, gearRPMCmd: 3},
+		{tier: 3, fixedGear: 4, gearRPMCmd: 4},
+		{tier: 0, fixedGear: 4, gearRPMCmd: 4},
+	}
+	for _, test := range tests {
+		if got := MaxGearForFixedGearCommand(test.tier); got != test.fixedGear {
+			t.Errorf("tier %d: 0x08 最高挡位 = %d, want %d", test.tier, got, test.fixedGear)
+		}
+		if got := MaxGearForGearRPMCommand(test.tier); got != test.gearRPMCmd {
+			t.Errorf("tier %d: 0x26 最高挡位 = %d, want %d", test.tier, got, test.gearRPMCmd)
+		}
+	}
+}

@@ -299,6 +299,8 @@ export interface DeviceSettings {
   configState?: string;
   configStateName?: string;
   controllerCapabilityTier?: number;
+  /** 按能力档位推导出的、设备真的会切换过去的最高挡位。固件对超出的挡位照常回 ACK 但不换挡。 */
+  maxSelectableGear?: number;
   runtimeProfileRaw?: number;
   measuredRpm?: number;
   targetRpm?: number;

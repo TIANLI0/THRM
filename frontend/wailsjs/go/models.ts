@@ -1195,6 +1195,7 @@ export namespace types {
 	    configState?: string;
 	    configStateName?: string;
 	    controllerCapabilityTier?: number;
+	    maxSelectableGear?: number;
 	    runtimeProfileRaw?: number;
 	    measuredRpm?: number;
 	    targetRpm?: number;
@@ -1239,6 +1240,7 @@ export namespace types {
 	        this.configState = source["configState"];
 	        this.configStateName = source["configStateName"];
 	        this.controllerCapabilityTier = source["controllerCapabilityTier"];
+	        this.maxSelectableGear = source["maxSelectableGear"];
 	        this.runtimeProfileRaw = source["runtimeProfileRaw"];
 	        this.measuredRpm = source["measuredRpm"];
 	        this.targetRpm = source["targetRpm"];

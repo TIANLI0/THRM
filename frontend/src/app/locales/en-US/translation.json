@@ -801,8 +801,8 @@
         "preset2": "Built-in 2 · yellow flow (medium)",
         "preset3": "Built-in 3 · red flow (fast)",
         "preset4": "Built-in 4 · solid red",
-        "preset5": "Built-in 5 · red-to-pink flow",
-        "variesByModel": "This preset’s color table depends on the device model variant; variant 1 is shown here"
+        "preset5": "Built-in 5 · three-frame flow",
+        "dependsOnRuntimeProfile": "This preset’s color table depends on the device’s runtime profile byte (command 0x09): red-to-pink when it is 1, white-over-blue otherwise"
       },
       "previewLabel": "Strip preview",
       "previewHint": "Runs the firmware’s own interpolation"
