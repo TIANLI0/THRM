@@ -801,10 +801,12 @@
         "preset2": "内置 2（黄）",
         "preset3": "内置 3（红）",
         "preset4": "内置 4",
-        "preset5": "内置 5"
+        "preset5": "内置 5",
+        "unknownAppearance": "固件接受此预设，但外观未记录"
       },
       "previewLabel": "灯条预览",
-      "previewHint": "按固件插值算法实时复现 · 6 颗灯珠"
+      "previewHint": "按固件插值算法实时复现",
+      "previewHintApproximate": "示意动画 · 固件原生预设的动作无法从镜像恢复"
     },
     "fan": {
       "sectionTitle": "风扇控制",

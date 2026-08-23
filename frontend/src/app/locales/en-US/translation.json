@@ -801,10 +801,12 @@
         "preset2": "Built-in 2 (yellow)",
         "preset3": "Built-in 3 (red)",
         "preset4": "Built-in 4",
-        "preset5": "Built-in 5"
+        "preset5": "Built-in 5",
+        "unknownAppearance": "The firmware accepts this preset, but its appearance is not documented"
       },
       "previewLabel": "Strip preview",
-      "previewHint": "Runs the firmware’s own interpolation · 6 LEDs"
+      "previewHint": "Runs the firmware’s own interpolation",
+      "previewHintApproximate": "Approximate · the native preset’s motion is not recoverable from the firmware image"
     },
     "fan": {
       "sectionTitle": "Fan control",

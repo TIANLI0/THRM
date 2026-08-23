@@ -1,37 +1,28 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LIGHT_LED_COUNT,
-  buildLightProgram,
+  averageColor,
   rgbToCss,
   sampleLightProgram,
+  stripGradient,
+  type LightProgram,
   type RGB,
 } from '../lib/lightProgram';
 
 /**
- * 设备灯条的实时预览。
+ * 设备灯带的实时预览。
  *
- * 设备端是一条 6 颗灯珠的灯条，颜色由固件在关键帧之间线性插值得到。这里用
- * lightProgram.ts 复刻的同一套程序结构与插值算法驱动，因此预览显示的就是
- * 按下"应用"之后设备会呈现的画面，而不是另画的示意动画。
+ * 设备端是一整条带导光罩的灯带（6 颗灯珠串在一起），相邻灯珠的光互相融合，
+ * 所以这里渲染成一条连续渐变，而不是六个分开的点。颜色由 lightProgram.ts
+ * 复刻的固件关键帧插值逐帧算出。
  */
 export default function LightStripPreview({
-  mode,
-  speed,
-  brightness,
-  colors,
+  program,
   className,
 }: {
-  mode: string;
-  speed?: string;
-  brightness?: number;
-  colors?: Array<Partial<RGB>>;
+  program: LightProgram | null;
   className?: string;
 }) {
-  const program = useMemo(
-    () => buildLightProgram({ mode, speed, brightness, colors }),
-    [mode, speed, brightness, colors],
-  );
-
   const off = useMemo<RGB[]>(
     () => Array.from({ length: LIGHT_LED_COUNT }, () => ({ r: 0, g: 0, b: 0 })),
     [],
@@ -63,22 +54,21 @@ export default function LightStripPreview({
     };
   }, [program, off]);
 
+  const glow = averageColor(leds);
+  const lit = glow.r + glow.g + glow.b > 12;
+
   return (
     <div className={className}>
-      <div className="flex items-center gap-1.5 rounded-full border border-border bg-neutral-900 px-2.5 py-2 shadow-inner dark:bg-black">
-        {leds.map((color, index) => {
-          const lit = color.r + color.g + color.b > 0;
-          return (
-            <div
-              key={index}
-              className="h-3.5 flex-1 rounded-full transition-[background-color,box-shadow] duration-75"
-              style={{
-                backgroundColor: rgbToCss(color),
-                boxShadow: lit ? `0 0 10px 1px ${rgbToCss(color)}` : 'inset 0 0 0 1px rgba(255,255,255,0.08)',
-              }}
-            />
-          );
-        })}
+      <div className="rounded-full border border-border bg-neutral-900 p-1.5 shadow-inner dark:bg-black">
+        <div
+          className="h-4 w-full rounded-full"
+          style={{
+            background: stripGradient(leds),
+            boxShadow: lit
+              ? `0 0 16px 2px ${rgbToCss(glow)}, inset 0 1px 1px rgba(255,255,255,0.25)`
+              : 'inset 0 0 0 1px rgba(255,255,255,0.08)',
+          }}
+        />
       </div>
     </div>
   );

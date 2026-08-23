@@ -800,10 +800,12 @@
         "preset2": "内蔵 2（黄）",
         "preset3": "内蔵 3（赤）",
         "preset4": "内蔵 4",
-        "preset5": "内蔵 5"
+        "preset5": "内蔵 5",
+        "unknownAppearance": "ファームウェアはこのプリセットを受け付けますが、外観は未記録です"
       },
       "previewLabel": "ライトバー プレビュー",
-      "previewHint": "ファームウェアと同じ補間で再現 · LED 6 個"
+      "previewHint": "ファームウェアと同じ補間で再現",
+      "previewHintApproximate": "イメージ表示 · 内蔵プリセットの動きはファームウェアから復元できません"
     },
     "fan": {
       "sectionTitle": "ファン制御",

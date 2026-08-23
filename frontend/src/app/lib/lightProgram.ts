@@ -224,3 +224,78 @@ export function sampleLightProgram(program: LightProgram, elapsedMs: number): RG
 export function rgbToCss(color: RGB): string {
   return `rgb(${color.r}, ${color.g}, ${color.b})`;
 }
+
+/**
+ * 灯条是一整条、带导光罩的灯带，不是六个分开的点：相邻灯珠的光会互相融合。
+ * 因此渲染成一条连续渐变，色标落在各灯珠的中心位置 (i + 0.5) / 6，
+ * 两端补上首尾灯珠的颜色，避免边缘出现突兀的截断。
+ */
+export function stripGradient(colors: RGB[]): string {
+  if (colors.length === 0) return 'rgb(0,0,0)';
+  const stops: string[] = [`${rgbToCss(colors[0])} 0%`];
+  colors.forEach((color, index) => {
+    const center = ((index + 0.5) / colors.length) * 100;
+    stops.push(`${rgbToCss(color)} ${center.toFixed(2)}%`);
+  });
+  stops.push(`${rgbToCss(colors[colors.length - 1])} 100%`);
+  return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
+
+/** 用于外发光的平均色。 */
+export function averageColor(colors: RGB[]): RGB {
+  if (colors.length === 0) return { ...BLACK };
+  const sum = colors.reduce(
+    (acc, c) => ({ r: acc.r + c.r, g: acc.g + c.g, b: acc.b + c.b }),
+    { r: 0, g: 0, b: 0 },
+  );
+  return {
+    r: Math.round(sum.r / colors.length),
+    g: Math.round(sum.g / colors.length),
+    b: Math.round(sum.b / colors.length),
+  };
+}
+
+/* ── 智能温控的原生预设 ──
+
+固件的 0x44 预设生成器无法从镜像中恢复：它挂在 RGB 控制器虚表的 +0x10 槽上，
+而这张虚表位于已初始化数据段（复位时拷进 RAM），反编译器看不到谁填的它——
+`FUN_ram_00008480` 等同槽位的函数在整个反编译产物里都没有具名引用。
+
+因此下面的预览是**示意**，不是逐字节复刻：颜色取自实机观察（预设 1/2/3 依次为
+绿、黄、红），动作用固件同一套关键帧插值做成呼吸。预设 4/5 固件接受但外观没有
+记录，这里不编造，返回 null。界面必须把这一点标注清楚。
+*/
+
+export const SMART_TEMP_PRESET_COLORS: Record<number, RGB | null> = {
+  1: { r: 34, g: 197, b: 94 },
+  2: { r: 234, g: 179, b: 8 },
+  3: { r: 239, g: 68, b: 68 },
+  4: null,
+  5: null,
+};
+
+/** 该预设的外观是否有实机依据。false 表示界面应显示"未知"而不是猜一个颜色。 */
+export function isSmartTempPresetKnown(preset: number): boolean {
+  return SMART_TEMP_PRESET_COLORS[preset] != null;
+}
+
+/**
+ * 构造智能温控预设的示意动画：整条灯带同色呼吸。
+ * 走的是与自定义灯效相同的关键帧插值，只是关键帧由这里合成。
+ */
+export function buildSmartTempPreviewProgram(preset: number, brightness = 100): LightProgram | null {
+  const color = SMART_TEMP_PRESET_COLORS[preset];
+  if (!color) return null;
+
+  const dim: RGB = {
+    r: Math.round(color.r * 0.22),
+    g: Math.round(color.g * 0.22),
+    b: Math.round(color.b * 0.22),
+  };
+  const program = newProgram(1, LIGHT_SPEED_SLOW, Math.max(0, Math.min(100, Math.round(brightness))));
+  for (let led = 0; led < LIGHT_LED_COUNT; led++) {
+    program.colors[led][0] = color;
+    program.colors[led][1] = dim;
+  }
+  return program;
+}

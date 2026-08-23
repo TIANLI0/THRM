@@ -47,6 +47,13 @@ import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPreset
 import FanCurveProfileSelect from './FanCurveProfileSelect';
 import LightStripPreview from './LightStripPreview';
 import {
+  SMART_TEMP_PRESET_COLORS,
+  buildLightProgram,
+  buildSmartTempPreviewProgram,
+  isSmartTempPresetKnown,
+  rgbToCss,
+} from '../lib/lightProgram';
+import {
   ToggleSwitch,
   Button,
   Select,
@@ -91,13 +98,14 @@ const SMART_TEMP_MAX_TEMP = 110;
 const SMART_TEMP_MAX_HYSTERESIS = 10;
 
 /** 固件原生预设。1..3 的外观已经实测确认；4/5 固件确实接受，但外观未记录。 */
-const SMART_TEMP_PRESETS: Array<{ value: number; swatch: string | null; labelKey: string }> = [
-  { value: 1, swatch: '#22c55e', labelKey: 'controlPanel.light.smartTemp.preset1' },
-  { value: 2, swatch: '#eab308', labelKey: 'controlPanel.light.smartTemp.preset2' },
-  { value: 3, swatch: '#ef4444', labelKey: 'controlPanel.light.smartTemp.preset3' },
-  { value: 4, swatch: null, labelKey: 'controlPanel.light.smartTemp.preset4' },
-  { value: 5, swatch: null, labelKey: 'controlPanel.light.smartTemp.preset5' },
-];
+const SMART_TEMP_PRESETS: Array<{ value: number; swatch: string | null; labelKey: string }> = [1, 2, 3, 4, 5].map((value) => {
+  const color = SMART_TEMP_PRESET_COLORS[value];
+  return {
+    value,
+    swatch: color ? rgbToCss(color) : null,
+    labelKey: `controlPanel.light.smartTemp.preset${value}`,
+  };
+});
 
 function getDefaultSmartTempBands(): types.SmartTempLightBand[] {
   return [
@@ -1615,6 +1623,29 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
     };
   }, [lightStripConfig.mode]);
 
+  // 智能温控预览跟着当前命中的区间走；还没判定出区间时（例如刚切到这个模式）
+  // 退回第一段，与设备切换灯效时下发的第一个预设一致。
+  const previewSmartPreset =
+    smartTempBands[activeSmartBandIndex >= 0 ? activeSmartBandIndex : 0]?.preset ?? 0;
+
+  const previewProgram = useMemo(() => {
+    if (lightStripConfig.mode === 'smart_temp') {
+      return buildSmartTempPreviewProgram(previewSmartPreset, lightStripConfig.brightness);
+    }
+    return buildLightProgram({
+      mode: lightStripConfig.mode,
+      speed: lightStripConfig.speed,
+      brightness: lightStripConfig.brightness,
+      colors: lightStripConfig.colors,
+    });
+  }, [
+    lightStripConfig.mode,
+    lightStripConfig.speed,
+    lightStripConfig.brightness,
+    lightStripConfig.colors,
+    previewSmartPreset,
+  ]);
+
   const updateSmartTempBands = useCallback((bands: types.SmartTempLightBand[]) => {
     setLightStripConfig((previous) =>
       types.LightStripConfig.createFrom({ ...previous, smartTempBands: normalizeSmartTempBands(bands) }),
@@ -1843,18 +1874,19 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               />
             </div>
 
-            {lightStripConfig.mode !== 'off' && lightStripConfig.mode !== 'smart_temp' && (
+            {lightStripConfig.mode !== 'off' && (
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">{t('controlPanel.light.previewLabel')}</span>
-                  <span className="text-[11px] text-muted-foreground">{t('controlPanel.light.previewHint')}</span>
+                  <span className="text-right text-[11px] text-muted-foreground">
+                    {lightStripConfig.mode !== 'smart_temp'
+                      ? t('controlPanel.light.previewHint')
+                      : previewProgram
+                        ? t('controlPanel.light.previewHintApproximate')
+                        : t('controlPanel.light.smartTemp.unknownAppearance')}
+                  </span>
                 </div>
-                <LightStripPreview
-                  mode={lightStripConfig.mode}
-                  speed={lightStripConfig.speed}
-                  brightness={lightStripConfig.brightness}
-                  colors={lightStripConfig.colors}
-                />
+                <LightStripPreview program={previewProgram} />
               </div>
             )}
 
@@ -1897,8 +1929,12 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                           )}
                         >
                           <span
-                            className="h-4 w-4 shrink-0 rounded-full border border-border"
+                            className={clsx(
+                              'h-4 w-8 shrink-0 rounded-full border border-border',
+                              !preset?.swatch && 'bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(127,127,127,0.35)_3px,rgba(127,127,127,0.35)_6px)]',
+                            )}
                             style={preset?.swatch ? { backgroundColor: preset.swatch } : undefined}
+                            title={preset && !isSmartTempPresetKnown(preset.value) ? t('controlPanel.light.smartTemp.unknownAppearance') : undefined}
                             aria-hidden
                           />
 
