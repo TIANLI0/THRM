@@ -52,6 +52,8 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	defer m.queryMutex.Unlock()
 	wasCapturing := m.debugCapture.Swap(true)
 	defer m.debugCapture.Store(wasCapturing)
+	// 详细读取要连发十条查询并逐条等响应，按空闲轮询间隔会拖到数秒。
+	defer m.beginTransaction()()
 
 	settings := types.DeviceSettings{
 		Available: false,
@@ -114,6 +116,12 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 		}
 	}
 	applyCurrentStatus(&settings, m.GetCurrentFanData())
+
+	// 0x45 是唯一能读回"设备侧灯效开关"的命令。用它播种缓存后，重连重放在设备
+	// 本来就处于目标状态时可以完全跳过 0x46，省掉一次固件数据闪存擦写。
+	if settings.RGBStateName == "on" || settings.RGBStateName == "off" {
+		m.NoteRGBEnabledFromDevice(settings.RGBStateName == "on")
+	}
 
 	settings.Available = settings.FirmwareVersion != "" || settings.DeviceIdentifier != "" || len(settings.GearRPMTable) > 0 || settings.QueriedWorkState != "" || settings.Status != nil
 	if settings.Available && lastErr != nil {

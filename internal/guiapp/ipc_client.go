@@ -17,7 +17,8 @@ func ipcRequestPolicy(reqType ipc.RequestType) (time.Duration, bool) {
 	case ipc.ReqGetDeviceStatus, ipc.ReqGetCurrentFanData, ipc.ReqGetConfig,
 		ipc.ReqGetFanCurve, ipc.ReqGetFanCurveProfiles, ipc.ReqGetTemperature,
 		ipc.ReqGetTemperatureHistory, ipc.ReqGetBridgeProgramStatus,
-		ipc.ReqGetDebugInfo, ipc.ReqGetDeviceDebugFrames, ipc.ReqPing:
+		ipc.ReqGetDebugInfo, ipc.ReqGetDeviceDebugFrames, ipc.ReqGetSmartLightStatus,
+		ipc.ReqPing:
 		return 6 * time.Second, true
 	case ipc.ReqConnect, ipc.ReqRestartPawnIO, ipc.ReqReinstallPawnIO:
 		return 30 * time.Second, false
@@ -166,6 +167,12 @@ func (a *App) handleCoreEvent(event ipc.Event) {
 		var cfg types.AppConfig
 		if err := json.Unmarshal(event.Data, &cfg); err == nil {
 			runtime.EventsEmit(a.ctx, "config-update", cfg)
+		}
+
+	case ipc.EventSmartLightUpdate:
+		var status types.SmartTempLightStatus
+		if err := json.Unmarshal(event.Data, &status); err == nil {
+			runtime.EventsEmit(a.ctx, "smart-light-update", status)
 		}
 
 	case ipc.EventHotkeyTriggered:

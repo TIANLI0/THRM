@@ -51,9 +51,12 @@ type CoreApp struct {
 	//
 	// 存到期时刻而不是布尔，是因为它必须能自己关掉：GUI 崩了或卡死时没人来发关闭
 	// 指令，一个永远开着的扩展轮询正是这里要避免的东西。
-	extendedSensorsUntil    atomic.Int64
-	currentTemp             types.TemperatureData
-	deviceSettings          *types.DeviceSettings
+	extendedSensorsUntil atomic.Int64
+	currentTemp          types.TemperatureData
+	deviceSettings       *types.DeviceSettings
+	// lastSmartLightStatus 用于去重智能温控灯效状态广播：温度每秒都在采样，
+	// 但只有真正换了温度区间才值得推送一次事件。
+	lastSmartLightStatus    types.SmartTempLightStatus
 	lastDeviceMode          string
 	userSetAutoControl      bool
 	isAutoStartLaunch       bool

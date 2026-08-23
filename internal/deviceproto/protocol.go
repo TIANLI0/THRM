@@ -117,6 +117,9 @@ func NormalizeDebugInput(input string) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid HID report frame")
 		}
+		if err := ValidateOutboundFrame(parsed.Frame); err != nil {
+			return nil, err
+		}
 		return parsed.Frame, nil
 	}
 	if len(data) >= 2 && data[0] == Magic0 && data[1] == Magic1 {
@@ -124,12 +127,50 @@ func NormalizeDebugInput(input string) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid protocol frame")
 		}
+		if err := ValidateOutboundFrame(parsed.Frame); err != nil {
+			return nil, err
+		}
 		return parsed.Frame, nil
 	}
 
 	cmd := data[0]
 	payload := data[1:]
-	return BuildFrame(cmd, payload...), nil
+	frame := BuildFrame(cmd, payload...)
+	if err := ValidateOutboundFrame(frame); err != nil {
+		return nil, err
+	}
+	return frame, nil
+}
+
+// RGBFrameCount 是固件灯效帧缓冲区能容纳的帧数（索引 0..30）。
+const RGBFrameCount = 31
+
+// ValidateOutboundFrame 拦截会让固件写越界的命令。
+//
+// 固件的 0x47 分支是 copy(stream_buffer + payload[0]*10, payload+1, 10)：既不检查
+// 帧索引上界，也不检查缓冲区指针是否已分配（只有 0x41 检查后者）。索引是一个完整
+// 字节，所以 0x47 FF ... 会往缓冲区后面 2550 字节处写数据，直接把固件打挂。
+// 正常控制路径固定使用 0..30，但调试控制台可以发任意帧，必须在这里挡住。
+func ValidateOutboundFrame(frame []byte) error {
+	parsed, ok := ParseFrame(frame)
+	if !ok {
+		return nil
+	}
+	switch parsed.Command {
+	case CmdRGBFrameWrite:
+		if len(parsed.Payload) < 1 {
+			return fmt.Errorf("命令 0x47 需要帧索引")
+		}
+		if int(parsed.Payload[0]) >= RGBFrameCount {
+			return fmt.Errorf("命令 0x47 的帧索引 %d 超出固件缓冲区上限 %d，固件不做越界检查，发送会破坏其内存",
+				parsed.Payload[0], RGBFrameCount-1)
+		}
+	case CmdSetGearRPM:
+		if len(parsed.Payload) >= 1 && parsed.Payload[0] > 3 {
+			return fmt.Errorf("命令 0x26 的挡位索引 %d 超出 0..3", parsed.Payload[0])
+		}
+	}
+	return nil
 }
 
 func ParseHex(input string) ([]byte, error) {

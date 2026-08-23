@@ -12,11 +12,6 @@ import {
   CreateRTSSAnchor,
   SetFanCurve,
   ResetLearnedOffsets,
-  GetAdaptiveStatus,
-  SetAdaptiveMode,
-  SetAdaptivePreference,
-  SetAdaptiveTempLimit,
-  ResetAdaptiveModel,
   GetCoolingBenefit,
   SaveCoolingBenefitReport,
   ClearCoolingBenefit,
@@ -32,6 +27,7 @@ import {
   SetSmartStartStop,
   SetBrightness,
   SetLightStrip,
+  GetSmartLightStatus,
   GetTemperature,
   GetTemperatureHistory,
   SetTemperatureHistoryEnabled,
@@ -46,7 +42,7 @@ import {
   // SetWindowsAutoStart
 } from '../../../wailsjs/go/main/App';
 
-import { ipc, rtss, smartcontrol, types } from '../../../wailsjs/go/models';
+import { ipc, rtss, types } from '../../../wailsjs/go/models';
 
 import type {
   DeviceInfo,
@@ -140,27 +136,6 @@ class ApiService {
   }
 
   /* ── 自适应学习 2.0 ── */
-
-  async getAdaptiveStatus(): Promise<smartcontrol.AdaptiveStatus> {
-    return await GetAdaptiveStatus();
-  }
-
-  async setAdaptiveMode(enabled: boolean): Promise<smartcontrol.AdaptiveStatus> {
-    return await SetAdaptiveMode(enabled);
-  }
-
-  async setAdaptivePreference(preference: number): Promise<smartcontrol.AdaptiveStatus> {
-    return await SetAdaptivePreference(preference);
-  }
-
-  async setAdaptiveTempLimit(tempLimit: number): Promise<smartcontrol.AdaptiveStatus> {
-    return await SetAdaptiveTempLimit(tempLimit);
-  }
-
-  // 清空 2.0 学到的热模型；倾向与开关保持不变。
-  async resetAdaptiveModel(): Promise<smartcontrol.AdaptiveStatus> {
-    return await ResetAdaptiveModel();
-  }
 
   /* ── 散热收益（与学习模式无关） ── */
 
@@ -263,6 +238,10 @@ class ApiService {
 
   async setLightStrip(config: types.LightStripConfig): Promise<void> {
     return await SetLightStrip(config);
+  }
+
+  async getSmartLightStatus(): Promise<types.SmartTempLightStatus> {
+    return await GetSmartLightStatus();
   }
 
   // Windows自启动相关
@@ -375,6 +354,10 @@ class ApiService {
 
   onConfigUpdate(callback: (config: types.AppConfig) => void): () => void {
     return EventsOn('config-update', callback);
+  }
+
+  onSmartLightUpdate(callback: (status: types.SmartTempLightStatus) => void): () => void {
+    return EventsOn('smart-light-update', callback);
   }
 
   onHotkeyTriggered(callback: (payload: { action: string; shortcut: string; success: boolean; message: string }) => void): () => void {

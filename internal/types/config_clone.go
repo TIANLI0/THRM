@@ -22,6 +22,7 @@ func (c AppConfig) Clone() AppConfig {
 
 	cloned.LegionFnQ.ModeMapping = maps.Clone(c.LegionFnQ.ModeMapping)
 	cloned.LightStrip.Colors = slices.Clone(c.LightStrip.Colors)
+	cloned.LightStrip.SmartTempBands = slices.Clone(c.LightStrip.SmartTempBands)
 	cloned.TimeCurveSchedule.Rules = cloneTimeCurveRules(c.TimeCurveSchedule.Rules)
 	cloned.SmartControl = c.SmartControl.Clone()
 	cloned.CoolingBenefit = c.CoolingBenefit.Clone()
@@ -40,8 +41,6 @@ func (s SmartControlConfig) Clone() SmartControlConfig {
 	cloned.LearnedRateHeat = slices.Clone(s.LearnedRateHeat)
 	cloned.LearnedRateCool = slices.Clone(s.LearnedRateCool)
 	cloned.NoiseProfile = slices.Clone(s.NoiseProfile)
-	cloned.Adaptive.Model.Buckets = slices.Clone(s.Adaptive.Model.Buckets)
-	cloned.Adaptive.AutoCurve = slices.Clone(s.Adaptive.AutoCurve)
 	cloned.TargetTempByProfile = maps.Clone(s.TargetTempByProfile)
 	cloned.LearningBiasByProfile = maps.Clone(s.LearningBiasByProfile)
 

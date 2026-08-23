@@ -43,41 +43,79 @@ func TestLightProgramUsesLEDMajorColorOrder(t *testing.T) {
 	}
 }
 
-func TestSmartLightPresetForTemperature(t *testing.T) {
+// 温度区间现在由用户配置。这里锁住默认区间（<=70 绿 / 71..80 黄 / >80 红）
+// 与 2°C 回差下的判定结果：区间下标 i 的下界记作 B，向上进入需要 temp >= B+回差，
+// 向下退出需要 temp < B-回差。
+func TestSelectSmartTempLightBandWithDefaults(t *testing.T) {
+	bands := types.GetDefaultSmartTempLightBands()
+	const hysteresis = types.DefaultSmartTempLightHysteresis
+
 	tests := []struct {
 		name        string
 		temperature int
-		current     byte
-		want        byte
+		current     int
+		wantIndex   int
+		wantPreset  int
 	}{
-		{name: "invalid", temperature: 0, want: 0},
-		{name: "initial green", temperature: 70, want: 1},
-		{name: "initial yellow", temperature: 71, want: 2},
-		{name: "initial red", temperature: 81, want: 3},
-		{name: "green hysteresis", temperature: 72, current: 1, want: 1},
-		{name: "green to yellow", temperature: 73, current: 1, want: 2},
-		{name: "yellow hysteresis down", temperature: 68, current: 2, want: 2},
-		{name: "yellow to green", temperature: 67, current: 2, want: 1},
-		{name: "yellow to red", temperature: 83, current: 2, want: 3},
-		{name: "red hysteresis", temperature: 78, current: 3, want: 3},
-		{name: "red to yellow", temperature: 77, current: 3, want: 2},
+		{name: "initial green", temperature: 70, current: -1, wantIndex: 0, wantPreset: 1},
+		{name: "initial yellow", temperature: 71, current: -1, wantIndex: 1, wantPreset: 2},
+		{name: "initial red", temperature: 81, current: -1, wantIndex: 2, wantPreset: 3},
+		{name: "green holds inside hysteresis", temperature: 72, current: 0, wantIndex: 0, wantPreset: 1},
+		{name: "green to yellow", temperature: 73, current: 0, wantIndex: 1, wantPreset: 2},
+		{name: "yellow holds inside hysteresis", temperature: 69, current: 1, wantIndex: 1, wantPreset: 2},
+		{name: "yellow to green", temperature: 68, current: 1, wantIndex: 0, wantPreset: 1},
+		{name: "yellow to red", temperature: 83, current: 1, wantIndex: 2, wantPreset: 3},
+		{name: "red holds inside hysteresis", temperature: 79, current: 2, wantIndex: 2, wantPreset: 3},
+		{name: "red to yellow", temperature: 78, current: 2, wantIndex: 1, wantPreset: 2},
+		{name: "a large drop falls straight to the bottom band", temperature: 40, current: 2, wantIndex: 0, wantPreset: 1},
+		{name: "a large rise jumps straight to the top band", temperature: 95, current: 0, wantIndex: 2, wantPreset: 3},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := smartLightPresetForTemperature(test.temperature, test.current); got != test.want {
-				t.Fatalf("preset(%d°C, current=%d) = %d, want %d", test.temperature, test.current, got, test.want)
+			index := types.SelectSmartTempLightBand(bands, hysteresis, test.temperature, test.current)
+			if index != test.wantIndex {
+				t.Fatalf("band(%d°C, current=%d) = %d, want %d", test.temperature, test.current, index, test.wantIndex)
+			}
+			if got := bands[index].Preset; got != test.wantPreset {
+				t.Fatalf("preset = %d, want %d", got, test.wantPreset)
 			}
 		})
 	}
 }
 
-func TestSmartLightActivationSequenceResetsCustomAnimation(t *testing.T) {
+// 用户可以自定义区间数量、边界和预设，判定必须完全跟着配置走，
+// 而不是继续用写死的 70/80°C。
+func TestSelectSmartTempLightBandFollowsUserConfiguration(t *testing.T) {
+	bands := []types.SmartTempLightBand{
+		{MinTemp: 0, Preset: 4},
+		{MinTemp: 55, Preset: 1},
+		{MinTemp: 90, Preset: 5},
+	}
+	cases := []struct {
+		temperature int
+		wantPreset  int
+	}{
+		{temperature: 30, wantPreset: 4},
+		{temperature: 55, wantPreset: 1},
+		{temperature: 89, wantPreset: 1},
+		{temperature: 90, wantPreset: 5},
+	}
+	for _, test := range cases {
+		index := types.SelectSmartTempLightBand(bands, 0, test.temperature, -1)
+		if got := bands[index].Preset; got != test.wantPreset {
+			t.Fatalf("preset(%d°C) = %d, want %d", test.temperature, got, test.wantPreset)
+		}
+	}
+}
+
+// 切回原生预设时不再无条件先关再开灯效：0x46 每次都会擦写一页固件数据闪存，
+// 而这里的开/关本来就是同一个值，纯属浪费一次擦写。
+func TestSmartLightActivationSequenceAvoidsRedundantEnableToggle(t *testing.T) {
 	steps := smartLightActivationSequence(2)
 	want := []struct {
 		command byte
 		payload byte
 	}{
-		{command: 0x46, payload: 0x00},
 		{command: 0x44, payload: 0x00},
 		{command: 0x46, payload: 0x01},
 		{command: 0x44, payload: 0x02},
@@ -89,6 +127,11 @@ func TestSmartLightActivationSequenceResetsCustomAnimation(t *testing.T) {
 		if steps[i].command != want[i].command || len(steps[i].payload) != 1 || steps[i].payload[0] != want[i].payload {
 			t.Fatalf("step %d = command %#02x payload %v, want command %#02x payload %#02x",
 				i, steps[i].command, steps[i].payload, want[i].command, want[i].payload)
+		}
+	}
+	for _, step := range steps {
+		if step.command == 0x46 && step.payload[0] == 0x00 {
+			t.Fatal("序列里不应再出现 0x46 00：它会多产生一次固件闪存擦写")
 		}
 	}
 }

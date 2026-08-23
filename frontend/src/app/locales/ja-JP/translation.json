@@ -136,8 +136,7 @@
     },
     "chart": {
       "fanCurve": "ファン回転カーブ",
-      "openCurve": "カーブ制御",
-      "adaptiveBadge": "2.0 生成"
+      "openCurve": "カーブ制御"
     },
     "history": {
       "title": "温度とファン履歴",
@@ -166,8 +165,7 @@
       "smartDescription": "リアルタイム温度に応じてファン回転数を自動調整します",
       "fixedDescription": "現在は {{rpm}} RPM に固定されています",
       "manualDescription": "設定タブでモードとパラメータを調整できます",
-      "withProfile": "{{mode}}（{{profile}}）",
-      "adaptiveDescription": "アダプティブ学習 2.0 が設定した傾向に沿ってカーブを自動生成・補正しています"
+      "withProfile": "{{mode}}（{{profile}}）"
     },
     "bridgeState": {
       "runningOwned": "単独実行中",
@@ -384,8 +382,7 @@
       },
       "series": {
         "base": "基準カーブ",
-        "learned": "学習カーブ",
-        "adaptive": "アダプティブ 2.0"
+        "learned": "学習カーブ"
       },
       "temperatureLabel": "温度: {{temperature}}°C"
     },
@@ -438,9 +435,7 @@
       "laptopGuardTitle": "ノートPCのファンが高回転の間はゆっくり下げる",
       "laptopGuardDescription": "ノートPC本体のファンが直近の最高回転に近いあいだ、クーラーの回転は1サンプリングあたり最大 60 RPM しか下げません。温度が少し下がった途端に回転を落とし、温度が戻って再び上げる、という往復を防ぎます。ファン回転数を読み取れる機種でのみ利用できます。",
       "laptopGuardToggleAria": "ノートPCのファンが高回転の間はゆっくり下げるの切り替え",
-      "predictiveToggleAria": "早めに回転を上げるの切り替え",
-      "supersededBadge": "2.0 が制御中",
-      "supersededHint": "アダプティブ学習 2.0 が有効なため、以下の設定は一時的に無効です。2.0 をオフにすればそのまま復帰します。"
+      "predictiveToggleAria": "早めに回転を上げるの切り替え"
     },
     "noiseTest": {
       "title": "ファン騒音テスト",
@@ -550,8 +545,7 @@
         "fri": "金",
         "sat": "土",
         "sun": "日"
-      },
-      "supersededHint": "アダプティブ学習 2.0 が制御中です。スケジュールが切り替えるのは手動カーブのプロファイルなので、2.0 が有効な間は回転数に影響しません。オフにすれば再び有効になります。"
+      }
     },
     "hints": {
       "dragPoint": "ブルーポイントをドラッグして RPM を調整",
@@ -682,46 +676,6 @@
       "learningResetDescription": "ファンカーブは設定値にしたがって動作します",
       "resetFailed": "リセットに失敗しました"
     },
-    "adaptive": {
-      "title": "アダプティブ学習 2.0",
-      "badge": "自動生成カーブ",
-      "active": "制御中",
-      "description": "カーブを描く必要はありません。この機体の冷却特性をオンラインで推定し、設定した傾向に沿ってカーブ全体を自動生成・継続補正します。",
-      "toggleAria": "アダプティブ学習 2.0 を切り替え",
-      "disabledHint": "有効にするとカーブはすべてアルゴリズムが生成し、カーブ編集とアダプティブ学習 1.0 は自動的に譲ります。いつでもオフにすれば手動カーブに戻ります。",
-      "preferenceTitle": "傾向",
-      "anchors": {
-        "silent": "静音",
-        "balanced": "バランス",
-        "performance": "パフォーマンス",
-        "extreme": "最大冷却"
-      },
-      "derived": {
-        "rpmRange": "回転数レンジ",
-        "model": "熱モデル",
-        "modelPower": "消費電力ベース",
-        "modelBasic": "簡易",
-        "atWarm": "70°C 時の回転数",
-        "atHot": "85°C 時の回転数"
-      },
-      "progressTitle": "学習の進み具合",
-      "progressCount": "定常サンプル {{samples}} 件",
-      "progressHint": "さまざまな負荷で普通に使うだけで構いません。ファンが一定回転を十分に保つたびにサンプルが 1 件記録され、学ぶほどこの機体に合ったカーブになります。それまでは控えめな内蔵カーブに近い挙動です。",
-      "progress": {
-        "cold": "未開始",
-        "learning": "学習中",
-        "ready": "準備完了"
-      },
-      "limitTitle": "安全上限温度",
-      "limitDescription": "傾向とは無関係のハード制約です。この温度に達したら即座に全開になります。下限は {{ceiling}}°C 付近から徐々に上がり始めるので、境界で急に跳ね上がることはありません。",
-      "resetTitle": "熱モデルをリセット",
-      "resetDescription": "機体を変えた、冷却環境を変えた、学習結果がおかしいと感じた場合はクリアしてやり直せます。傾向の設定は維持されます。",
-      "resetButton": "学習をやり直す",
-      "resetDone": "熱モデルをリセットしました。学習をやり直します",
-      "updateFailed": "アダプティブ学習の設定を更新できませんでした: {{message}}",
-      "chartNotice": "このカーブはアダプティブ学習 2.0 が生成したもの（紫の実線）で、ドラッグできません。細いグレーの線は保存済みの手動カーブで、2.0 をオフにすればすぐに復帰します。",
-      "shortTitle": "アダプティブ 2.0"
-    },
     "benefit": {
       "title": "冷却効果の実測",
       "entryDescription": "このクーラーが回転数ごとに実際に何をもたらすかを実測します。何度下がるか、何ワット多く出せるか、どの部品が最も恩恵を受けるか。学習モードとは独立しています。",
@@ -827,10 +781,29 @@
       "effectMode": "ライティング効果",
       "animationSpeed": "アニメーション速度",
       "brightness": "明るさ",
-      "smartTempWarning": "PC の CPU/GPU 最高温度に応じてアプリが内蔵アニメーションを切り替えるため、カラーと明るさは手動調整できません。",
+      "smartTempWarning": "スマート温度連動はファームウェア内蔵アニメーションを使い、PC の最高温度で切り替えます。温度帯と各帯で使うアニメーションは変更できますが、LED ごとの色と明るさはファームウェアが決定します。",
       "colorLabel": "カラー {{index}}",
       "applyHintConnected": "適用後すぐに反映されます",
-      "applyHintDisconnected": "次回接続時に自動適用されます"
+      "applyHintDisconnected": "次回接続時に自動適用されます",
+      "smartTemp": {
+        "bandsTitle": "温度帯",
+        "liveTemp": "現在 {{temp}}°C",
+        "noTemp": "温度の読み取りなし",
+        "fromZero": "開始",
+        "rangeUpTo": "– {{temp}}°C",
+        "rangeAndAbove": "以上",
+        "addBand": "温度帯を追加",
+        "removeBand": "この温度帯を削除",
+        "hysteresis": "切替ヒステリシス",
+        "presetHint": "内蔵アニメーションの切り替えは実行時の状態を変えるだけで、デバイスのフラッシュには書き込みません。温度に応じて頻繁に切り替えても安全です。",
+        "preset1": "内蔵 1（緑）",
+        "preset2": "内蔵 2（黄）",
+        "preset3": "内蔵 3（赤）",
+        "preset4": "内蔵 4",
+        "preset5": "内蔵 5"
+      },
+      "previewLabel": "ライトバー プレビュー",
+      "previewHint": "ファームウェアと同じ補間で再現 · LED 6 個"
     },
     "fan": {
       "sectionTitle": "ファン制御",
@@ -880,8 +853,7 @@
       "toasts": {
         "profileSwitched": "温度カーブを切り替えました",
         "profileSwitchFailed": "カーブの切り替えに失敗しました: {{error}}"
-      },
-      "curveProfileAdaptiveDescription": "アダプティブ学習 2.0 が有効なため、プロファイルを切り替えても現在の制御には影響しません。2.0 をオフにしたときに使う手動カーブを選ぶだけです。"
+      }
     },
     "device": {
       "sectionTitle": "デバイス設定",

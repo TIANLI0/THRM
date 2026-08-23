@@ -37,9 +37,14 @@ func (m *Manager) runFirmwareMaintenanceCommand(command byte, accepted ...byte) 
 	if !supportsDetailedFirmwareProtocol(m.productID) {
 		return fmt.Errorf("命令 0x%02X 仅在 BS2/BS2PRO/BS3/BS3PRO 同协议固件上启用", command)
 	}
+	defer m.beginTransaction()()
+
 	if err := m.sendHIDAckLocked(command, nil, accepted...); err != nil {
 		return err
 	}
 	m.resetRealtimeControlStateLocked()
+	// 0x06 会重建固件的 LED/RGB 状态，0x03/0x05 也会改写运行期控制结构，
+	// 缓存的"设备侧灯光开关值"在这之后不再可信。
+	m.resetLightStateCacheLocked()
 	return nil
 }

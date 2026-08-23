@@ -17,10 +17,6 @@ const (
 	lightUploadFrameCount = 31
 	lightUploadFrameSize  = 10
 	lightColorDataOffset  = 6
-
-	smartLightWarmTemperature = 70
-	smartLightHotTemperature  = 80
-	smartLightHysteresis      = 2
 )
 
 // lightProgram mirrors the firmware upload buffer. Bytes 0..5 are the header:
@@ -55,11 +51,10 @@ func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
 func (m *Manager) rememberLightConfigLocked(cfg types.LightStripConfig) {
 	m.lightConfig = cfg
 	m.hasLightConfig = true
-	if cfg.Mode == "smart_temp" {
-		m.smartLightPreset = 1
-		m.hasSmartLightPreset = true
-	} else {
+	if cfg.Mode != "smart_temp" {
 		m.hasSmartLightPreset = false
+		m.smartLightBandIndex = -1
+		m.smartLightTemperature = 0
 	}
 }
 
@@ -109,7 +104,41 @@ func (m *Manager) SetRGBOff() bool {
 }
 
 func (m *Manager) setRGBOffLocked() error {
-	return m.sendLightCommandLocked(deviceproto.CmdRGBEnable, 0x00)
+	return m.setRGBEnableLocked(false)
+}
+
+// setRGBEnableLocked 下发 0x46，但在设备侧已知就是目标值时跳过。
+//
+// 固件的 0x46 分支无条件调用配置落盘（擦除并重写一页 256 字节数据闪存），
+// 而 0x0C/0x0D 都会先比较新旧值再落盘——0x46/0x48 少了这个判断。原来每次应用
+// 灯效都要先关再开，等于凭空产生两次闪存擦写；重连重放时更是每次都重复一遍。
+// 缓存设备侧的当前值并跳过重复写入，是主机端唯一能做的缓解。
+func (m *Manager) setRGBEnableLocked(enabled bool) error {
+	if m.hasRGBEnabled && m.rgbEnabled == enabled {
+		m.logDebug("灯效开关已是 %t，跳过一次固件闪存写入", enabled)
+		return nil
+	}
+	payload := byte(0x00)
+	if enabled {
+		payload = 0x01
+	}
+	if err := m.sendLightCommandLocked(deviceproto.CmdRGBEnable, payload); err != nil {
+		// 写入结果未知，缓存不再可信。
+		m.hasRGBEnabled = false
+		return err
+	}
+	m.rgbEnabled = enabled
+	m.hasRGBEnabled = true
+	return nil
+}
+
+// NoteRGBEnabledFromDevice 用 0x45 读回的状态播种缓存，使重连后的首次重放
+// 在设备本来就处于目标状态时不必写闪存。
+func (m *Manager) NoteRGBEnabledFromDevice(enabled bool) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.rgbEnabled = enabled
+	m.hasRGBEnabled = true
 }
 
 func clampLightBrightness(value int) byte {
@@ -194,13 +223,17 @@ func (p *lightProgram) setColor(led, keyframe int, color types.RGBColor) {
 }
 
 func (m *Manager) applyLightFramesLocked(program lightProgram) error {
-	// Firmware flow: disable/apply the current LED state, enable the uploader,
-	// initialize the frame buffer, write frame 0..30, then commit. 0x45 is only
-	// a status query and must not be mixed into this write transaction.
-	if err := m.sendLightCommandLocked(deviceproto.CmdRGBEnable, 0x00); err != nil {
-		return err
-	}
-	if err := m.sendLightCommandLocked(deviceproto.CmdRGBEnable, 0x01); err != nil {
+	// Firmware flow: make sure the LED output is on, initialize the frame
+	// buffer, write frame 0..30, then commit. 0x45 is only a status query and
+	// must not be mixed into this write transaction.
+	//
+	// The old sequence toggled 0x46 off then on before every upload. The
+	// firmware persists the enable flag to data flash on each 0x46, so that
+	// toggle cost two flash erase/program cycles per light change for no
+	// protocol benefit: 0x41 only needs the stream buffer, not a fresh enable.
+	defer m.beginTransaction()()
+
+	if err := m.setRGBEnableLocked(true); err != nil {
 		return err
 	}
 	if err := m.sendLightCommandLocked(deviceproto.CmdRGBUploadInit); err != nil {
@@ -214,6 +247,10 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 		}
 	}
 
+	// 0x43 makes the firmware queue its own flash write of the frame buffer.
+	// That is one erase/program cycle per applied custom effect and is the
+	// reason smart-temperature lighting uses native presets instead of
+	// re-uploading a program whenever the temperature crosses a band.
 	return m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 0x01)
 }
 
@@ -293,31 +330,49 @@ func (m *Manager) setLightBreathingLocked(colors []types.RGBColor, speed, bright
 }
 
 func (m *Manager) setLightSmartTempLocked() error {
-	// The computer selects firmware presets 1..3 as its temperature changes.
+	// The computer selects a firmware preset as its temperature changes.
 	// A custom upload leaves its animation active. Tear that state down before
 	// selecting a native preset; 0x44 applies its generated table immediately,
 	// so following it with the custom-buffer commit command 0x43 is incorrect.
-	for _, step := range smartLightActivationSequence(1) {
+	defer m.beginTransaction()()
+
+	preset := byte(types.SmartTempLightMinPreset)
+	if bands, _ := types.NormalizeSmartTempLightBands(m.lightConfig.SmartTempBands); len(bands) > 0 {
+		preset = byte(bands[0].Preset)
+	}
+	for _, step := range smartLightActivationSequence(preset) {
+		if step.command == deviceproto.CmdRGBEnable {
+			if err := m.setRGBEnableLocked(step.payload[0] != 0); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := m.sendLightCommandLocked(step.command, step.payload...); err != nil {
 			return err
 		}
 	}
+	m.smartLightPreset = preset
+	m.hasSmartLightPreset = true
+	m.smartLightBandIndex = 0
 	return nil
 }
 
+// smartLightActivationSequence 是从自定义帧灯效切回原生预设的序列。
+//
+// 0x46 由 setRGBEnableLocked 消费，已经处于目标状态时会被跳过；0x44 只改运行期
+// 状态，不写闪存，可以放心每次都发。先发 0x44 00 是为了停掉上一套自定义动画。
 func smartLightActivationSequence(preset byte) []lightCommand {
 	return []lightCommand{
-		{command: deviceproto.CmdRGBEnable, payload: []byte{0x00}},
 		{command: deviceproto.CmdRGBDynamicParam, payload: []byte{0x00}},
 		{command: deviceproto.CmdRGBEnable, payload: []byte{0x01}},
 		{command: deviceproto.CmdRGBDynamicParam, payload: []byte{preset}},
 	}
 }
 
-// UpdateSmartTemperatureLight switches among the firmware's green, yellow and
-// red native animations according to the highest current computer temperature.
-// It sends nothing while another light mode is active or while the temperature
-// remains in the same hysteresis band.
+// UpdateSmartTemperatureLight switches among the firmware's native animations
+// according to the highest current computer temperature and the user's
+// configured temperature bands. It sends nothing while another light mode is
+// active or while the temperature stays inside the current band's hysteresis.
 func (m *Manager) UpdateSmartTemperatureLight(temperature int) error {
 	if m.IsBS1() || temperature <= 0 {
 		return nil
@@ -332,63 +387,46 @@ func (m *Manager) UpdateSmartTemperatureLight(temperature int) error {
 		return nil
 	}
 
-	current := byte(0)
-	if m.hasSmartLightPreset {
-		current = m.smartLightPreset
+	bands, _ := types.NormalizeSmartTempLightBands(m.lightConfig.SmartTempBands)
+	if len(bands) == 0 {
+		return nil
 	}
-	next := smartLightPresetForTemperature(temperature, current)
-	if next == 0 || (m.hasSmartLightPreset && next == m.smartLightPreset) {
+	current := -1
+	if m.hasSmartLightPreset {
+		current = m.smartLightBandIndex
+	}
+	index := types.SelectSmartTempLightBand(bands, m.lightConfig.SmartTempHysteresis, temperature, current)
+	if index < 0 || index >= len(bands) {
+		return nil
+	}
+	m.smartLightTemperature = temperature
+
+	next := byte(bands[index].Preset)
+	if m.hasSmartLightPreset && index == m.smartLightBandIndex && next == m.smartLightPreset {
 		return nil
 	}
 	if err := m.sendLightCommandLocked(deviceproto.CmdRGBDynamicParam, next); err != nil {
 		return err
 	}
 	m.smartLightPreset = next
+	m.smartLightBandIndex = index
 	m.hasSmartLightPreset = true
-	m.logDebug("智能温控灯效切换: %d°C -> 固件预设 %d", temperature, next)
+	m.logDebug("智能温控灯效切换: %d°C -> 区间 %d (固件预设 %d)", temperature, index+1, next)
 	return nil
 }
 
-func smartLightPresetForTemperature(temperature int, current byte) byte {
-	if temperature <= 0 {
-		return 0
-	}
+// SmartTempLightStatus 返回智能温控灯效当前落在哪一段，供界面实时展示。
+func (m *Manager) SmartTempLightStatus() types.SmartTempLightStatus {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
 
-	// The first three 0x44 presets are visibly ordered green, yellow and red in
-	// the firmware's generated RGB tables. Keep the UI's existing 70/80°C bands
-	// and add 2°C hysteresis so sensor noise cannot toggle animations each tick.
-	switch current {
-	case 1:
-		if temperature > smartLightHotTemperature+smartLightHysteresis {
-			return 3
-		}
-		if temperature > smartLightWarmTemperature+smartLightHysteresis {
-			return 2
-		}
-		return 1
-	case 2:
-		if temperature > smartLightHotTemperature+smartLightHysteresis {
-			return 3
-		}
-		if temperature < smartLightWarmTemperature-smartLightHysteresis {
-			return 1
-		}
-		return 2
-	case 3:
-		if temperature < smartLightWarmTemperature-smartLightHysteresis {
-			return 1
-		}
-		if temperature < smartLightHotTemperature-smartLightHysteresis {
-			return 2
-		}
-		return 3
-	default:
-		if temperature > smartLightHotTemperature {
-			return 3
-		}
-		if temperature > smartLightWarmTemperature {
-			return 2
-		}
-		return 1
+	status := types.SmartTempLightStatus{BandIndex: -1}
+	if !m.hasLightConfig || m.lightConfig.Mode != "smart_temp" || !m.hasSmartLightPreset {
+		return status
 	}
+	status.Active = true
+	status.BandIndex = m.smartLightBandIndex
+	status.Preset = int(m.smartLightPreset)
+	status.Temperature = m.smartLightTemperature
+	return status
 }

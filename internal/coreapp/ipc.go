@@ -109,27 +109,6 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 		}
 		return a.dataResponse(map[string]bool{"ok": true})
 
-	case ipc.ReqGetAdaptiveStatus:
-		return a.dataResponse(a.GetAdaptiveStatus())
-
-	case ipc.ReqSetAdaptiveConfig:
-		var params ipc.SetAdaptiveConfigParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析自适应学习配置失败: " + err.Error())
-		}
-		status, err := a.SetAdaptiveConfig(params)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(status)
-
-	case ipc.ReqResetAdaptiveModel:
-		status, err := a.ResetAdaptiveModel()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(status)
-
 	case ipc.ReqSetExtendedSensors:
 		var enabled bool
 		if err := json.Unmarshal(req.Data, &enabled); err != nil {
@@ -291,6 +270,9 @@ func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 			return a.errorResponse(err.Error())
 		}
 		return a.successResponse(true)
+
+	case ipc.ReqGetSmartLightStatus:
+		return a.dataResponse(a.GetSmartLightStatus())
 
 	// 温度相关
 	case ipc.ReqGetTemperature:
