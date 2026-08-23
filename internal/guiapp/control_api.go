@@ -96,6 +96,17 @@ func (a *App) SetBrightness(percentage int) bool {
 	return success
 }
 
+// GetSmartLightStatus 获取智能温控灯效当前落在哪一段。
+func (a *App) GetSmartLightStatus() types.SmartTempLightStatus {
+	status := types.SmartTempLightStatus{BandIndex: -1}
+	resp, err := a.sendRequest(ipc.ReqGetSmartLightStatus, nil)
+	if err != nil || !resp.Success {
+		return status
+	}
+	json.Unmarshal(resp.Data, &status)
+	return status
+}
+
 // SetLightStrip 设置灯带
 func (a *App) SetLightStrip(cfg types.LightStripConfig) error {
 	resp, err := a.sendRequest(ipc.ReqSetLightStrip, ipc.SetLightStripParams{Config: cfg})

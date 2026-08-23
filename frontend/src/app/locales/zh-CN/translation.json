@@ -136,8 +136,7 @@
     },
     "chart": {
       "fanCurve": "风扇转速曲线",
-      "openCurve": "曲线页",
-      "adaptiveBadge": "2.0 生成"
+      "openCurve": "曲线页"
     },
     "history": {
       "title": "温度与风扇历史",
@@ -166,8 +165,7 @@
       "smartDescription": "根据实时温度自动调节转速",
       "fixedDescription": "当前固定为 {{rpm}} RPM",
       "manualDescription": "可在设置页调整模式与参数",
-      "withProfile": "{{mode}}（{{profile}}）",
-      "adaptiveDescription": "自适应学习 2.0 正在按你设定的倾向自动生成并修正曲线"
+      "withProfile": "{{mode}}（{{profile}}）"
     },
     "bridgeState": {
       "runningOwned": "独占运行",
@@ -385,8 +383,7 @@
       },
       "series": {
         "base": "基础曲线",
-        "learned": "学习曲线",
-        "adaptive": "自适应 2.0"
+        "learned": "学习曲线"
       },
       "temperatureLabel": "温度: {{temperature}}°C"
     },
@@ -439,9 +436,7 @@
       "laptopGuardTitle": "笔记本风扇高转时缓慢降速",
       "laptopGuardDescription": "笔记本自身风扇仍接近最近的最高转速时，散热器每个采样周期最多降 60 RPM，避免温度一掉就急降速、温度回升后又要升速的来回摆动。仅在能读到笔记本风扇转速的机型上可用。",
       "laptopGuardToggleAria": "切换笔记本风扇高转时缓慢降速",
-      "predictiveToggleAria": "切换提前升速",
-      "supersededBadge": "已由 2.0 接管",
-      "supersededHint": "自适应学习 2.0 已开启，下面这些设置暂不生效。关闭 2.0 后会原样恢复。"
+      "predictiveToggleAria": "切换提前升速"
     },
     "noiseTest": {
       "title": "风扇噪音测试",
@@ -551,8 +546,7 @@
         "fri": "五",
         "sat": "六",
         "sun": "日"
-      },
-      "supersededHint": "自适应学习 2.0 已接管控温，分时方案切换的是用户曲线方案，在此期间不会影响实际转速。关闭 2.0 后恢复生效。"
+      }
     },
     "hints": {
       "dragPoint": "拖拽蓝色圆点调整转速",
@@ -683,46 +677,6 @@
       "learningResetDescription": "风扇曲线将完全按用户设定执行",
       "resetFailed": "重置失败"
     },
-    "adaptive": {
-      "title": "自适应学习 2.0",
-      "badge": "自动曲线",
-      "active": "已接管",
-      "description": "不再需要你画曲线。它会在线辨识这台机器的散热特性，再按你设定的倾向自动生成并持续修正整条曲线。",
-      "toggleAria": "切换自适应学习 2.0",
-      "disabledHint": "开启后曲线将完全由算法生成，曲线编辑与自适应学习 1.0 会自动让位。随时关闭即可恢复手动曲线。",
-      "preferenceTitle": "倾向",
-      "anchors": {
-        "silent": "静音",
-        "balanced": "均衡",
-        "performance": "性能",
-        "extreme": "极致"
-      },
-      "derived": {
-        "rpmRange": "转速区间",
-        "model": "热模型",
-        "modelPower": "功耗级",
-        "modelBasic": "基础",
-        "atWarm": "70°C 时转速",
-        "atHot": "85°C 时转速"
-      },
-      "progressTitle": "学习进度",
-      "progressCount": "{{samples}} 个稳态样本",
-      "progressHint": "在不同负载下正常使用即可。风扇在稳定转速上待够久时会记录一次样本；学得越多，曲线越贴合这台机器。样本不足时会先沿用保守的内置曲线。",
-      "progress": {
-        "cold": "尚未开始",
-        "learning": "学习中",
-        "ready": "已就绪"
-      },
-      "limitTitle": "安全红线",
-      "limitDescription": "与倾向无关的硬约束：温度达到该值立即全速。算法会从 {{ceiling}}°C 附近开始逐步提高转速下限，而不是到点突然拉满。",
-      "resetTitle": "重置热模型",
-      "resetDescription": "换了机器、改了散热环境，或觉得学歪了，可以清空重新学。倾向设置会保留。",
-      "resetButton": "重新学习",
-      "resetDone": "热模型已重置，将重新开始学习",
-      "updateFailed": "更新自适应学习设置失败: {{message}}",
-      "chartNotice": "当前曲线由自适应学习 2.0 生成（紫色实线），无法手动拖动。灰色细线是你保存的手动曲线，关闭 2.0 后立即恢复使用。",
-      "shortTitle": "自适应 2.0"
-    },
     "benefit": {
       "title": "散热收益实测",
       "entryDescription": "实测这台散热器在不同转速下究竟带来了什么：降了几度、多释放了几瓦、哪个零部件受益最大。与学习模式无关。",
@@ -828,10 +782,30 @@
       "effectMode": "效果模式",
       "animationSpeed": "动画速度",
       "brightness": "亮度",
-      "smartTempWarning": "软件会根据电脑 CPU/GPU 最高温度自动切换设备内置动画，不支持手动调节颜色与亮度。",
+      "smartTempWarning": "智能温控使用固件内置动画，由电脑最高温度驱动切换。可自定义温度区间与每段使用的内置动画，但单颗灯珠颜色与亮度由固件决定。",
       "colorLabel": "颜色 {{index}}",
       "applyHintConnected": "应用后立即生效",
-      "applyHintDisconnected": "下次连接时自动生效"
+      "applyHintDisconnected": "下次连接时自动生效",
+      "smartTemp": {
+        "bandsTitle": "温度区间",
+        "liveTemp": "当前 {{temp}}°C",
+        "noTemp": "暂无温度读数",
+        "fromZero": "起始",
+        "rangeUpTo": "– {{temp}}°C",
+        "rangeAndAbove": "以上",
+        "addBand": "添加区间",
+        "removeBand": "删除该区间",
+        "hysteresis": "切换回差",
+        "presetHint": "内置动画是一段白色高光沿灯带跑动的流光；温度越高的预设跑得越快。切换只改运行状态，不写入设备闪存。",
+        "preset1": "内置 1 · 绿色流光（慢）",
+        "preset2": "内置 2 · 黄色流光（中）",
+        "preset3": "内置 3 · 红色流光（快）",
+        "preset4": "内置 4 · 红色常亮",
+        "preset5": "内置 5 · 三帧流光",
+        "dependsOnRuntimeProfile": "该预设的颜色表由设备的运行配置字节（命令 0x09）决定：等于 1 时为红→粉，否则为白光跑蓝底"
+      },
+      "previewLabel": "灯条预览",
+      "previewHint": "按固件插值算法实时复现"
     },
     "fan": {
       "sectionTitle": "风扇控制",
@@ -881,8 +855,7 @@
       "toasts": {
         "profileSwitched": "温控曲线已切换",
         "profileSwitchFailed": "切换曲线失败: {{error}}"
-      },
-      "curveProfileAdaptiveDescription": "自适应学习 2.0 开启中，切换方案暂不影响实际控温，仅决定关闭 2.0 后使用哪条手动曲线。"
+      }
     },
     "device": {
       "sectionTitle": "设备设置",

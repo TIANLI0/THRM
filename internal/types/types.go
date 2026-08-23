@@ -274,43 +274,46 @@ type DeviceDebugFrame struct {
 
 // DeviceSettings contains settings read back from the device firmware.
 type DeviceSettings struct {
-	Available                bool               `json:"available"`
-	Source                   string             `json:"source"`
-	ReadAt                   string             `json:"readAt"`
-	ReadErrors               []string           `json:"readErrors,omitempty"`
-	Model                    string             `json:"model,omitempty"`
-	DeviceCPUModel           string             `json:"deviceCpuModel,omitempty"`
-	DeviceCPUModelSource     string             `json:"deviceCpuModelSource,omitempty"`
-	HIDManufacturer          string             `json:"hidManufacturer,omitempty"`
-	HIDProduct               string             `json:"hidProduct,omitempty"`
-	HIDSerialNumber          string             `json:"hidSerialNumber,omitempty"`
-	HIDReleaseNumber         uint16             `json:"hidReleaseNumber,omitempty"`
-	HIDReleaseNumberHex      string             `json:"hidReleaseNumberHex,omitempty"`
-	FirmwareVersion          string             `json:"firmwareVersion,omitempty"`
-	FirmwareVersionRaw       string             `json:"firmwareVersionRaw,omitempty"`
-	FirmwareReadStatus       string             `json:"firmwareReadStatus,omitempty"` // ready/failed/unsupported
-	FirmwareReadError        string             `json:"firmwareReadError,omitempty"`
-	DeviceIdentifier         string             `json:"deviceIdentifier,omitempty"`
-	IdentityMarker           string             `json:"identityMarker,omitempty"`
-	IdentityHex              string             `json:"identityHex,omitempty"`
-	ConfigState              string             `json:"configState,omitempty"`
-	ConfigStateName          string             `json:"configStateName,omitempty"`
-	ControllerCapabilityTier *int               `json:"controllerCapabilityTier,omitempty"`
-	RuntimeProfileRaw        *int               `json:"runtimeProfileRaw,omitempty"`
-	MeasuredRPM              *int               `json:"measuredRpm,omitempty"`
-	TargetRPM                *int               `json:"targetRpm,omitempty"`
-	GearRPMTable             []DeviceGearRPM    `json:"gearRpmTable,omitempty"`
-	QueriedWorkState         string             `json:"queriedWorkState,omitempty"`
-	QueriedWorkStateName     string             `json:"queriedWorkStateName,omitempty"`
-	LiveModeFlags            string             `json:"liveModeFlags,omitempty"`
-	LiveModeName             string             `json:"liveModeName,omitempty"`
-	ActiveGear               int                `json:"activeGear,omitempty"`
-	SelectedGear             int                `json:"selectedGear,omitempty"`
-	RealtimeActive           *bool              `json:"realtimeActive,omitempty"`
-	RGBState                 string             `json:"rgbState,omitempty"`
-	RGBStateName             string             `json:"rgbStateName,omitempty"`
-	Status                   *DeviceStatusRead  `json:"status,omitempty"`
-	RawFrames                []DeviceDebugFrame `json:"rawFrames,omitempty"`
+	Available                bool     `json:"available"`
+	Source                   string   `json:"source"`
+	ReadAt                   string   `json:"readAt"`
+	ReadErrors               []string `json:"readErrors,omitempty"`
+	Model                    string   `json:"model,omitempty"`
+	DeviceCPUModel           string   `json:"deviceCpuModel,omitempty"`
+	DeviceCPUModelSource     string   `json:"deviceCpuModelSource,omitempty"`
+	HIDManufacturer          string   `json:"hidManufacturer,omitempty"`
+	HIDProduct               string   `json:"hidProduct,omitempty"`
+	HIDSerialNumber          string   `json:"hidSerialNumber,omitempty"`
+	HIDReleaseNumber         uint16   `json:"hidReleaseNumber,omitempty"`
+	HIDReleaseNumberHex      string   `json:"hidReleaseNumberHex,omitempty"`
+	FirmwareVersion          string   `json:"firmwareVersion,omitempty"`
+	FirmwareVersionRaw       string   `json:"firmwareVersionRaw,omitempty"`
+	FirmwareReadStatus       string   `json:"firmwareReadStatus,omitempty"` // ready/failed/unsupported
+	FirmwareReadError        string   `json:"firmwareReadError,omitempty"`
+	DeviceIdentifier         string   `json:"deviceIdentifier,omitempty"`
+	IdentityMarker           string   `json:"identityMarker,omitempty"`
+	IdentityHex              string   `json:"identityHex,omitempty"`
+	ConfigState              string   `json:"configState,omitempty"`
+	ConfigStateName          string   `json:"configStateName,omitempty"`
+	ControllerCapabilityTier *int     `json:"controllerCapabilityTier,omitempty"`
+	// MaxSelectableGear 是按能力档位推导出的、设备真的会切换过去的最高挡位。
+	// 固件对超出的挡位照常回 ACK=1 但不换挡，所以这个值必须由主机自己算。
+	MaxSelectableGear    *int               `json:"maxSelectableGear,omitempty"`
+	RuntimeProfileRaw    *int               `json:"runtimeProfileRaw,omitempty"`
+	MeasuredRPM          *int               `json:"measuredRpm,omitempty"`
+	TargetRPM            *int               `json:"targetRpm,omitempty"`
+	GearRPMTable         []DeviceGearRPM    `json:"gearRpmTable,omitempty"`
+	QueriedWorkState     string             `json:"queriedWorkState,omitempty"`
+	QueriedWorkStateName string             `json:"queriedWorkStateName,omitempty"`
+	LiveModeFlags        string             `json:"liveModeFlags,omitempty"`
+	LiveModeName         string             `json:"liveModeName,omitempty"`
+	ActiveGear           int                `json:"activeGear,omitempty"`
+	SelectedGear         int                `json:"selectedGear,omitempty"`
+	RealtimeActive       *bool              `json:"realtimeActive,omitempty"`
+	RGBState             string             `json:"rgbState,omitempty"`
+	RGBStateName         string             `json:"rgbStateName,omitempty"`
+	Status               *DeviceStatusRead  `json:"status,omitempty"`
+	RawFrames            []DeviceDebugFrame `json:"rawFrames,omitempty"`
 }
 
 type DeviceGearRPM struct {
@@ -508,6 +511,158 @@ type LightStripConfig struct {
 	Speed      string     `json:"speed"`      // fast/medium/slow
 	Brightness int        `json:"brightness"` // 0-100
 	Colors     []RGBColor `json:"colors"`     // 颜色列表
+
+	// SmartTempBands 是智能温控模式下"温度区间 -> 固件原生灯效预设"的映射，
+	// 按 MinTemp 升序排列，第一段的 MinTemp 恒为 0。
+	SmartTempBands []SmartTempLightBand `json:"smartTempBands"`
+	// SmartTempHysteresis 是区间切换的回差（°C），防止临界温度反复抖动。
+	SmartTempHysteresis int `json:"smartTempHysteresis"`
+}
+
+/* ── 智能温控灯效 ──
+
+固件自己读不到电脑温度，所以温度分区完全由主机驱动：主机按当前 CPU/GPU 最高温
+决定该用哪个原生预设，再用 0x44 下发。
+
+这里只使用固件原生预设（0x44），不上传自定义帧。原因是固件的自定义帧提交命令
+0x43 会触发一次 256 字节数据闪存的擦写，而温度分区切换是随负载持续发生的：
+用自定义颜色实现分区，等于把闪存擦写绑到温度曲线上。0x44 只改运行期状态，
+不写闪存，可以任意频繁地切换。
+*/
+
+const (
+	// SmartTempLightMinPreset/SmartTempLightMaxPreset 是固件 0x44 接受的预设范围。
+	// 0 是"停止动画"，业务上不作为区间取值。
+	SmartTempLightMinPreset = 1
+	SmartTempLightMaxPreset = 5
+	// SmartTempLightMaxBands 限制区间数量，避免配置膨胀到无法在界面上展示。
+	SmartTempLightMaxBands = 5
+	// SmartTempLightMaxTemp 是区间下限允许的最高值。
+	SmartTempLightMaxTemp = 110
+	// SmartTempLightMaxHysteresis 是回差上限。
+	SmartTempLightMaxHysteresis = 10
+)
+
+// SmartTempLightBand 是智能温控灯效的一个温度区间。
+type SmartTempLightBand struct {
+	// MinTemp 是该区间的下限（含）。第一段恒为 0，其余必须严格递增。
+	MinTemp int `json:"minTemp"`
+	// Preset 是固件原生灯效预设编号，取值 1..5。
+	Preset int `json:"preset"`
+}
+
+// SmartTempLightStatus 是智能温控灯效当前的运行状态，供界面展示"现在落在哪一段"。
+type SmartTempLightStatus struct {
+	Active      bool `json:"active"`      // 灯带模式是否为 smart_temp 且已下发过预设
+	BandIndex   int  `json:"bandIndex"`   // 当前命中的区间下标；未生效时为 -1
+	Preset      int  `json:"preset"`      // 当前已下发的固件预设；未生效时为 0
+	Temperature int  `json:"temperature"` // 最近一次用于判定的温度
+}
+
+// GetDefaultSmartTempLightBands 返回默认温度分区。它与固件原生预设 1/2/3 在视觉上
+// 依次是绿、黄、红，边界沿用历史行为：<=70°C 绿，71..80°C 黄，>80°C 红。
+func GetDefaultSmartTempLightBands() []SmartTempLightBand {
+	return []SmartTempLightBand{
+		{MinTemp: 0, Preset: 1},
+		{MinTemp: 71, Preset: 2},
+		{MinTemp: 81, Preset: 3},
+	}
+}
+
+// DefaultSmartTempLightHysteresis 是默认回差，沿用历史的 2°C。
+const DefaultSmartTempLightHysteresis = 2
+
+// NormalizeSmartTempLightBands 把任意用户输入整理成一组合法区间：下限升序、
+// 首段为 0、预设落在 1..5、数量不超过上限。返回是否发生了修改。
+func NormalizeSmartTempLightBands(bands []SmartTempLightBand) ([]SmartTempLightBand, bool) {
+	if len(bands) == 0 {
+		return GetDefaultSmartTempLightBands(), true
+	}
+
+	changed := false
+	if len(bands) > SmartTempLightMaxBands {
+		bands = bands[:SmartTempLightMaxBands]
+		changed = true
+	}
+
+	normalized := make([]SmartTempLightBand, 0, len(bands))
+	previousMin := -1
+	for i, band := range bands {
+		preset := band.Preset
+		if preset < SmartTempLightMinPreset || preset > SmartTempLightMaxPreset {
+			preset = SmartTempLightMinPreset
+			changed = true
+		}
+
+		minTemp := band.MinTemp
+		if i == 0 {
+			// 第一段必须覆盖到 0°C，否则低温时没有任何区间命中。
+			if minTemp != 0 {
+				minTemp = 0
+				changed = true
+			}
+		} else {
+			if minTemp > SmartTempLightMaxTemp {
+				minTemp = SmartTempLightMaxTemp
+				changed = true
+			}
+			if minTemp <= previousMin {
+				minTemp = previousMin + 1
+				changed = true
+			}
+		}
+		if minTemp > SmartTempLightMaxTemp {
+			// 上一段已经顶到上限，这一段无处安放，直接丢弃后面的区间。
+			changed = true
+			break
+		}
+
+		if minTemp != band.MinTemp || preset != band.Preset {
+			changed = true
+		}
+		normalized = append(normalized, SmartTempLightBand{MinTemp: minTemp, Preset: preset})
+		previousMin = minTemp
+	}
+
+	if len(normalized) == 0 {
+		return GetDefaultSmartTempLightBands(), true
+	}
+	return normalized, changed
+}
+
+// SelectSmartTempLightBand 返回温度应当落入的区间下标。
+//
+// currentIndex 传入上一次生效的下标可启用回差：只有超过上一段上界 + 回差才向上跳，
+// 只有低于本段下界 - 回差才向下退。currentIndex 为负表示首次判定，直接按阈值取值。
+func SelectSmartTempLightBand(bands []SmartTempLightBand, hysteresis, temperature, currentIndex int) int {
+	if len(bands) == 0 {
+		return -1
+	}
+	if hysteresis < 0 {
+		hysteresis = 0
+	}
+	if hysteresis > SmartTempLightMaxHysteresis {
+		hysteresis = SmartTempLightMaxHysteresis
+	}
+
+	if currentIndex < 0 || currentIndex >= len(bands) {
+		index := 0
+		for i := range bands {
+			if temperature >= bands[i].MinTemp {
+				index = i
+			}
+		}
+		return index
+	}
+
+	index := currentIndex
+	for index+1 < len(bands) && temperature >= bands[index+1].MinTemp+hysteresis {
+		index++
+	}
+	for index > 0 && temperature < bands[index].MinTemp-hysteresis {
+		index--
+	}
+	return index
 }
 
 // SmartControlConfig 智能控温配置
@@ -532,65 +687,6 @@ type LegionFnQSupportCache struct {
 type NoiseProfilePoint struct {
 	RPM int     `json:"rpm"` // 实测时的目标转速
 	DB  float64 `json:"db"`  // 相对噪音水平 (dB)
-}
-
-/* ── 自适应学习 2.0 ──
-
-1.0 学的是"用户曲线上每个点该加减多少转速"，学习结果被曲线形状与偏移上限锁死，
-用户仍要先画一条像样的曲线。2.0 换掉学习对象：在线辨识这台机器自身的热模型
-（空载基线温度、各转速档位的每瓦温升、可达转速上限），再由"模型 + 一个倾向值"
-直接解算出整条曲线。用户只需要在"安静"和"低温"之间表达偏好，其余参数全部派生。 */
-
-const (
-	// AdaptivePreferenceMin/Max 是倾向滑块的取值范围：0 = 极致安静，100 = 极致低温。
-	AdaptivePreferenceMin     = 0
-	AdaptivePreferenceMax     = 100
-	DefaultAdaptivePreference = 50
-
-	// TempLimit 是与倾向无关的安全红线：达到即全速，倾向再安静也不例外。
-	AdaptiveTempLimitMin     = 75
-	AdaptiveTempLimitMax     = 100
-	DefaultAdaptiveTempLimit = 90
-)
-
-// AdaptiveThermalBucket 汇总某一转速档位上观测到的稳态热行为。
-// RisePerWatt 是有功耗读数时的主模型，Rise 是读不到功耗时的退化模型。
-type AdaptiveThermalBucket struct {
-	RPM         int     `json:"rpm"`         // 桶中心转速
-	RisePerWatt float64 `json:"risePerWatt"` // 每瓦稳态温升 (°C/W)
-	Rise        float64 `json:"rise"`        // 相对基线的稳态温升 (°C)
-	Weight      float64 `json:"weight"`      // 累计样本权重
-	PowerWeight float64 `json:"powerWeight"` // 其中带有效功耗读数的权重
-}
-
-// AdaptiveThermalModel 是在线辨识出的整机热模型。
-type AdaptiveThermalModel struct {
-	Baseline       float64                 `json:"baseline"`       // 空载基线温度 (°C)
-	Buckets        []AdaptiveThermalBucket `json:"buckets"`        // 按转速升序
-	MaxObservedRPM int                     `json:"maxObservedRpm"` // 实测可达的最高转速
-	Samples        int                     `json:"samples"`        // 累计稳态样本数
-	UpdatedAt      int64                   `json:"updatedAt"`      // 最近一次更新 (Unix 秒)
-}
-
-// AdaptiveConfig 是自适应学习 2.0 的配置。模型与倾向都是整机级的，
-// 不随曲线方案切换——2.0 根本不使用用户曲线。
-type AdaptiveConfig struct {
-	Enabled    bool `json:"enabled"`    // 自动模式：曲线完全由算法生成
-	Preference int  `json:"preference"` // 倾向 0(安静) .. 100(低温)
-	TempLimit  int  `json:"tempLimit"`  // 安全红线温度 (°C)
-
-	Model              AdaptiveThermalModel `json:"model"`
-	AutoCurve          []FanCurvePoint      `json:"autoCurve"`          // 最近一次合成的曲线
-	AutoCurveUpdatedAt int64                `json:"autoCurveUpdatedAt"` // 合成时间 (Unix 秒)
-}
-
-// GetDefaultAdaptiveConfig 返回自适应学习 2.0 的默认配置。
-func GetDefaultAdaptiveConfig() AdaptiveConfig {
-	return AdaptiveConfig{
-		Enabled:    false,
-		Preference: DefaultAdaptivePreference,
-		TempLimit:  DefaultAdaptiveTempLimit,
-	}
 }
 
 type SmartControlConfig struct {
@@ -626,7 +722,6 @@ type SmartControlConfig struct {
 	NoiseProfile          []NoiseProfilePoint `json:"noiseProfile"`          // 实测转速-噪音曲线(麦克风噪音测试结果)
 	NoiseProfileUpdatedAt int64               `json:"noiseProfileUpdatedAt"` // 噪音测试完成时间(Unix 秒)
 
-	Adaptive AdaptiveConfig `json:"adaptive"` // 自适应学习 2.0：热模型 + 倾向自动生成曲线
 }
 
 const DefaultRTSSUpdateIntervalMS = 1000
@@ -753,6 +848,8 @@ func GetDefaultLightStripConfig() LightStripConfig {
 			{R: 0, G: 255, B: 0},
 			{R: 0, G: 128, B: 255},
 		},
+		SmartTempBands:      GetDefaultSmartTempLightBands(),
+		SmartTempHysteresis: DefaultSmartTempLightHysteresis,
 	}
 }
 
@@ -790,7 +887,6 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 		LearnedOffsetsCool:   coolOffsets,
 		LearnedRateHeat:      heatRate,
 		LearnedRateCool:      coolRate,
-		Adaptive:             GetDefaultAdaptiveConfig(),
 	}
 }
 

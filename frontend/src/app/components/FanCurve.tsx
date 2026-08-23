@@ -38,13 +38,12 @@ import {
   type TemperatureHistoryPoint,
 } from '../lib/temperature-history';
 import type { CurveFocusTarget } from '../store/app-store';
-import { smartcontrol, types } from '../../../wailsjs/go/models';
+import { types } from '../../../wailsjs/go/models';
 import { ClipboardSetText } from '../../../wailsjs/runtime/runtime';
 import { BS1_MANUAL_GEAR_PRESETS, getManualGearLabel, getManualLevelLabel, MANUAL_GEAR_PRESETS, getEffectiveManualGearPresets, normalizeManualGearRpmMap, MANUAL_GEAR_RPM_MAX, MANUAL_GEAR_RPM_MIN, type ManualGearRpmMap } from '../lib/manualGearPresets';
 import { useTranslation } from 'react-i18next';
 import FanCurveProfileToolbar from './FanCurveProfileToolbar';
 import NoiseTest from './NoiseTest';
-import AdaptiveLearning from './AdaptiveLearning';
 import CoolingBenefit from './CoolingBenefit';
 import { toast } from 'sonner';
 import { ToggleSwitch, Button, Badge, Select, Slider, NumberInput, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/index';
@@ -1054,33 +1053,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     }
   }, [activeProfileId, externalActiveProfileId, loadCurveProfiles]);
 
-  /* ── 自适应学习 2.0 ── */
-
-  const [adaptiveStatus, setAdaptiveStatus] = useState<smartcontrol.AdaptiveStatus | null>(null);
-
-  const loadAdaptiveStatus = useCallback(async () => {
-    try {
-      setAdaptiveStatus(await apiService.getAdaptiveStatus());
-    } catch {
-      /* noop：拿不到状态时面板退化成"未开启"，不影响手动曲线 */
-    }
-  }, []);
-
-  useEffect(() => {
-    loadAdaptiveStatus().catch(() => {});
-  }, [loadAdaptiveStatus]);
-
-  // 控温环每次重算自动曲线都会广播配置更新，据此刷新状态，
-  // 让面板里的曲线与学习进度跟着后端走，而不是停在打开页面那一刻。
-  const adaptiveCurveRevision = (config.smartControl as any)?.adaptive?.autoCurveUpdatedAt ?? 0;
-  useEffect(() => {
-    if (adaptiveCurveRevision) {
-      loadAdaptiveStatus().catch(() => {});
-    }
-  }, [adaptiveCurveRevision, loadAdaptiveStatus]);
-
-  const adaptiveActive = !!adaptiveStatus?.enabled;
-
   // 入口处的一行摘要直接取配置里已存的报告，省掉一次只为徽标发起的 IPC。
   const benefitSummary = useMemo(() => {
     const analysis = (config as any).coolingBenefit?.report?.analysis;
@@ -1091,28 +1063,20 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     if (parts.length === 0) return '';
     return t('fanCurve.benefit.entryBadge', { span: `${analysis.baselineRpm}→${analysis.topRpm}`, effect: parts.join(' / ') });
   }, [config, t]);
-  const adaptiveCurve = useMemo(() => {
-    const curve = adaptiveStatus?.curve;
-    return Array.isArray(curve) ? curve : [];
-  }, [adaptiveStatus?.curve]);
-
   /* ── Chart data ── */
 
   const chartData = useMemo(() => {
     const offsets = smartControl.learnedOffsets || [];
-    // 2.0 的曲线用同一套温度栅格生成，因此可以按温度对齐叠加到同一张图上。
-    const autoByTemp = new Map(adaptiveCurve.map((point) => [point.temperature, point.rpm]));
     return localCurve.map((point, index) => {
       const offset = constrainOffsetByLearningBias(offsets[index] ?? 0, currentLearningBias);
       return {
         temperature: point.temperature,
         rpm: point.rpm,
         coupledRpm: Math.max(curveRpmBounds.min, Math.min(curveRpmBounds.max, point.rpm + offset)),
-        autoRpm: autoByTemp.get(point.temperature),
         index,
       };
     });
-  }, [adaptiveCurve, curveRpmBounds.max, curveRpmBounds.min, currentLearningBias, localCurve, smartControl.learnedOffsets]);
+  }, [curveRpmBounds.max, curveRpmBounds.min, currentLearningBias, localCurve, smartControl.learnedOffsets]);
 
   const hasLearnedOffsets = learnedOffsetSummary.length > 0;
   const showCoupledCurve = config.autoControl && !!smartControl.learning && hasLearnedOffsets;
@@ -1146,7 +1110,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   }, [rpmRange, shouldShowLowRpmWarningToday]);
 
   const handleDragStart = useCallback((index: number) => {
-    if (adaptiveActive) return;
     setDragIndex(index);
     setIsInteracting(true);
     lowRpmWarnedInDragRef.current = false;
@@ -1724,12 +1687,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const CustomDot = useCallback((props: any): React.ReactElement<SVGElement> => {
     const { cx, cy, index, payload } = props;
     if (cx === undefined || cy === undefined) return <g />;
-    // 2.0 接管时曲线不是用户的了，拖动它只会让人以为改动生效了却毫无效果。
-    if (adaptiveActive) {
-      return <circle key={`dot-${index}`} cx={cx} cy={cy} r={3} fill="var(--chart-primary)" opacity={0.35} />;
-    }
     return <DraggablePoint key={`dot-${index}`} cx={cx} cy={cy} index={index} temperature={payload.temperature} rpm={payload.rpm} onDragStart={handleDragStart} isActive={dragIndex === index} />;
-  }, [adaptiveActive, dragIndex, handleDragStart]);
+  }, [dragIndex, handleDragStart]);
 
   /* 主曲线图表整体缓存：温度/转速等高频数据每秒刷新时不重建 recharts 树，
      当前温度指示线由 TemperatureIndicator 独立覆盖层绘制 */
@@ -1742,7 +1701,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
         <RechartsTooltip
           formatter={(value, name) => {
             const numericValue = Number(value ?? 0);
-            if (name === 'autoRpm') return [`${numericValue} RPM`, t('fanCurve.chart.series.adaptive')];
             return name === 'coupledRpm' ? [`${numericValue} RPM`, t('fanCurve.chart.series.learned')] : [`${numericValue} RPM`, t('fanCurve.chart.series.base')];
           }}
           labelFormatter={(v) => t('fanCurve.chart.temperatureLabel', { temperature: v })}
@@ -1750,12 +1708,11 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           labelStyle={{ color: 'var(--chart-tooltip-text)', fontWeight: 600 }}
           itemStyle={{ color: 'var(--chart-tooltip-text)' }}
         />
-        <Line type="monotone" dataKey="rpm" stroke="var(--chart-primary)" strokeWidth={adaptiveActive ? 1.5 : 3} strokeOpacity={adaptiveActive ? 0.35 : 1} dot={CustomDot} activeDot={false} isAnimationActive={false} />
+        <Line type="monotone" dataKey="rpm" stroke="var(--chart-primary)" strokeWidth={3} dot={CustomDot} activeDot={false} isAnimationActive={false} />
         {showCoupledCurve && <Line type="monotone" dataKey="coupledRpm" stroke="var(--chart-primary)" strokeWidth={2} strokeDasharray="6 4" dot={false} activeDot={false} isAnimationActive={false} />}
-        {adaptiveActive && <Line type="monotone" dataKey="autoRpm" stroke="var(--chart-adaptive)" strokeWidth={3} dot={false} activeDot={false} isAnimationActive={false} />}
       </LineChart>
     </ResponsiveContainer>
-  ), [CustomDot, adaptiveActive, chartData, rpmRange, showCoupledCurve, t, temperatureRange]);
+  ), [CustomDot, chartData, rpmRange, showCoupledCurve, t, temperatureRange]);
 
   /* ═══════════════════ RENDER ═══════════════════ */
 
@@ -1939,23 +1896,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             ref={chartRef}
             className={clsx('relative rounded-3xl border bg-card p-4 shadow-sm', dragIndex !== null ? 'ring-2 ring-primary/40 border-primary/30' : 'border-border/70')}
           >
-            {adaptiveActive && (
-              <div className="mb-3 rounded-xl border border-violet-400/40 bg-violet-500/10 px-3 py-2 text-xs leading-relaxed text-violet-700 dark:text-violet-300">
-                {t('fanCurve.adaptive.chartNotice')}
-              </div>
-            )}
             <div className="h-80 md:h-96 relative">
               {curveChart}
               <TemperatureIndicator temperature={referenceTemp} chartRef={chartRef} temperatureRange={temperatureRange} />
             </div>
           </div>
         </div>
-
-        <AdaptiveLearning
-          status={adaptiveStatus}
-          onStatusChange={setAdaptiveStatus}
-          onConfigInvalidated={syncConfigFromBackend}
-        />
 
         {/* 散热收益是一次性的实测报告，与学习/控温策略无关，因此单列一节。 */}
         <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
@@ -2001,9 +1947,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-medium text-foreground">{t('fanCurve.learning.title')}</div>
-                  {adaptiveActive
-                    ? <Badge variant="info">{t('fanCurve.learning.supersededBadge')}</Badge>
-                    : !smartControl.learning && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
+                  {!smartControl.learning && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
                 </div>
                 <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.learning.description')}</div>
               </div>
@@ -2011,7 +1955,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             <ToggleSwitch
               enabled={!!smartControl.learning}
               onChange={handleLearningToggle}
-              disabled={adaptiveActive}
               loading={learningConfigLoading}
               size="sm"
               color="purple"
@@ -2019,13 +1962,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
             />
           </div>
 
-          {adaptiveActive && (
-            <div className="mt-3 rounded-xl border border-dashed border-border/70 bg-background/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-              {t('fanCurve.learning.supersededHint')}
-            </div>
-          )}
-
-          <div className={clsx('mt-3 flex flex-col gap-3 rounded-xl border border-border/70 bg-background/45 p-3', adaptiveActive && 'pointer-events-none opacity-50')}>
+          <div className="mt-3 flex flex-col gap-3 rounded-xl border border-border/70 bg-background/45 p-3">
             <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/55 p-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2352,9 +2289,7 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-medium text-foreground">{t('fanCurve.schedule.title')}</div>
-                  {adaptiveActive
-                    ? <Badge variant="info">{t('fanCurve.learning.supersededBadge')}</Badge>
-                    : currentScheduleRule && <Badge variant="info">{t('fanCurve.schedule.currentBadge')}</Badge>}
+                  {currentScheduleRule && <Badge variant="info">{t('fanCurve.schedule.currentBadge')}</Badge>}
                 </div>
                 <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.schedule.description')}</div>
               </div>
@@ -2373,12 +2308,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
               />
             </div>
           </div>
-
-          {adaptiveActive && (
-            <div className="mt-3 rounded-xl border border-dashed border-border/70 bg-background/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-              {t('fanCurve.schedule.supersededHint')}
-            </div>
-          )}
 
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {currentScheduleRule ? (

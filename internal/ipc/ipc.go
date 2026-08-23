@@ -70,9 +70,6 @@ const (
 	ReqExportFanCurveProfiles   RequestType = "ExportFanCurveProfiles"
 	ReqImportFanCurveProfiles   RequestType = "ImportFanCurveProfiles"
 	ReqResetLearnedOffsets      RequestType = "ResetLearnedOffsets"
-	ReqGetAdaptiveStatus        RequestType = "GetAdaptiveStatus"
-	ReqSetAdaptiveConfig        RequestType = "SetAdaptiveConfig"
-	ReqResetAdaptiveModel       RequestType = "ResetAdaptiveModel"
 	ReqGetCoolingBenefit        RequestType = "GetCoolingBenefit"
 	ReqSaveCoolingBenefitReport RequestType = "SaveCoolingBenefitReport"
 	ReqClearCoolingBenefit      RequestType = "ClearCoolingBenefit"
@@ -85,15 +82,16 @@ const (
 	ReqSetFlydigiCompat       RequestType = "SetFlydigiCompat"
 
 	// 控制相关
-	ReqSetAutoControl    RequestType = "SetAutoControl"
-	ReqSetManualGear     RequestType = "SetManualGear"
-	ReqGetAvailableGears RequestType = "GetAvailableGears"
-	ReqSetCustomSpeed    RequestType = "SetCustomSpeed"
-	ReqSetGearLight      RequestType = "SetGearLight"
-	ReqSetPowerOnStart   RequestType = "SetPowerOnStart"
-	ReqSetSmartStartStop RequestType = "SetSmartStartStop"
-	ReqSetBrightness     RequestType = "SetBrightness"
-	ReqSetLightStrip     RequestType = "SetLightStrip"
+	ReqSetAutoControl      RequestType = "SetAutoControl"
+	ReqSetManualGear       RequestType = "SetManualGear"
+	ReqGetAvailableGears   RequestType = "GetAvailableGears"
+	ReqSetCustomSpeed      RequestType = "SetCustomSpeed"
+	ReqSetGearLight        RequestType = "SetGearLight"
+	ReqSetPowerOnStart     RequestType = "SetPowerOnStart"
+	ReqSetSmartStartStop   RequestType = "SetSmartStartStop"
+	ReqSetBrightness       RequestType = "SetBrightness"
+	ReqSetLightStrip       RequestType = "SetLightStrip"
+	ReqGetSmartLightStatus RequestType = "GetSmartLightStatus"
 
 	// 温度相关
 	ReqGetTemperature                      RequestType = "GetTemperature"
@@ -174,13 +172,16 @@ const (
 	EventDeviceError              = "device-error"
 	EventDeviceSettingsUpdate     = "device-settings-update"
 	EventConfigUpdate             = "config-update"
-	EventHotkeyTriggered          = "hotkey-triggered"
-	EventLegionPowerModeUpdate    = "legion-power-mode-update"
-	EventLegionFnQSupportUpdate   = "legion-fnq-support-update"
-	EventFlydigiCompatUpdate      = "flydigi-compat-update"
-	EventHealthPing               = "health-ping"
-	EventHeartbeat                = "heartbeat"
-	EventTimelineEvent            = "timeline-event"
+	// EventSmartLightUpdate 在智能温控灯效切换温度区间时下发，让界面能实时
+	// 显示"当前落在哪一段、用的是哪个固件预设"。
+	EventSmartLightUpdate       = "smart-light-update"
+	EventHotkeyTriggered        = "hotkey-triggered"
+	EventLegionPowerModeUpdate  = "legion-power-mode-update"
+	EventLegionFnQSupportUpdate = "legion-fnq-support-update"
+	EventFlydigiCompatUpdate    = "flydigi-compat-update"
+	EventHealthPing             = "health-ping"
+	EventHeartbeat              = "heartbeat"
+	EventTimelineEvent          = "timeline-event"
 )
 
 // Server IPC 服务器
@@ -1018,15 +1019,6 @@ type SaveCoolingBenefitReportParams struct {
 	GPUModel    string                     `json:"gpuModel"`
 	LoadLabel   string                     `json:"loadLabel"`
 	Steps       []types.CoolingBenefitStep `json:"steps"`
-}
-
-// SetAdaptiveConfigParams 是自适应学习 2.0 的部分更新参数。
-// 三个字段都用指针：GUI 每次只改一项，nil 表示"这项别动"，
-// 否则零值会被当成"关掉自动模式"或"倾向设为 0"。
-type SetAdaptiveConfigParams struct {
-	Enabled    *bool `json:"enabled,omitempty"`
-	Preference *int  `json:"preference,omitempty"`
-	TempLimit  *int  `json:"tempLimit,omitempty"`
 }
 
 type SetActiveFanCurveProfileParams struct {

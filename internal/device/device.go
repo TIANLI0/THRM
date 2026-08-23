@@ -85,6 +85,11 @@ const (
 	// 10 次/秒的唤醒。空闲时没人消费实时转速（托盘 5 秒才刷新一次），
 	// 放慢到 2 次/秒可显著降低后台唤醒频率与笔电待机功耗。
 	hidIdleReadPollInterval = 500 * time.Millisecond
+	// hidBusyReadPollInterval 是多命令事务进行中的空转休眠间隔。灯效上传要连发
+	// 35 条命令并逐条等待 ACK；按 100ms/500ms 轮询，一次上传要占用设备锁 3.5s
+	// 乃至 17s，期间所有 0xEF 状态帧都会被丢弃，空闲模式下更是逼近 900ms 的
+	// 响应超时。事务期间改用毫秒级轮询把整个上传压回几百毫秒。
+	hidBusyReadPollInterval = 2 * time.Millisecond
 	hidReadErrorRetryDelay  = 500 * time.Millisecond
 )
 
@@ -124,10 +129,35 @@ type Manager struct {
 	hasLightConfig      bool
 	smartLightPreset    byte
 	hasSmartLightPreset bool
+	// smartLightBandIndex 是当前生效的温度区间下标，回差判定与界面展示都依赖它。
+	smartLightBandIndex int
+	// smartLightTemperature 是最近一次参与判定的温度，仅用于展示。
+	smartLightTemperature int
+
+	// Firmware commands 0x46 (RGB enable) and 0x48 (gear light) erase and
+	// reprogram a 256-byte data-flash page on every call, and unlike 0x0C/0x0D
+	// they do not compare against the value already stored. Caching the last
+	// acknowledged value lets the host drop the redundant writes that a
+	// reconnect replay would otherwise issue, which is the main source of
+	// back-to-back flash cycles during a reconnect.
+	rgbEnabled    bool
+	hasRGBEnabled bool
+	// controllerTier 是 0x07 读回的控制器能力档位，决定哪些挡位真的能选中。
+	controllerTier    int
+	hasControllerTier bool
+	gearLightEnabled  bool
+	hasGearLight      bool
 
 	consecutiveRealtimeWriteErrors int
 	realtimeWriteRecoveryScheduled bool
 	lastRealtimeWriteErrorAt       time.Time
+
+	// activeTransactions 统计正在等待 ACK 的多命令事务（灯效上传、挡位写入等）。
+	// 大于 0 时读循环改用 hidBusyReadPollInterval，使 ACK 在毫秒级返回，
+	// 而不是被空闲轮询间隔拖到接近 deviceResponseTimeout。
+	activeTransactions atomic.Int32
+	// txWake 用于立刻打断读循环当前的空转休眠，让事务的第一条命令也能快速拿到 ACK。
+	txWake chan struct{}
 
 	// HID 监控协程生命周期（监控协程是 HID 句柄的唯一拥有者，负责最终关闭）。
 	monitorStop        chan struct{}
@@ -157,6 +187,9 @@ func NewManager(logger types.Logger) *Manager {
 		logger:     logger,
 		bleManager: NewBLEManager(logger),
 		responses:  newResponseBroker(),
+		txWake:     make(chan struct{}, 1),
+		// -1 表示"尚未判定过任何温度区间"，与合法下标 0 区分开。
+		smartLightBandIndex: -1,
 	}
 }
 
@@ -444,6 +477,18 @@ func (m *Manager) detachStalledHID(dev *hid.Device) {
 	m.logError("HID 监控协程在断开超时后仍未退出，已脱离失效句柄并允许恢复重连")
 }
 
+// resetLightStateCacheLocked 丢弃"设备侧灯光开关值"的缓存。断开连接、以及会重建
+// 固件 LED 状态的维护命令（0x03/0x05/0x06）之后必须调用，否则缓存会让 App 误以为
+// 设备已经处于目标状态而跳过必要的写入。
+func (m *Manager) resetLightStateCacheLocked() {
+	m.hasRGBEnabled = false
+	m.hasGearLight = false
+	m.hasLightConfig = false
+	m.hasSmartLightPreset = false
+	m.smartLightBandIndex = -1
+	m.smartLightTemperature = 0
+}
+
 func (m *Manager) resetRealtimeControlStateLocked() {
 	m.realtimeWakeGen++
 	m.lastCommandedRPM = 0
@@ -527,10 +572,24 @@ func (m *Manager) SetIdlePolling(idle bool) {
 
 // readPollInterval 返回当前的空转休眠间隔。
 func (m *Manager) readPollInterval() time.Duration {
+	if m.activeTransactions.Load() > 0 {
+		return hidBusyReadPollInterval
+	}
 	if m.idlePolling.Load() {
 		return hidIdleReadPollInterval
 	}
 	return hidReadPollInterval
+}
+
+// beginTransaction 标记一段"连发多条命令并逐条等 ACK"的事务开始，并立刻唤醒
+// 读循环。返回的函数必须在事务结束时调用。
+func (m *Manager) beginTransaction() func() {
+	m.activeTransactions.Add(1)
+	select {
+	case m.txWake <- struct{}{}:
+	default:
+	}
+	return func() { m.activeTransactions.Add(-1) }
 }
 
 // waitPollInterval 在读到空数据后休眠一个轮询间隔。返回 false 表示收到停止信号。
@@ -542,6 +601,9 @@ func (m *Manager) waitPollInterval(stop <-chan struct{}) bool {
 	select {
 	case <-stop:
 		return false
+	case <-m.txWake:
+		// 事务刚开始：立即结束本次休眠，后续休眠会自动改用事务间隔。
+		return true
 	case <-timer.C:
 		return true
 	}
@@ -706,6 +768,7 @@ func (m *Manager) finalizeMonitor(device *hid.Device, done chan struct{}) {
 	m.explicitDisconnect = false
 	m.disconnectNotify = false
 	m.resetRealtimeControlStateLocked()
+	m.resetLightStateCacheLocked()
 	m.mutex.Unlock()
 
 	// 触发回调：显式断开按调用方意图，意外断开（读错误）则始终通知。
@@ -938,6 +1001,10 @@ func (m *Manager) scheduleRealtimeWakeVerificationLocked(targetRPM int, generati
 }
 
 func (m *Manager) recoverRealtimeWakeLocked(targetRPM int) error {
+	// 这段序列要连发四条命令并逐条等 ACK，中间还有两次电机起转延时。整段都持有
+	// 设备写锁，按空闲轮询间隔取 ACK 会把锁多占好几秒，控温环期间完全写不进转速。
+	defer m.beginTransaction()()
+
 	if err := m.sendHIDAckLocked(deviceproto.CmdExitRealtimeRPM, nil, 1, 2); err != nil {
 		return fmt.Errorf("退出实时模式: %w", err)
 	}
@@ -1102,6 +1169,20 @@ func (m *Manager) SetManualGear(gear, level string) bool {
 		m.logError("挡位 %s %s 的预设命令无效", gear, level)
 		return false
 	}
+	// 固件的 0x08 分支不校验 payload：任何字节都会被直接写进当前挡位字段。
+	// 预设表出错时不能把非法挡位号送进设备。
+	if frame.Command == deviceproto.CmdSetFixedGear {
+		if len(frame.Payload) != 1 || frame.Payload[0] < 1 || frame.Payload[0] > 4 {
+			m.logError("挡位 %s %s 的预设命令携带了非法挡位号: %v", gear, level, frame.Payload)
+			return false
+		}
+		if tier, known := m.controllerTierLocked(); known {
+			if maxGear := MaxGearForFixedGearCommand(tier); int(frame.Payload[0]) > maxGear {
+				m.logError("控制器能力档位 %d 最高只能选到挡位 %d，设备会忽略挡位 %d 但仍回 ACK", tier, maxGear, frame.Payload[0])
+				return false
+			}
+		}
+	}
 	if err := m.sendHIDAckLocked(frame.Command, frame.Payload, 1); err != nil {
 		m.logError("设置挡位 %s %s 失败: %v", gear, level, err)
 		return false
@@ -1138,6 +1219,16 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 		m.logError("手动挡位转速超出有效范围: %d RPM", rpm)
 		return false
 	}
+	// 0x26 会照常回 ACK=1 并写入转速，但在能力档位不允许时静默跳过换挡。
+	// 提前拦住能给出确切原因，而不是等 0xEF 确认超时后报一句"无法确认已切换"。
+	if tier, known := m.controllerTierLocked(); known {
+		if maxGear := MaxGearForGearRPMCommand(tier); idx+1 > maxGear {
+			m.logError("控制器能力档位 %d 最高只能选到挡位 %d，设备会写入 %s 的转速但不会切换过去", tier, maxGear, gear)
+			return false
+		}
+	}
+	defer m.beginTransaction()()
+
 	payload := []byte{byte(idx), byte(rpm), byte(rpm >> 8)}
 	// 0x26 always writes a valid slot and can still return ACK=1 when this
 	// controller tier refuses to select that gear. Register for 0xEF before the
@@ -1213,15 +1304,25 @@ func (m *Manager) SetGearLight(enabled bool) bool {
 		return false
 	}
 
+	// 0x48 每次都会擦写一页数据闪存，且固件不比较新旧值。已知设备侧就是这个值时
+	// 直接跳过，避免重连重放白白消耗一次闪存擦写。
+	if m.hasGearLight && m.gearLightEnabled == enabled {
+		m.logDebug("挡位灯已是 %t，跳过一次固件闪存写入", enabled)
+		return true
+	}
+
 	payload := byte(0x00)
 	if enabled {
 		payload = 0x01
 	}
 	if err := m.sendHIDAckLocked(deviceproto.CmdGearLight, []byte{payload}, 1); err != nil {
+		m.hasGearLight = false
 		m.logError("设置挡位灯失败: %v", err)
 		return false
 	}
 
+	m.gearLightEnabled = enabled
+	m.hasGearLight = true
 	return true
 }
 

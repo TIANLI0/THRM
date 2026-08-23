@@ -42,10 +42,6 @@ export function ExportFanCurveProfiles() {
   return window['go']['main']['App']['ExportFanCurveProfiles']();
 }
 
-export function GetAdaptiveStatus() {
-  return window['go']['main']['App']['GetAdaptiveStatus']();
-}
-
 export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
 }
@@ -100,6 +96,10 @@ export function GetFlydigiCompatStatus() {
 
 export function GetRTSSLayoutStatus() {
   return window['go']['main']['App']['GetRTSSLayoutStatus']();
+}
+
+export function GetSmartLightStatus() {
+  return window['go']['main']['App']['GetSmartLightStatus']();
 }
 
 export function GetTemperature() {
@@ -178,10 +178,6 @@ export function ReinstallPawnIO() {
   return window['go']['main']['App']['ReinstallPawnIO']();
 }
 
-export function ResetAdaptiveModel() {
-  return window['go']['main']['App']['ResetAdaptiveModel']();
-}
-
 export function ResetLearnedOffsets() {
   return window['go']['main']['App']['ResetLearnedOffsets']();
 }
@@ -208,18 +204,6 @@ export function SendDeviceDebugCommand(arg1, arg2) {
 
 export function SetActiveFanCurveProfile(arg1) {
   return window['go']['main']['App']['SetActiveFanCurveProfile'](arg1);
-}
-
-export function SetAdaptiveMode(arg1) {
-  return window['go']['main']['App']['SetAdaptiveMode'](arg1);
-}
-
-export function SetAdaptivePreference(arg1) {
-  return window['go']['main']['App']['SetAdaptivePreference'](arg1);
-}
-
-export function SetAdaptiveTempLimit(arg1) {
-  return window['go']['main']['App']['SetAdaptiveTempLimit'](arg1);
 }
 
 export function SetAutoControl(arg1) {

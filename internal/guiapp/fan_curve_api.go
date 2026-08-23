@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/smartcontrol"
 	"github.com/TIANLI0/THRM/internal/types"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -133,64 +132,6 @@ func (a *App) ImportFanCurveProfiles(code string) error {
 		return fmt.Errorf("%s", resp.Error)
 	}
 	return nil
-}
-
-/* ── 自适应学习 2.0 ── */
-
-// GetAdaptiveStatus 获取自适应学习 2.0 的运行状态。
-func (a *App) GetAdaptiveStatus() smartcontrol.AdaptiveStatus {
-	resp, err := a.sendRequest(ipc.ReqGetAdaptiveStatus, nil)
-	if err != nil || !resp.Success {
-		return smartcontrol.BuildAdaptiveStatus(a.GetConfig().SmartControl)
-	}
-	var status smartcontrol.AdaptiveStatus
-	json.Unmarshal(resp.Data, &status)
-	return status
-}
-
-// SetAdaptiveMode 开关自适应学习 2.0。
-func (a *App) SetAdaptiveMode(enabled bool) (smartcontrol.AdaptiveStatus, error) {
-	return a.setAdaptiveConfig(ipc.SetAdaptiveConfigParams{Enabled: &enabled})
-}
-
-// SetAdaptivePreference 设置倾向 (0 安静 .. 100 低温)。
-func (a *App) SetAdaptivePreference(preference int) (smartcontrol.AdaptiveStatus, error) {
-	return a.setAdaptiveConfig(ipc.SetAdaptiveConfigParams{Preference: &preference})
-}
-
-// SetAdaptiveTempLimit 设置安全红线温度。
-func (a *App) SetAdaptiveTempLimit(tempLimit int) (smartcontrol.AdaptiveStatus, error) {
-	return a.setAdaptiveConfig(ipc.SetAdaptiveConfigParams{TempLimit: &tempLimit})
-}
-
-// ResetAdaptiveModel 清空 2.0 学到的热模型。
-func (a *App) ResetAdaptiveModel() (smartcontrol.AdaptiveStatus, error) {
-	resp, err := a.sendRequest(ipc.ReqResetAdaptiveModel, nil)
-	if err != nil {
-		return smartcontrol.AdaptiveStatus{}, err
-	}
-	if !resp.Success {
-		return smartcontrol.AdaptiveStatus{}, fmt.Errorf("%s", resp.Error)
-	}
-	var status smartcontrol.AdaptiveStatus
-	json.Unmarshal(resp.Data, &status)
-	return status, nil
-}
-
-// setAdaptiveConfig 是三个 setter 共用的部分更新通道。拆成三个 Wails 方法而不是
-// 暴露一个带可选字段的结构，是因为 Wails 绑定层对指针字段的 TS 类型支持很别扭，
-// 而 GUI 本来也只会一次改一项。
-func (a *App) setAdaptiveConfig(params ipc.SetAdaptiveConfigParams) (smartcontrol.AdaptiveStatus, error) {
-	resp, err := a.sendRequest(ipc.ReqSetAdaptiveConfig, params)
-	if err != nil {
-		return smartcontrol.AdaptiveStatus{}, err
-	}
-	if !resp.Success {
-		return smartcontrol.AdaptiveStatus{}, fmt.Errorf("%s", resp.Error)
-	}
-	var status smartcontrol.AdaptiveStatus
-	json.Unmarshal(resp.Data, &status)
-	return status, nil
 }
 
 /* ── 散热收益 ── */

@@ -45,6 +45,16 @@ import { DebugInfo, type DeviceDebugCommandResult, type DeviceSettings, type Fly
 import { type AppLocale, useLocale } from '../lib/i18n';
 import { getManualGearLabel, getManualLevelLabel } from '../lib/manualGearPresets';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
+import LightStripPreview from './LightStripPreview';
+import {
+  SMART_TEMP_PRESET_MAX,
+  SMART_TEMP_PRESET_MIN,
+  buildLightProgram,
+  buildSmartTempPresetProgram,
+  rgbToCss,
+  smartTempPresetBaseColor,
+  smartTempPresetDependsOnRuntimeProfile,
+} from '../lib/lightProgram';
 import {
   ToggleSwitch,
   Button,
@@ -78,6 +88,93 @@ type ParsedGearTable = { type?: string; table?: Array<{ gear?: number; label?: s
 
 /* ── Helpers ── */
 
+/* ── 智能温控灯效 ──
+
+固件自己读不到电脑温度，温度分区完全由主机驱动：主机按当前最高温决定用哪个
+原生预设，再用 0x44 下发。这里只用原生预设，不上传自定义帧——固件的自定义帧
+提交命令 0x43 每次都会擦写一页数据闪存，而分区切换是随负载持续发生的。
+*/
+
+const SMART_TEMP_MAX_BANDS = 5;
+const SMART_TEMP_MAX_TEMP = 110;
+const SMART_TEMP_MAX_HYSTERESIS = 10;
+
+/**
+ * 固件原生预设 1..5。颜色表与速度都是从固件生成器里还原出来的，
+ * 见 lib/lightProgram.ts 顶部的说明。预设 5 的表随设备的运行配置字节切换。
+ */
+function smartTempPresetOptions(runtimeProfile: number | null) {
+  return Array.from({ length: SMART_TEMP_PRESET_MAX - SMART_TEMP_PRESET_MIN + 1 }, (_, i) => {
+    const value = SMART_TEMP_PRESET_MIN + i;
+    const color = smartTempPresetBaseColor(value, runtimeProfile);
+    return {
+      value,
+      swatch: color ? rgbToCss(color) : null,
+      labelKey: `controlPanel.light.smartTemp.preset${value}`,
+    };
+  });
+}
+
+function getDefaultSmartTempBands(): types.SmartTempLightBand[] {
+  return [
+    types.SmartTempLightBand.createFrom({ minTemp: 0, preset: 1 }),
+    types.SmartTempLightBand.createFrom({ minTemp: 71, preset: 2 }),
+    types.SmartTempLightBand.createFrom({ minTemp: 81, preset: 3 }),
+  ];
+}
+
+/** 与 Go 侧 types.NormalizeSmartTempLightBands 保持一致：下限升序、首段为 0、预设 1..5。 */
+function normalizeSmartTempBands(raw: unknown): types.SmartTempLightBand[] {
+  if (!Array.isArray(raw) || raw.length === 0) return getDefaultSmartTempBands();
+
+  const result: types.SmartTempLightBand[] = [];
+  let previousMin = -1;
+  for (const [index, item] of raw.slice(0, SMART_TEMP_MAX_BANDS).entries()) {
+    const source = (item || {}) as { minTemp?: number; preset?: number };
+    let preset = Number(source.preset);
+    if (!Number.isFinite(preset) || preset < SMART_TEMP_PRESET_MIN || preset > SMART_TEMP_PRESET_MAX) preset = SMART_TEMP_PRESET_MIN;
+
+    let minTemp = index === 0 ? 0 : Number(source.minTemp);
+    if (!Number.isFinite(minTemp)) minTemp = previousMin + 1;
+    if (index > 0) {
+      minTemp = Math.min(Math.round(minTemp), SMART_TEMP_MAX_TEMP);
+      if (minTemp <= previousMin) minTemp = previousMin + 1;
+    }
+    if (minTemp > SMART_TEMP_MAX_TEMP) break;
+
+    result.push(types.SmartTempLightBand.createFrom({ minTemp, preset }));
+    previousMin = minTemp;
+  }
+  return result.length > 0 ? result : getDefaultSmartTempBands();
+}
+
+/**
+ * 与 Go 侧 types.SelectSmartTempLightBand 保持一致的区间判定。
+ * currentIndex 为负表示首次判定，直接按阈值取值，不套用回差。
+ */
+function selectSmartTempBand(
+  bands: types.SmartTempLightBand[],
+  hysteresis: number,
+  temperature: number,
+  currentIndex: number,
+): number {
+  if (bands.length === 0) return -1;
+  const gap = Math.min(Math.max(hysteresis, 0), SMART_TEMP_MAX_HYSTERESIS);
+
+  if (currentIndex < 0 || currentIndex >= bands.length) {
+    let index = 0;
+    bands.forEach((band, i) => {
+      if (temperature >= band.minTemp) index = i;
+    });
+    return index;
+  }
+
+  let index = currentIndex;
+  while (index + 1 < bands.length && temperature >= bands[index + 1].minTemp + gap) index++;
+  while (index > 0 && temperature < bands[index].minTemp - gap) index--;
+  return index;
+}
+
 function getDefaultLightStripConfig(): types.LightStripConfig {
   return types.LightStripConfig.createFrom({
     mode: 'smart_temp',
@@ -88,6 +185,8 @@ function getDefaultLightStripConfig(): types.LightStripConfig {
       { r: 0, g: 255, b: 0 },
       { r: 0, g: 128, b: 255 },
     ],
+    smartTempBands: getDefaultSmartTempBands(),
+    smartTempHysteresis: 2,
   });
 }
 
@@ -101,6 +200,11 @@ function normalizeLightStripConfig(config: types.AppConfig): types.LightStripCon
     speed: raw.speed || defaults.speed,
     brightness: typeof raw.brightness === 'number' ? Math.max(0, Math.min(100, raw.brightness)) : defaults.brightness,
     colors: Array.isArray(raw.colors) && raw.colors.length > 0 ? raw.colors : defaults.colors,
+    smartTempBands: normalizeSmartTempBands(raw.smartTempBands),
+    smartTempHysteresis:
+      typeof raw.smartTempHysteresis === 'number'
+        ? Math.max(0, Math.min(SMART_TEMP_MAX_HYSTERESIS, Math.round(raw.smartTempHysteresis)))
+        : defaults.smartTempHysteresis,
   });
 
   if ((normalized.colors || []).length < 3) {
@@ -479,7 +583,7 @@ function SelectionField({
 
 /* ── Main ControlPanel ── */
 
-export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported, deviceModel }: ControlPanelProps) {
+export default function ControlPanel({ config, onConfigChange, isConnected, fanData, temperature, legionFnQSupported, deviceModel, deviceSettings }: ControlPanelProps) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
@@ -516,6 +620,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   const [customThemes, setCustomThemes] = useState<ThemeMeta[]>([]);
   const [customSpeedInput, setCustomSpeedInput] = useState<number>((config as any).customSpeedRPM || 2000);
   const [lightStripConfig, setLightStripConfig] = useState<types.LightStripConfig>(() => normalizeLightStripConfig(config));
+  const [smartLightStatus, setSmartLightStatus] = useState<types.SmartTempLightStatus | null>(null);
   const [manualHotkeyInput, setManualHotkeyInput] = useState(
     normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey)
   );
@@ -582,7 +687,6 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   // 自适应学习 2.0 不查用户曲线，曲线方案切换在它开启期间是空操作。
-  const adaptiveActive = !!(config as any).smartControl?.adaptive?.enabled;
   const isBs1 = deviceModel === 'BS1';
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
   const cpuSensors = useMemo(() => (Array.isArray(temperature?.cpuSensors) ? temperature.cpuSensors : []), [temperature?.cpuSensors]);
@@ -1493,6 +1597,113 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
 
   const requiredColorCount = getRequiredColorCount(lightStripConfig.mode);
 
+  /* ── 智能温控灯效的温度区间 ── */
+  const smartTempBands = useMemo(
+    () => normalizeSmartTempBands(lightStripConfig.smartTempBands),
+    [lightStripConfig.smartTempBands],
+  );
+  const smartTempHysteresis = lightStripConfig.smartTempHysteresis ?? 2;
+  const smartTempCurrent = Math.max(temperature?.cpuTemp || 0, temperature?.gpuTemp || 0);
+  // 预设 5 的颜色表由设备的运行配置字节（命令 0x09）决定，读不到时按固件复位默认值 0 处理。
+  const runtimeProfile = deviceSettings?.runtimeProfileRaw ?? null;
+  const smartTempPresets = useMemo(() => smartTempPresetOptions(runtimeProfile), [runtimeProfile]);
+
+  // 优先用核心上报的真实状态（它带着回差历史）；核心还没上报时按当前温度预览。
+  const activeSmartBandIndex = useMemo(() => {
+    if (lightStripConfig.mode !== 'smart_temp') return -1;
+    if (smartLightStatus?.active && smartLightStatus.bandIndex >= 0 && smartLightStatus.bandIndex < smartTempBands.length) {
+      return smartLightStatus.bandIndex;
+    }
+    if (smartTempCurrent <= 0) return -1;
+    return selectSmartTempBand(smartTempBands, smartTempHysteresis, smartTempCurrent, -1);
+  }, [lightStripConfig.mode, smartLightStatus, smartTempBands, smartTempHysteresis, smartTempCurrent]);
+
+  useEffect(() => {
+    if (lightStripConfig.mode !== 'smart_temp') return;
+    let cancelled = false;
+    apiService
+      .getSmartLightStatus()
+      .then((status) => {
+        if (!cancelled) setSmartLightStatus(status);
+      })
+      .catch(() => {});
+    const unsubscribe = apiService.onSmartLightUpdate((status) => setSmartLightStatus(status));
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [lightStripConfig.mode]);
+
+  // 智能温控预览跟着当前命中的区间走；还没判定出区间时（例如刚切到这个模式）
+  // 退回第一段，与设备切换灯效时下发的第一个预设一致。
+  const previewSmartPreset =
+    smartTempBands[activeSmartBandIndex >= 0 ? activeSmartBandIndex : 0]?.preset ?? 0;
+
+  const previewProgram = useMemo(() => {
+    if (lightStripConfig.mode === 'smart_temp') {
+      // 固件为原生预设写死亮度 100，所以这里不传界面上的亮度值。
+      return buildSmartTempPresetProgram(previewSmartPreset, runtimeProfile);
+    }
+    return buildLightProgram({
+      mode: lightStripConfig.mode,
+      speed: lightStripConfig.speed,
+      brightness: lightStripConfig.brightness,
+      colors: lightStripConfig.colors,
+    });
+  }, [
+    lightStripConfig.mode,
+    lightStripConfig.speed,
+    lightStripConfig.brightness,
+    lightStripConfig.colors,
+    previewSmartPreset,
+    runtimeProfile,
+  ]);
+
+  const updateSmartTempBands = useCallback((bands: types.SmartTempLightBand[]) => {
+    setLightStripConfig((previous) =>
+      types.LightStripConfig.createFrom({ ...previous, smartTempBands: normalizeSmartTempBands(bands) }),
+    );
+  }, []);
+
+  const handleSmartBandPresetChange = useCallback(
+    (index: number, preset: number) => {
+      updateSmartTempBands(smartTempBands.map((band, i) => (i === index ? { ...band, preset } : band)));
+    },
+    [smartTempBands, updateSmartTempBands],
+  );
+
+  const handleSmartBandTempChange = useCallback(
+    (index: number, minTemp: number) => {
+      updateSmartTempBands(smartTempBands.map((band, i) => (i === index ? { ...band, minTemp } : band)));
+    },
+    [smartTempBands, updateSmartTempBands],
+  );
+
+  const handleSmartBandRemove = useCallback(
+    (index: number) => {
+      if (smartTempBands.length <= 2) return;
+      updateSmartTempBands(smartTempBands.filter((_, i) => i !== index));
+    },
+    [smartTempBands, updateSmartTempBands],
+  );
+
+  const handleSmartBandAdd = useCallback(() => {
+    if (smartTempBands.length >= SMART_TEMP_MAX_BANDS) return;
+    const last = smartTempBands[smartTempBands.length - 1];
+    const nextTemp = Math.min(last.minTemp + 5, SMART_TEMP_MAX_TEMP);
+    if (nextTemp <= last.minTemp) return;
+    updateSmartTempBands([
+      ...smartTempBands,
+      types.SmartTempLightBand.createFrom({ minTemp: nextTemp, preset: last.preset }),
+    ]);
+  }, [smartTempBands, updateSmartTempBands]);
+
+  const handleSmartHysteresisChange = useCallback((value: number) => {
+    setLightStripConfig((previous) =>
+      types.LightStripConfig.createFrom({ ...previous, smartTempHysteresis: value }),
+    );
+  }, []);
+
   const handleLightColorChange = useCallback((index: number, hex: string) => {
     setLightStripConfig((prev) => {
       const colors = [...(prev.colors || [])];
@@ -1676,6 +1887,18 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
               />
             </div>
 
+            {lightStripConfig.mode !== 'off' && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">{t('controlPanel.light.previewLabel')}</span>
+                  <span className="text-right text-[11px] text-muted-foreground">
+                    {t('controlPanel.light.previewHint')}
+                  </span>
+                </div>
+                <LightStripPreview program={previewProgram} />
+              </div>
+            )}
+
             <Slider
               min={0} max={100} step={1}
               value={lightStripConfig.brightness}
@@ -1686,8 +1909,115 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
             />
 
             {lightStripConfig.mode === 'smart_temp' && (
-              <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                {t('controlPanel.light.smartTempWarning')}
+              <div className="space-y-3">
+                <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  {t('controlPanel.light.smartTempWarning')}
+                </div>
+
+                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-foreground">{t('controlPanel.light.smartTemp.bandsTitle')}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {smartTempCurrent > 0
+                        ? t('controlPanel.light.smartTemp.liveTemp', { temp: smartTempCurrent })
+                        : t('controlPanel.light.smartTemp.noTemp')}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {smartTempBands.map((band, index) => {
+                      const upper = smartTempBands[index + 1];
+                      const preset = smartTempPresets.find((item) => item.value === band.preset);
+                      const isActive = index === activeSmartBandIndex;
+                      return (
+                        <div
+                          key={index}
+                          className={clsx(
+                            'flex items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors',
+                            isActive ? 'border-primary/60 bg-primary/10' : 'border-border bg-card',
+                          )}
+                        >
+                          <span
+                            className="h-4 w-8 shrink-0 rounded-full border border-border"
+                            style={preset?.swatch ? { backgroundColor: preset.swatch } : undefined}
+                            title={preset && smartTempPresetDependsOnRuntimeProfile(preset.value) ? t('controlPanel.light.smartTemp.dependsOnRuntimeProfile') : undefined}
+                            aria-hidden
+                          />
+
+                          <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-muted-foreground">
+                            {index === 0 ? (
+                              <span className="shrink-0">{t('controlPanel.light.smartTemp.fromZero')}</span>
+                            ) : (
+                              <>
+                                <span className="shrink-0">≥</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={SMART_TEMP_MAX_TEMP}
+                                  value={band.minTemp}
+                                  onChange={(e) => handleSmartBandTempChange(index, Number(e.target.value))}
+                                  className="w-14 rounded-md border border-border bg-background px-1.5 py-1 text-center text-xs text-foreground"
+                                />
+                              </>
+                            )}
+                            <span className="shrink-0">
+                              {upper
+                                ? t('controlPanel.light.smartTemp.rangeUpTo', { temp: upper.minTemp - 1 })
+                                : t('controlPanel.light.smartTemp.rangeAndAbove')}
+                            </span>
+                          </div>
+
+                          <select
+                            value={band.preset}
+                            onChange={(e) => handleSmartBandPresetChange(index, Number(e.target.value))}
+                            className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                          >
+                            {smartTempPresets.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {t(item.labelKey)}
+                              </option>
+                            ))}
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSmartBandRemove(index)}
+                            disabled={smartTempBands.length <= 2 || index === 0}
+                            title={t('controlPanel.light.smartTemp.removeBand')}
+                            className="shrink-0 cursor-pointer rounded-md border border-border px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSmartBandAdd}
+                      disabled={smartTempBands.length >= SMART_TEMP_MAX_BANDS}
+                      className="cursor-pointer rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {t('controlPanel.light.smartTemp.addBand')}
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{t('controlPanel.light.smartTemp.hysteresis')}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={SMART_TEMP_MAX_HYSTERESIS}
+                        value={smartTempHysteresis}
+                        onChange={(e) => handleSmartHysteresisChange(Number(e.target.value))}
+                        className="w-14 rounded-md border border-border bg-background px-1.5 py-1 text-center text-xs text-foreground"
+                      />
+                      <span className="text-xs text-muted-foreground">°C</span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">{t('controlPanel.light.smartTemp.presetHint')}</p>
+                </div>
               </div>
             )}
 
@@ -1955,9 +2285,7 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
           <SettingRow
             icon={<Spline className="h-4 w-4" />}
             title={t('controlPanel.fan.curveProfileTitle')}
-            description={adaptiveActive
-              ? t('controlPanel.fan.curveProfileAdaptiveDescription')
-              : t('controlPanel.fan.curveProfileDescription')}
+            description={t('controlPanel.fan.curveProfileDescription')}
           >
             <FanCurveProfileSelect
               profiles={curveProfiles}

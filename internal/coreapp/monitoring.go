@@ -290,7 +290,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	// 每个曲线点对应一个稳态采样桶。
 	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
 	thermalPredictor := smartcontrol.NewThermalPredictor()
-	adaptiveEngine := smartcontrol.NewAdaptiveEngine()
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 	// 只统计"定时器等待"期间流逝的时间，不把本轮采样/控温的耗时算进去。
@@ -317,7 +316,6 @@ monitorLoop:
 			gap := now.Sub(lastTimerReset)
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
 				thermalPredictor.Reset()
-				adaptiveEngine.Reset()
 				resetTimer(updateInterval)
 				continue
 			}
@@ -335,7 +333,6 @@ monitorLoop:
 				lastControlTemp = -1
 				steadyObserver.Reset()
 				thermalPredictor.Reset()
-				adaptiveEngine.Reset()
 				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
 			}
 
@@ -457,6 +454,7 @@ monitorLoop:
 					if err != nil {
 						a.logError("智能温控灯效更新失败: %v", err)
 					}
+					a.broadcastSmartLightStatus()
 				}
 			}
 			if cfg.AutoControl && controlReady && invalidControlTempCount >= 3 && !safeFallbackActive {
@@ -487,33 +485,8 @@ monitorLoop:
 					steadyObserver = smartcontrol.NewStableObserver(len(cfg.FanCurve))
 				}
 
-				// 自适应学习 2.0 接管时，本轮使用的曲线与控温参数都由"热模型 + 倾向"
-				// 解算得到，用户曲线与 1.0 学习偏移一律不参与。tickCfg 只在本轮有效，
-				// 不写回配置，避免派生参数污染用户可见的设置。
 				activeCurve := cfg.FanCurve
 				tickCfg := smartCfg
-				adaptiveOn := smartcontrol.AdaptiveActive(smartCfg)
-				if adaptiveOn {
-					steadyObserver.Reset()
-					autoCurve, curveChanged := adaptiveEngine.Curve(smartCfg, now)
-					if len(autoCurve) > 0 {
-						activeCurve = autoCurve
-						if curveChanged {
-							smartCfg.Adaptive.AutoCurve = append([]types.FanCurvePoint(nil), autoCurve...)
-							smartCfg.Adaptive.AutoCurveUpdatedAt = now.Unix()
-							cfg.SmartControl = smartCfg
-							a.configManager.Set(cfg)
-							learningDirty = true
-							a.logDebug("自适应 2.0 重算曲线: 倾向=%d 样本=%d 置信度=%.2f 基线=%.1f°C",
-								smartCfg.Adaptive.Preference,
-								smartCfg.Adaptive.Model.Samples,
-								smartcontrol.AdaptiveModelConfidence(smartCfg.Adaptive.Model),
-								smartCfg.Adaptive.Model.Baseline,
-							)
-						}
-					}
-					tickCfg = smartcontrol.ApplyAdaptiveTuning(tickCfg, smartcontrol.DeriveAdaptiveTuning(smartCfg.Adaptive))
-				}
 
 				sampleTemp := temp.ControlTemp
 				sampleSpikeSuppressed := false
@@ -634,28 +607,6 @@ monitorLoop:
 				}
 
 				switch {
-				case adaptiveOn:
-					if spikeSuppressed {
-						// 被判定为尖峰的采样点不是真实稳态，喂给模型会把一次瞬时抖动
-						// 记成"这个转速下就该这么热"，进而长期抬高整条曲线。
-						adaptiveEngine.Reset()
-						break
-					}
-					// 模型要学的是"下发了多少转速"与温度的对应关系。设备实测转速会
-					// 滞后于指令，稳态期间才与指令一致，因此这里用当前生效的指令值。
-					commandedRPM := lastTargetRPM
-					if commandedRPM <= 0 {
-						commandedRPM = targetRPM
-					}
-					if obs, ok := adaptiveEngine.Observe(learningControlTemp, commandedRPM, observedRPM, temp.CPUPower+temp.GPUPower); ok {
-						smartCfg.Adaptive.Model = smartcontrol.UpdateAdaptiveThermalModel(smartCfg.Adaptive.Model, obs)
-						cfg.SmartControl = smartCfg
-						a.configManager.Set(cfg)
-						learningDirty = true
-						a.logDebug("自适应 2.0 稳态样本: %d°C @ %dRPM 功耗=%.1fW 基线=%.1f°C 累计=%d",
-							obs.Temp, obs.RPM, obs.Power, smartCfg.Adaptive.Model.Baseline, smartCfg.Adaptive.Model.Samples)
-					}
-
 				case smartCfg.Learning:
 					if !spikeSuppressed {
 						steady := steadyObserver.Observe(learningControlTemp, observedRPM, cfg.FanCurve, smartCfg)
@@ -684,8 +635,7 @@ monitorLoop:
 					steadyObserver.Reset()
 				}
 
-				// 落盘节流对 1.0 偏移与 2.0 模型是同一套：两者都在控温环里高频改写，
-				// 每次都写盘既伤 SSD 也会拖慢采样周期。
+				// 学习偏移在控温环里高频改写，每次都写盘既伤 SSD 也会拖慢采样周期。
 				if learningDirty && time.Since(lastLearningSave) >= 25*time.Second {
 					if err := a.configManager.Save(); err != nil {
 						a.logError("保存学习状态失败: %v", err)
