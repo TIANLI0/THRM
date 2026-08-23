@@ -796,17 +796,16 @@
         "addBand": "添加区间",
         "removeBand": "删除该区间",
         "hysteresis": "切换回差",
-        "presetHint": "切换内置动画只改运行状态，不会写入设备闪存，可以随温度频繁切换。",
-        "preset1": "内置 1（绿）",
-        "preset2": "内置 2（黄）",
-        "preset3": "内置 3（红）",
-        "preset4": "内置 4",
-        "preset5": "内置 5",
-        "unknownAppearance": "固件接受此预设，但外观未记录"
+        "presetHint": "内置动画是一段白色高光沿灯带跑动的流光；温度越高的预设跑得越快。切换只改运行状态，不写入设备闪存。",
+        "preset1": "内置 1 · 绿色流光（慢）",
+        "preset2": "内置 2 · 黄色流光（中）",
+        "preset3": "内置 3 · 红色流光（快）",
+        "preset4": "内置 4 · 红色常亮",
+        "preset5": "内置 5 · 红粉渐变流光",
+        "variesByModel": "该预设的颜色表随设备型号变体不同，这里显示的是变体 1"
       },
       "previewLabel": "灯条预览",
-      "previewHint": "按固件插值算法实时复现",
-      "previewHintApproximate": "示意动画 · 固件原生预设的动作无法从镜像恢复"
+      "previewHint": "按固件插值算法实时复现"
     },
     "fan": {
       "sectionTitle": "风扇控制",

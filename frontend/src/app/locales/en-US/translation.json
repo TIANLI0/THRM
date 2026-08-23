@@ -796,17 +796,16 @@
         "addBand": "Add band",
         "removeBand": "Remove this band",
         "hysteresis": "Switch hysteresis",
-        "presetHint": "Switching a built-in animation only changes runtime state — it never writes the device’s flash, so it is safe to switch as often as the temperature moves.",
-        "preset1": "Built-in 1 (green)",
-        "preset2": "Built-in 2 (yellow)",
-        "preset3": "Built-in 3 (red)",
-        "preset4": "Built-in 4",
-        "preset5": "Built-in 5",
-        "unknownAppearance": "The firmware accepts this preset, but its appearance is not documented"
+        "presetHint": "The built-in animations are a white highlight running along the strip; the hotter the preset, the faster it runs. Switching only changes runtime state and never writes the device’s flash.",
+        "preset1": "Built-in 1 · green flow (slow)",
+        "preset2": "Built-in 2 · yellow flow (medium)",
+        "preset3": "Built-in 3 · red flow (fast)",
+        "preset4": "Built-in 4 · solid red",
+        "preset5": "Built-in 5 · red-to-pink flow",
+        "variesByModel": "This preset’s color table depends on the device model variant; variant 1 is shown here"
       },
       "previewLabel": "Strip preview",
-      "previewHint": "Runs the firmware’s own interpolation",
-      "previewHintApproximate": "Approximate · the native preset’s motion is not recoverable from the firmware image"
+      "previewHint": "Runs the firmware’s own interpolation"
     },
     "fan": {
       "sectionTitle": "Fan control",

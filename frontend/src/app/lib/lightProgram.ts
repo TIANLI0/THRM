@@ -255,47 +255,104 @@ export function averageColor(colors: RGB[]): RGB {
   };
 }
 
-/* ── 智能温控的原生预设 ──
+/* ── 智能温控的原生预设（0x44）──
 
-固件的 0x44 预设生成器无法从镜像中恢复：它挂在 RGB 控制器虚表的 +0x10 槽上，
-而这张虚表位于已初始化数据段（复位时拷进 RAM），反编译器看不到谁填的它——
-`FUN_ram_00008480` 等同槽位的函数在整个反编译产物里都没有具名引用。
+这些不是猜的。`0x44` 的分支是 `(**(code **)(rgb_controller_state + 0x10))(preset)`，
+虚表在已初始化数据段里，反编译看不到内容；但启动代码把 `.data` 从镜像 0x2abac
+拷到 RAM 0x20002128，据此算出虚表在镜像里的位置（0x2b074），读出第 5 个槽位是
+0x7ad0，再顺着 0x2a330 的跳转表拿到五个预设各自的代码，最后逐条模拟其中的
+sb/sh/sw，把生成的程序缓冲区还原了出来。
 
-因此下面的预览是**示意**，不是逐字节复刻：颜色取自实机观察（预设 1/2/3 依次为
-绿、黄、红），动作用固件同一套关键帧插值做成呼吸。预设 4/5 固件接受但外观没有
-记录，这里不编造，返回 null。界面必须把这一点标注清楚。
-*/
+生成器的共同部分：亮度恒为 100（固件写死，所以智能温控模式下亮度滑块无效），
+firstKeyframe = 0。各预设覆盖 lastKeyframe 与 transitionTicks。
 
-export const SMART_TEMP_PRESET_COLORS: Record<number, RGB | null> = {
-  1: { r: 34, g: 197, b: 94 },
-  2: { r: 234, g: 179, b: 8 },
-  3: { r: 239, g: 68, b: 68 },
-  4: null,
-  5: null,
+1..3 是同一套结构：底色铺满灯带，一段白色高光沿灯带跑动——也就是流光。
+注意 transitionTicks 依次是 10 / 6 / 2：温度越高，流光跑得越快。
+4 是纯红常亮（两个关键帧同色）。5 是红到粉的三帧流光。
+
+预设 5 在生成前调用 0x755a 取设备型号变体，变体 1 与其它变体用两张不同的表；
+这里用的是变体 1 的表。 */
+
+/** 关键帧颜色表，索引为 [led][keyframe]，十六进制字符串。 */
+interface FirmwarePreset {
+  /** 一次关键帧过渡的节拍数，乘 10 得到子步数。 */
+  transitionTicks: number;
+  /** 底色，供界面色块使用。 */
+  base: string;
+  /** [led][keyframe] */
+  frames: string[][];
+}
+
+/** 1..3 共用的流光排布：底色 A、过渡色 M、白色高光 W 依次错开。 */
+function flowingPreset(transitionTicks: number, a: string, m: string, w: string): FirmwarePreset {
+  const group = [
+    [a, m, w, m],
+    [m, w, m, a],
+    [w, m, a, m],
+  ];
+  // 固件的生成循环跑两趟、每趟前进 3 颗灯，所以后三颗与前三颗完全相同。
+  return { transitionTicks, base: a, frames: [...group, ...group] };
+}
+
+const FIRMWARE_PRESETS: Record<number, FirmwarePreset> = {
+  1: flowingPreset(10, '#00FF00', '#3FFF3F', '#FFFFFF'),
+  2: flowingPreset(6, '#FFFF00', '#FFFF3F', '#FFFFFF'),
+  3: flowingPreset(2, '#FF0000', '#FF3F3F', '#FFFFFF'),
+  4: {
+    transitionTicks: 2,
+    base: '#FF0000',
+    frames: Array.from({ length: LIGHT_LED_COUNT }, () => ['#FF0000', '#FF0000']),
+  },
+  5: {
+    transitionTicks: 10,
+    base: '#FF0000',
+    frames: [
+      ['#FF0000', '#FF5F5F', '#FFB8B8'],
+      ['#FFB8B8', '#FF0000', '#FF5F5F'],
+      ['#FFB8B8', '#FF5F5F', '#FF0000'],
+      ['#FF0000', '#FF5F5F', '#FFB8B8'],
+      ['#FFB8B8', '#FF0000', '#FF5F5F'],
+      ['#FFB8B8', '#FF5F5F', '#FF0000'],
+    ],
+  },
 };
 
-/** 该预设的外观是否有实机依据。false 表示界面应显示"未知"而不是猜一个颜色。 */
-export function isSmartTempPresetKnown(preset: number): boolean {
-  return SMART_TEMP_PRESET_COLORS[preset] != null;
+/** 固件为原生预设写死的亮度。 */
+const SMART_TEMP_PRESET_BRIGHTNESS = 100;
+
+export const SMART_TEMP_PRESET_MIN = 1;
+export const SMART_TEMP_PRESET_MAX = 5;
+
+function hexToRgb(hex: string): RGB {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+/** 该预设的底色，用于界面色块。 */
+export function smartTempPresetBaseColor(preset: number): RGB | null {
+  const entry = FIRMWARE_PRESETS[preset];
+  return entry ? hexToRgb(entry.base) : null;
+}
+
+/** 预设 5 随设备型号变体使用不同的颜色表，界面需要提示这一点。 */
+export function smartTempPresetVariesByModel(preset: number): boolean {
+  return preset === 5;
 }
 
 /**
- * 构造智能温控预设的示意动画：整条灯带同色呼吸。
- * 走的是与自定义灯效相同的关键帧插值，只是关键帧由这里合成。
+ * 还原固件为该原生预设生成的程序。返回的程序可直接交给 sampleLightProgram，
+ * 与自定义灯效走完全相同的插值路径——因为设备端本来就是同一条路径。
  */
-export function buildSmartTempPreviewProgram(preset: number, brightness = 100): LightProgram | null {
-  const color = SMART_TEMP_PRESET_COLORS[preset];
-  if (!color) return null;
+export function buildSmartTempPresetProgram(preset: number): LightProgram | null {
+  const entry = FIRMWARE_PRESETS[preset];
+  if (!entry) return null;
 
-  const dim: RGB = {
-    r: Math.round(color.r * 0.22),
-    g: Math.round(color.g * 0.22),
-    b: Math.round(color.b * 0.22),
-  };
-  const program = newProgram(1, LIGHT_SPEED_SLOW, Math.max(0, Math.min(100, Math.round(brightness))));
+  const keyframes = entry.frames[0].length;
+  const program = newProgram(keyframes - 1, entry.transitionTicks, SMART_TEMP_PRESET_BRIGHTNESS);
   for (let led = 0; led < LIGHT_LED_COUNT; led++) {
-    program.colors[led][0] = color;
-    program.colors[led][1] = dim;
+    entry.frames[led].forEach((hex, keyframe) => {
+      program.colors[led][keyframe] = hexToRgb(hex);
+    });
   }
   return program;
 }
