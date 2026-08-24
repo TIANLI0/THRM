@@ -29,6 +29,7 @@ import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import UpdateProgress from './UpdateProgress';
 
 const MAIN_TAB_ITEMS = [
   { id: 'status', titleKey: 'appShell.tabs.status', icon: LayoutGrid },
@@ -840,6 +841,8 @@ export default function AppShell({
         {/* 内容面板在 Windows 下已经从顶栏下沿开始，滚动条无需再避让顶栏 */}
         <OverlayScrollbar scrollRef={scrollRef} topOffset={6} />
         </div>
+        {/* 更新进度常驻此处：切标签页不会打断下载，也不会丢掉进度弹窗 */}
+        <UpdateProgress />
       </section>
     </div>
   );

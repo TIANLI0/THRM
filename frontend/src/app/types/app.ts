@@ -95,7 +95,6 @@ export interface AppConfig {
   guiMonitoring: boolean;      // GUI监控开关
   customSpeedEnabled: boolean; // 自定义转速开关
   customSpeedRPM: number;      // 自定义转速值(无上下限)
-  speedAvoidance?: SpeedAvoidanceConfig;
   timeCurveSchedule?: TimeCurveScheduleConfig;
   smartControl: SmartControlConfig; // 学习型智能控温
 }
@@ -106,14 +105,6 @@ export interface RTSSConfig {
   positionMode?: 'anchor' | 'custom';
   positionX?: number;
   positionY?: number;
-}
-
-export interface SpeedAvoidanceConfig {
-  enabled: boolean;
-  minRpm: number;
-  maxRpm: number;
-  marginRpm: number;
-  emergencyBypassTemp: number;
 }
 
 export interface TimeCurveScheduleConfig {
@@ -154,7 +145,6 @@ export interface SmartControlConfig {
   overheatWeight: number;
   rpmDeltaWeight: number;
   noiseWeight: number;
-  trendGain: number;
   maxLearnOffset: number;
   learnedOffsets: number[];
   learnedOffsetsHeat: number[];

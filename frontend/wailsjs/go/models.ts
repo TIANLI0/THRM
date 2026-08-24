@@ -470,10 +470,8 @@ export namespace types {
 	export class SmartControlConfig {
 	    enabled: boolean;
 	    learning: boolean;
-	    predictiveBoost: boolean;
 	    learningBias: string;
 	    filterTransientSpike: boolean;
-	    laptopFanGuard: boolean;
 	    targetTemp: number;
 	    aggressiveness: number;
 	    hysteresis: number;
@@ -486,7 +484,6 @@ export namespace types {
 	    overheatWeight: number;
 	    rpmDeltaWeight: number;
 	    noiseWeight: number;
-	    trendGain: number;
 	    maxLearnOffset: number;
 	    learnedOffsets: number[];
 	    learnedOffsetsByProfile: Record<string, Array<number>>;
@@ -507,10 +504,8 @@ export namespace types {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.enabled = source["enabled"];
 	        this.learning = source["learning"];
-	        this.predictiveBoost = source["predictiveBoost"];
 	        this.learningBias = source["learningBias"];
 	        this.filterTransientSpike = source["filterTransientSpike"];
-	        this.laptopFanGuard = source["laptopFanGuard"];
 	        this.targetTemp = source["targetTemp"];
 	        this.aggressiveness = source["aggressiveness"];
 	        this.hysteresis = source["hysteresis"];
@@ -523,7 +518,6 @@ export namespace types {
 	        this.overheatWeight = source["overheatWeight"];
 	        this.rpmDeltaWeight = source["rpmDeltaWeight"];
 	        this.noiseWeight = source["noiseWeight"];
-	        this.trendGain = source["trendGain"];
 	        this.maxLearnOffset = source["maxLearnOffset"];
 	        this.learnedOffsets = source["learnedOffsets"];
 	        this.learnedOffsetsByProfile = source["learnedOffsetsByProfile"];
@@ -610,26 +604,6 @@ export namespace types {
 		    }
 		    return a;
 		}
-	}
-	export class SpeedAvoidanceConfig {
-	    enabled: boolean;
-	    minRpm: number;
-	    maxRpm: number;
-	    marginRpm: number;
-	    emergencyBypassTemp: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new SpeedAvoidanceConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.enabled = source["enabled"];
-	        this.minRpm = source["minRpm"];
-	        this.maxRpm = source["maxRpm"];
-	        this.marginRpm = source["marginRpm"];
-	        this.emergencyBypassTemp = source["emergencyBypassTemp"];
-	    }
 	}
 	export class RTSSConfig {
 	    enabled: boolean;
@@ -801,7 +775,6 @@ export namespace types {
 	    lastDeviceTransport: string;
 	    flydigiCompat: boolean;
 	    rtss: RTSSConfig;
-	    speedAvoidance: SpeedAvoidanceConfig;
 	    timeCurveSchedule: TimeCurveScheduleConfig;
 	    smartControl: SmartControlConfig;
 	    coolingBenefit: CoolingBenefitState;
@@ -852,7 +825,6 @@ export namespace types {
 	        this.lastDeviceTransport = source["lastDeviceTransport"];
 	        this.flydigiCompat = source["flydigiCompat"];
 	        this.rtss = this.convertValues(source["rtss"], RTSSConfig);
-	        this.speedAvoidance = this.convertValues(source["speedAvoidance"], SpeedAvoidanceConfig);
 	        this.timeCurveSchedule = this.convertValues(source["timeCurveSchedule"], TimeCurveScheduleConfig);
 	        this.smartControl = this.convertValues(source["smartControl"], SmartControlConfig);
 	        this.coolingBenefit = this.convertValues(source["coolingBenefit"], CoolingBenefitState);
@@ -1375,7 +1347,6 @@ export namespace types {
 	        this.temperature = source["temperature"];
 	    }
 	}
-	
 	export class TemperatureData {
 	    cpuTemp: number;
 	    gpuTemp: number;

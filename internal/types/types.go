@@ -692,10 +692,8 @@ type NoiseProfilePoint struct {
 type SmartControlConfig struct {
 	Enabled                 bool              `json:"enabled"`                         // 智能耦合控制开关
 	Learning                bool              `json:"learning"`                        // 学习开关
-	PredictiveBoost         bool              `json:"predictiveBoost"`                 // 提前升速：自适应学习的子开关，仅在 Learning 开启时生效
 	LearningBias            string            `json:"learningBias"`                    // 学习倾向: balanced/cooling/quiet
 	FilterTransientSpike    bool              `json:"filterTransientSpike"`            // 是否过滤孤立温度尖峰
-	LaptopFanGuard          bool              `json:"laptopFanGuard"`                  // 笔记本风扇高转时缓慢降速：自适应学习的子开关，仅在 Learning 开启且能读到笔记本风扇转速时生效
 	TargetTemp              int               `json:"targetTemp"`                      // 目标温度(°C)
 	Aggressiveness          int               `json:"aggressiveness"`                  // 响应激进度(1-10)
 	Hysteresis              int               `json:"hysteresis"`                      // 滞回温差(°C)
@@ -708,7 +706,6 @@ type SmartControlConfig struct {
 	OverheatWeight          int               `json:"overheatWeight"`                  // 过热惩罚权重
 	RPMDeltaWeight          int               `json:"rpmDeltaWeight"`                  // 转速变化惩罚权重
 	NoiseWeight             int               `json:"noiseWeight"`                     // 高转速噪音惩罚权重
-	TrendGain               int               `json:"trendGain"`                       // 温升趋势前馈增益
 	MaxLearnOffset          int               `json:"maxLearnOffset"`                  // 学习偏移上限(RPM)
 	LearnedOffsets          []int             `json:"learnedOffsets"`                  // 每个曲线点的学习偏移(RPM)
 	LearnedOffsetsByProfile map[string][]int  `json:"learnedOffsetsByProfile"`         // 每个曲线方案的学习偏移(RPM)
@@ -830,7 +827,6 @@ type AppConfig struct {
 	FlydigiCompat                    bool                      `json:"flydigiCompat"`                    // 飞智空间站兼容：阻止其后台服务(LocalSystem)接管散热器
 	RTSS                             RTSSConfig                `json:"rtss"`                             // RTSS 游戏内叠加层转速输出
 
-	SpeedAvoidance    SpeedAvoidanceConfig    `json:"speedAvoidance"`    // 智能控温转速避让
 	TimeCurveSchedule TimeCurveScheduleConfig `json:"timeCurveSchedule"` // 分时曲线计划
 	SmartControl      SmartControlConfig      `json:"smartControl"`      // 学习型智能控温配置
 	CoolingBenefit    CoolingBenefitState     `json:"coolingBenefit"`    // 散热收益实测与日常统计（与学习模式无关）
@@ -864,10 +860,8 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 	return SmartControlConfig{
 		Enabled:              true,
 		Learning:             true,
-		PredictiveBoost:      true,
 		LearningBias:         LearningBiasBalanced,
 		FilterTransientSpike: true,
-		LaptopFanGuard:       true,
 		TargetTemp:           68,
 		Aggressiveness:       5,
 		Hysteresis:           2,
@@ -880,7 +874,6 @@ func GetDefaultSmartControlConfig(curve []FanCurvePoint) SmartControlConfig {
 		OverheatWeight:       8,
 		RPMDeltaWeight:       5,
 		NoiseWeight:          4,
-		TrendGain:            5,
 		MaxLearnOffset:       300,
 		LearnedOffsets:       offsets,
 		LearnedOffsetsHeat:   heatOffsets,
@@ -1218,7 +1211,6 @@ func GetDefaultConfig(isAutoStart bool) AppConfig {
 		IgnoreDeviceOnReconnect:          true,  // 默认开启，防止断连后误判用户手动切换
 		FlydigiCompat:                    false, // 默认关闭：会改写设备安全描述符，必须由用户显式开启
 		RTSS:                             GetDefaultRTSSConfig(),
-		SpeedAvoidance:                   GetDefaultSpeedAvoidanceConfig(),
 		TimeCurveSchedule:                GetDefaultTimeCurveScheduleConfig(),
 		SmartControl:                     GetDefaultSmartControlConfig(defaultCurve),
 		LightStrip:                       GetDefaultLightStripConfig(),

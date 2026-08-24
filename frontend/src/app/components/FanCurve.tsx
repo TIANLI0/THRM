@@ -78,14 +78,6 @@ const LEARNING_BIAS_OPTIONS = [
   { value: 'quiet', labelKey: 'fanCurve.learning.biasOptions.quiet.label', descriptionKey: 'fanCurve.learning.biasOptions.quiet.description' },
 ];
 
-const DEFAULT_SPEED_AVOIDANCE = {
-  enabled: false,
-  minRpm: 1900,
-  maxRpm: 2200,
-  marginRpm: 100,
-  emergencyBypassTemp: 80,
-};
-
 const DEFAULT_SCHEDULE_RULE = {
   enabled: true,
   weekdays: [1, 2, 3, 4, 5, 6, 0],
@@ -529,8 +521,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const [noiseTestOpen, setNoiseTestOpen] = useState(false);
   const [benefitOpen, setBenefitOpen] = useState(false);
   const [featureConfigLoading, setFeatureConfigLoading] = useState(false);
-  const [avoidanceRevealed, setAvoidanceRevealed] = useState(false);
-  const [avoidanceConfirmOpen, setAvoidanceConfirmOpen] = useState(false);
   const [scheduleTimeDrafts, setScheduleTimeDrafts] = useState<Record<string, string>>({});
   const [scheduleNameDrafts, setScheduleNameDrafts] = useState<Record<string, string>>({});
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -637,21 +627,19 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     const normalizeRateOffsets = (source?: number[]) => Array.isArray(source) ? [...source.slice(0, 7), ...defaultRateOffsets].slice(0, 7) : defaultRateOffsets;
 
     if (!existing) {
-      return { enabled: true, learning: true, predictiveBoost: true, learningBias: 'balanced', filterTransientSpike: true, laptopFanGuard: true, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 50, rampUpLimit: 220, rampDownLimit: 160, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, trendGain: 5, maxLearnOffset: 300, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
+      return { enabled: true, learning: true, learningBias: 'balanced', filterTransientSpike: true, targetTemp: 68, aggressiveness: 5, hysteresis: 2, minRpmChange: 50, rampUpLimit: 220, rampDownLimit: 160, learnRate: 3, learnWindow: 8, learnDelay: 3, overheatWeight: 8, rpmDeltaWeight: 5, noiseWeight: 4, maxLearnOffset: 300, learnedOffsets: defaultOffsets, learnedOffsetsHeat: defaultOffsets, learnedOffsetsCool: defaultOffsets, learnedRateHeat: defaultRateOffsets, learnedRateCool: defaultRateOffsets };
     }
 
     return {
       ...existing,
       learning: existing.learning ?? true,
-      predictiveBoost: (existing as any).predictiveBoost ?? true,
-      laptopFanGuard: (existing as any).laptopFanGuard ?? true,
       learningBias: normalizeLearningBias((existing as any).learningBias),
       filterTransientSpike: existing.filterTransientSpike ?? true,
       targetTemp: normalizeTargetTemp(existing.targetTemp ?? 68),
       hysteresis: Math.max(1, existing.hysteresis ?? 2),
       learnWindow: existing.learnWindow ?? 8, learnDelay: existing.learnDelay ?? 3,
       overheatWeight: existing.overheatWeight ?? 8, rpmDeltaWeight: existing.rpmDeltaWeight ?? 5,
-      noiseWeight: existing.noiseWeight ?? 4, trendGain: existing.trendGain ?? 5,
+      noiseWeight: existing.noiseWeight ?? 4,
       learnedOffsets: normalizeOffsets(existing.learnedOffsets),
       learnedOffsetsHeat: normalizeOffsets(existing.learnedOffsetsHeat),
       learnedOffsetsCool: normalizeOffsets(existing.learnedOffsetsCool),
@@ -679,16 +667,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   const currentLearningBias = normalizeLearningBias((smartControl as any).learningBias);
   const currentLearningBiasOption = learningBiasOptions.find((option) => option.value === currentLearningBias) ?? learningBiasOptions[0];
   const [targetTempDraft, setTargetTempDraft] = useState(() => normalizeTargetTemp((config.smartControl as any)?.targetTemp ?? 68));
-  const speedAvoidance = useMemo(() => {
-    const existing = (config as any).speedAvoidance;
-    return {
-      enabled: existing?.enabled ?? DEFAULT_SPEED_AVOIDANCE.enabled,
-      minRpm: existing?.minRpm ?? DEFAULT_SPEED_AVOIDANCE.minRpm,
-      maxRpm: existing?.maxRpm ?? DEFAULT_SPEED_AVOIDANCE.maxRpm,
-      marginRpm: existing?.marginRpm ?? DEFAULT_SPEED_AVOIDANCE.marginRpm,
-      emergencyBypassTemp: existing?.emergencyBypassTemp ?? DEFAULT_SPEED_AVOIDANCE.emergencyBypassTemp,
-    };
-  }, [config]);
   const timeCurveSchedule = useMemo<TimeCurveScheduleView>(() => {
     const existing = (config as any).timeCurveSchedule;
     const fallbackProfileId = externalActiveProfileId || curveProfiles[0]?.id || '';
@@ -745,13 +723,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
   useEffect(() => {
     setTargetTempDraft(normalizeTargetTemp((smartControl as any).targetTemp ?? 68));
   }, [smartControl.targetTemp]);
-
-  // 避噪转速区间默认隐藏；仅当用户此前已启用时自动展开，避免不了解需求的用户误开。
-  useEffect(() => {
-    if (speedAvoidance.enabled) {
-      setAvoidanceRevealed(true);
-    }
-  }, [speedAvoidance.enabled]);
 
   useEffect(() => {
     if (!focusTarget) {
@@ -1404,17 +1375,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
     void updateSmartControlConfig({ learning: enabled });
   }, [updateSmartControlConfig]);
 
-  // 提前升速与缓慢降速由核心侧按 learning 一并门控，界面据此禁用两个子开关。
-  const learningEnabled = !!smartControl.learning;
-
-  const handlePredictiveBoostToggle = useCallback((enabled: boolean) => {
-    void updateSmartControlConfig({ predictiveBoost: enabled } as Partial<types.SmartControlConfig>);
-  }, [updateSmartControlConfig]);
-
-  const handleLaptopFanGuardToggle = useCallback((enabled: boolean) => {
-    void updateSmartControlConfig({ laptopFanGuard: enabled } as Partial<types.SmartControlConfig>);
-  }, [updateSmartControlConfig]);
-
   const handleLearningBiasChange = useCallback((value: string) => {
     void updateSmartControlConfig({ learningBias: normalizeLearningBias(value) });
   }, [updateSmartControlConfig]);
@@ -1465,11 +1425,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
       setFeatureConfigLoading(false);
     }
   }, [config, onConfigChange, t]);
-
-  const updateSpeedAvoidance = useCallback((patch: Partial<types.SpeedAvoidanceConfig>) => {
-    const nextSpeedAvoidance = types.SpeedAvoidanceConfig.createFrom({ ...speedAvoidance, ...patch });
-    void updateFanFeatureConfig({ speedAvoidance: nextSpeedAvoidance as any });
-  }, [speedAvoidance, updateFanFeatureConfig]);
 
   const updateTimeCurveSchedule = useCallback((patch: Partial<types.TimeCurveScheduleConfig> & { rules?: TimeCurveScheduleRuleView[] }) => {
     const nextTimeCurveSchedule = types.TimeCurveScheduleConfig.createFrom({
@@ -1963,51 +1918,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           </div>
 
           <div className="mt-3 flex flex-col gap-3 rounded-xl border border-border/70 bg-background/45 p-3">
-            <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/55 p-3 md:flex-row md:items-center md:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.predictiveTitle')}</div>
-                  {!learningEnabled
-                    ? <Badge variant="info">{t('fanCurve.learning.requiresLearning')}</Badge>
-                    : !smartControl.predictiveBoost && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
-                </div>
-                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.learning.predictiveDescription')}</div>
-              </div>
-              <ToggleSwitch
-                enabled={!!smartControl.predictiveBoost}
-                onChange={handlePredictiveBoostToggle}
-                disabled={!learningEnabled}
-                loading={learningConfigLoading}
-                size="sm"
-                color="blue"
-                srLabel={t('fanCurve.learning.predictiveToggleAria')}
-              />
-            </div>
-
-            {/* 缓慢降速依赖笔记本自身风扇转速，仅在读得到的机型上展示 */}
-            {((temperature?.cpuFanRpm ?? 0) > 0 || (temperature?.gpuFanRpm ?? 0) > 0) && (
-              <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/55 p-3 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.laptopGuardTitle')}</div>
-                    {!learningEnabled
-                      ? <Badge variant="info">{t('fanCurve.learning.requiresLearning')}</Badge>
-                      : !(smartControl as any).laptopFanGuard && <Badge variant="info">{t('fanCurve.learning.paused')}</Badge>}
-                  </div>
-                  <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.learning.laptopGuardDescription')}</div>
-                </div>
-                <ToggleSwitch
-                  enabled={!!(smartControl as any).laptopFanGuard}
-                  onChange={handleLaptopFanGuardToggle}
-                  disabled={!learningEnabled}
-                  loading={learningConfigLoading}
-                  size="sm"
-                  color="blue"
-                  srLabel={t('fanCurve.learning.laptopGuardToggleAria')}
-                />
-              </div>
-            )}
-
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.learning.biasTitle')}</div>
@@ -2114,171 +2024,6 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, f
           onConfigChange={onConfigChange}
           isConnected={isConnected}
         />
-
-        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <TriangleAlert className="h-4 w-4 text-orange-500" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-sm font-medium text-foreground">{t('fanCurve.avoidance.title')}</div>
-                  {speedAvoidance.enabled && <Badge variant="warning">{t('fanCurve.avoidance.badge')}</Badge>}
-                </div>
-                <div className="text-xs leading-relaxed text-muted-foreground">{t('fanCurve.avoidance.description')}</div>
-              </div>
-            </div>
-            {avoidanceRevealed ? (
-              <ToggleSwitch
-                enabled={!!speedAvoidance.enabled}
-                onChange={(enabled) => updateSpeedAvoidance({ enabled })}
-                loading={featureConfigLoading}
-                size="sm"
-                color="orange"
-                srLabel={t('fanCurve.avoidance.toggleAria')}
-              />
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setAvoidanceConfirmOpen(true)}
-                icon={<TriangleAlert className="h-3.5 w-3.5" />}
-              >
-                {t('fanCurve.avoidance.revealButton')}
-              </Button>
-            )}
-          </div>
-
-          {!avoidanceRevealed && (
-            <div className="mt-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-              {t('fanCurve.avoidance.hiddenHint')}
-            </div>
-          )}
-
-          {avoidanceRevealed && (
-          <>
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
-            <div className="flex h-full flex-col rounded-xl border border-border/70 bg-background/45 p-3">
-              <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.avoidance.minTitle')}</div>
-              <div className="mt-1 min-h-10 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.avoidance.minDescription')}</div>
-              <div className="mt-3">
-                <NumberInput
-                  value={speedAvoidance.minRpm}
-                  onChange={(value) => updateSpeedAvoidance({ minRpm: value })}
-                  min={800}
-                  max={5000}
-                  step={50}
-                  suffix="RPM"
-                  disabled={featureConfigLoading}
-                />
-              </div>
-            </div>
-
-            <div className="flex h-full flex-col rounded-xl border border-border/70 bg-background/45 p-3">
-              <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.avoidance.maxTitle')}</div>
-              <div className="mt-1 min-h-10 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.avoidance.maxDescription')}</div>
-              <div className="mt-3">
-                <NumberInput
-                  value={speedAvoidance.maxRpm}
-                  onChange={(value) => updateSpeedAvoidance({ maxRpm: value })}
-                  min={800}
-                  max={5000}
-                  step={50}
-                  suffix="RPM"
-                  disabled={featureConfigLoading}
-                />
-              </div>
-            </div>
-
-            <div className="flex h-full flex-col rounded-xl border border-border/70 bg-background/45 p-3">
-              <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.avoidance.marginTitle')}</div>
-              <div className="mt-1 min-h-10 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.avoidance.marginDescription')}</div>
-              <div className="mt-3">
-                <NumberInput
-                  value={speedAvoidance.marginRpm}
-                  onChange={(value) => updateSpeedAvoidance({ marginRpm: value })}
-                  min={50}
-                  max={500}
-                  step={50}
-                  suffix="RPM"
-                  disabled={featureConfigLoading}
-                />
-              </div>
-            </div>
-
-            <div className="flex h-full flex-col rounded-xl border border-border/70 bg-background/45 p-3">
-              <div className="text-xs font-medium text-muted-foreground">{t('fanCurve.avoidance.bypassTitle')}</div>
-              <div className="mt-1 min-h-10 text-xs leading-relaxed text-muted-foreground">{t('fanCurve.avoidance.bypassDescription')}</div>
-              <div className="mt-3">
-                <NumberInput
-                  value={speedAvoidance.emergencyBypassTemp}
-                  onChange={(value) => updateSpeedAvoidance({ emergencyBypassTemp: value })}
-                  min={60}
-                  max={95}
-                  step={1}
-                  suffix="°C"
-                  disabled={featureConfigLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1">
-              {t('fanCurve.avoidance.summary', {
-                min: Math.min(speedAvoidance.minRpm, speedAvoidance.maxRpm),
-                max: Math.max(speedAvoidance.minRpm, speedAvoidance.maxRpm),
-                margin: speedAvoidance.marginRpm,
-              })}
-            </span>
-            {speedAvoidance.enabled && fanData?.targetRpm && fanData.targetRpm >= Math.min(speedAvoidance.minRpm, speedAvoidance.maxRpm) && fanData.targetRpm <= Math.max(speedAvoidance.minRpm, speedAvoidance.maxRpm) && (
-              <span className="rounded-full border border-orange-500/40 bg-orange-500/10 px-3 py-1 text-orange-600 dark:text-orange-300">
-                {t('fanCurve.avoidance.activeHint', { rpm: fanData.targetRpm })}
-              </span>
-            )}
-            {!config.autoControl && (
-              <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1">
-                {t('fanCurve.avoidance.autoOnlyHint')}
-              </span>
-            )}
-          </div>
-          </>
-          )}
-
-          <Dialog open={avoidanceConfirmOpen} onOpenChange={setAvoidanceConfirmOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <TriangleAlert className="h-4 w-4 text-amber-500" />
-                  {t('fanCurve.avoidance.confirmTitle')}
-                </DialogTitle>
-                <DialogDescription asChild>
-                  <div className="mt-1 space-y-2 rounded-xl border border-amber-300/40 bg-amber-500/10 p-3 text-left text-sm leading-relaxed text-foreground">
-                    <p>{t('fanCurve.avoidance.confirmBody1')}</p>
-                    <p>{t('fanCurve.avoidance.confirmBody2')}</p>
-                  </div>
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="secondary" size="sm" onClick={() => setAvoidanceConfirmOpen(false)} icon={<X className="h-3.5 w-3.5" />}>
-                  {t('common.actions.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    setAvoidanceRevealed(true);
-                    setAvoidanceConfirmOpen(false);
-                  }}
-                  icon={<Check className="h-3.5 w-3.5" />}
-                >
-                  {t('fanCurve.avoidance.confirmAccept')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </section>
 
         <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import clsx from 'clsx';
 import {
-  LIGHT_LED_COUNT,
+  STRIP_SAMPLE_COUNT,
   averageColor,
   rgbToCss,
-  sampleLightProgram,
+  sampleStripColors,
   stripGradient,
   type LightProgram,
   type RGB,
@@ -12,9 +13,12 @@ import {
 /**
  * 设备灯带的实时预览。
  *
- * 设备端是一整条带导光罩的灯带（6 颗灯珠串在一起），相邻灯珠的光互相融合，
- * 所以这里渲染成一条连续渐变，而不是六个分开的点。颜色由 lightProgram.ts
- * 复刻的固件关键帧插值逐帧算出。
+ * 设备端是一整条带导光罩的灯带，看到的是一条连续的光，不是六个分开的点。
+ * 所以这里沿灯条连续取样上色（sampleStripColors），位置与时间两个方向都插值，
+ * 亮光在灯条上是无级滑动的。颜色本身仍由 lightProgram.ts 复刻的固件关键帧算出。
+ *
+ * 实物灯带约 4.5cm 长、0.4cm 宽，因此预览按同样的长宽比渲染并居中，
+ * 而不是撑满整个面板宽度——撑满会把它拉成一条与实物完全不像的细长条。
  */
 export default function LightStripPreview({
   program,
@@ -24,27 +28,28 @@ export default function LightStripPreview({
   className?: string;
 }) {
   const off = useMemo<RGB[]>(
-    () => Array.from({ length: LIGHT_LED_COUNT }, () => ({ r: 0, g: 0, b: 0 })),
+    () => Array.from({ length: STRIP_SAMPLE_COUNT }, () => ({ r: 0, g: 0, b: 0 })),
     [],
   );
-  const [leds, setLeds] = useState<RGB[]>(off);
+  // 沿灯条连续取样得到的颜色，不是六颗灯珠的颜色。
+  const [strip, setStrip] = useState<RGB[]>(off);
   const frameRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!program) {
-      setLeds(off);
+      setStrip(off);
       return;
     }
 
     // 静态程序只有一帧，没必要每帧重算。
     if (program.lastKeyframe === 0) {
-      setLeds(sampleLightProgram(program, 0));
+      setStrip(sampleStripColors(program, 0));
       return;
     }
 
     const start = performance.now();
     const tick = (now: number) => {
-      setLeds(sampleLightProgram(program, now - start));
+      setStrip(sampleStripColors(program, now - start));
       frameRef.current = requestAnimationFrame(tick);
     };
     frameRef.current = requestAnimationFrame(tick);
@@ -54,22 +59,25 @@ export default function LightStripPreview({
     };
   }, [program, off]);
 
-  const glow = averageColor(leds);
+  const glow = averageColor(strip);
   const lit = glow.r + glow.g + glow.b > 12;
 
   return (
-    <div className={className}>
-      <div className="rounded-full border border-border bg-neutral-900 p-1.5 shadow-inner dark:bg-black">
-        <div
-          className="h-4 w-full rounded-full"
-          style={{
-            background: stripGradient(leds),
-            boxShadow: lit
-              ? `0 0 16px 2px ${rgbToCss(glow)}, inset 0 1px 1px rgba(255,255,255,0.25)`
-              : 'inset 0 0 0 1px rgba(255,255,255,0.08)',
-          }}
-        />
-      </div>
+    <div className={clsx('flex justify-center', className)}>
+      {/* 只画灯带本身：外面再套一圈深色外壳只会变成一条黑边，实物没有这个东西。
+          横向是灯珠的光晕叠加，纵向叠一层高光，看起来才像亮着的导光条。 */}
+      <div
+        className="aspect-[45/4] w-full max-w-[200px] rounded-full"
+        style={{
+          backgroundImage: [
+            'linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.06) 42%, rgba(0,0,0,0.10) 100%)',
+            stripGradient(strip),
+          ].join(', '),
+          boxShadow: lit
+            ? `0 0 18px 3px ${rgbToCss(glow)}`
+            : 'inset 0 0 0 1px color-mix(in srgb, currentColor 12%, transparent)',
+        }}
+      />
     </div>
   );
 }

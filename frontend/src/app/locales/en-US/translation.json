@@ -229,6 +229,25 @@
       "tempStatus": "Temperature status",
       "cpuPower": "CPU power",
       "gpuPower": "GPU power"
+    },
+    "layout": {
+      "moveEarlier": "Move earlier",
+      "moveLater": "Move later",
+      "moveFirst": "Move to first",
+      "moveLast": "Move to last",
+      "reset": "Restore default order",
+      "cards": {
+        "hero": "Device overview",
+        "cpu": "CPU temperature",
+        "gpu": "GPU temperature",
+        "fan": "Fan speed",
+        "runtime": "Runtime details",
+        "curve": "Fan curve",
+        "history": "Temperature history"
+      },
+      "startSorting": "Drag to reorder",
+      "stopSorting": "Done",
+      "sortingHint": "Drag cards to reorder — press Esc to finish"
     }
   },
   "manualGear": {
@@ -313,7 +332,11 @@
       "floatDoneHint": "This app will close and install automatically. A status window shows progress, then the new version restarts.",
       "updaterWindowTitle": "THRM is updating",
       "updaterWindowBody": "Installing the new version automatically. Please do not close this window",
-      "updaterWindowRestarting": "Update complete, restarting the app"
+      "updaterWindowRestarting": "Update complete, restarting the app",
+      "changelogTitle": "Release notes",
+      "changelogTitleWithVersion": "Release notes · {{version}}",
+      "viewChangelog": "View release notes",
+      "viewChangelogWithVersion": "View {{version}} release notes"
     },
     "contact": {
       "title": "Developer and contact",
@@ -403,7 +426,6 @@
     "learning": {
       "title": "Adaptive learning",
       "paused": "Paused",
-      "requiresLearning": "Requires adaptive learning",
       "description": "After longer runtime, the target RPM at each temperature point is fine-tuned automatically so real temperatures stay closer to the configured curve. Learned offsets can be reset at any time.",
       "toggleAria": "Toggle adaptive learning",
       "biasTitle": "Learning bias",
@@ -430,13 +452,7 @@
           "label": "Quiet first",
           "description": "Only allows learned RPM decreases, avoiding unnecessary fan ramp-up."
         }
-      },
-      "predictiveTitle": "Ramp up early",
-      "predictiveDescription": "When CPU/GPU power spikes while temperature is climbing, ramps up against the projected temperature instead of waiting for the measured one to cross the curve point. Ramps up early only, never down; learned offsets still use measured temperatures.",
-      "laptopGuardTitle": "Ramp down slowly while laptop fans are high",
-      "laptopGuardDescription": "While the laptop's own fans are still near their recent maximum, the cooling pad drops at most 60 RPM per sampling cycle. That avoids the back-and-forth where a temperature dip cuts pad speed, the temperature bounces back, and it has to ramp up again. Available only on laptops whose fan speed can be read.",
-      "laptopGuardToggleAria": "Toggle slow ramp-down while laptop fans are high",
-      "predictiveToggleAria": "Toggle ramp up early"
+      }
     },
     "noiseTest": {
       "title": "Fan noise test",
@@ -475,12 +491,10 @@
         "kneeTitle": "Noise knee",
         "kneeValue": "Noise rises sharply from about {{rpm}} RPM",
         "noKnee": "No clear knee detected",
-        "resonance": "Resonance peak detected near {{rpm}} RPM ({{db}} dB above trend). Consider setting a {{min}}-{{max}} RPM avoidance range.",
+        "resonance": "Resonance peak detected near {{rpm}} RPM ({{db}} dB above trend). Consider steering the curve away from that speed.",
         "lowConfidence": "Total noise variation is too small for a reliable measurement. Move the microphone closer to the cooler, make sure the room is quiet, and run the test again. Saving this result is not recommended.",
         "applyProfile": "Save noise profile for adaptive learning",
         "profileApplied": "Noise profile saved",
-        "applyAvoidance": "Set avoidance range {{min}}-{{max}} RPM",
-        "avoidanceApplied": "Avoidance range set",
         "retest": "Test again",
         "close": "Done"
       },
@@ -492,32 +506,8 @@
         "failed": "Noise test failed",
         "restoreFailed": "Failed to restore fan settings, please check the speed mode manually",
         "profileSaved": "Noise profile saved. Adaptive learning will use measured noise for quiet optimization",
-        "avoidanceSaved": "Avoidance range {{min}}-{{max}} RPM enabled",
         "applyFailed": "Save failed"
       }
-    },
-    "avoidance": {
-      "title": "Noise avoidance range",
-      "badge": "Enabled",
-      "description": "When smart control calculates a target RPM inside a noisy range, it automatically jumps outside that range to reduce intermittent bearing noise.",
-      "toggleAria": "Toggle noise avoidance range",
-      "minTitle": "Range start",
-      "minDescription": "Lower RPM boundary of the noisy range.",
-      "maxTitle": "Range end",
-      "maxDescription": "Upper RPM boundary of the noisy range.",
-      "marginTitle": "Avoidance margin",
-      "marginDescription": "Extra RPM distance added when jumping outside the range.",
-      "bypassTitle": "High-temp bypass",
-      "bypassDescription": "Temporarily ignore the range above this temperature so cooling wins first.",
-      "summary": "Avoid {{min}} - {{max}} RPM with a {{margin}} RPM margin",
-      "activeHint": "Current target {{rpm}} RPM is inside the sensitive range and will be avoided automatically",
-      "autoOnlyHint": "Only applies in smart control mode",
-      "revealButton": "Tune",
-      "hiddenHint": "Hidden by default. These are generic default values that must be tuned for your device. Do not enable if you are unsure.",
-      "confirmTitle": "Enable RPM avoidance tuning",
-      "confirmBody1": "All parameters below are generic defaults. They only make sense after tuning against your device’s measured noise.",
-      "confirmBody2": "If you are unsure what you need, do not enable this to avoid harming normal cooling.",
-      "confirmAccept": "I understand, show settings"
     },
     "schedule": {
       "title": "Time-based curves",

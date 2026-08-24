@@ -528,3 +528,12 @@ export {
   DialogTrigger,
 } from '@/components/ui/dialog';
 export { Skeleton } from '@/components/ui/skeleton';
+export {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';

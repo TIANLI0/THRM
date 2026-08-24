@@ -16,6 +16,11 @@ const (
 	deviceReadyStatusGrace   = 350 * time.Millisecond
 	deviceReadyQueryInterval = 750 * time.Millisecond
 	deviceReadyPollInterval  = 100 * time.Millisecond
+
+	// 启动下发前等待首个有效温度的上限与轮询间隔：开机自启动时温度桥接
+	// 往往还要十几秒才出第一帧数据。
+	startupControlTempWait         = 25 * time.Second
+	startupControlTempPollInterval = 500 * time.Millisecond
 )
 
 // onShowWindowRequest 显示窗口请求回调
@@ -744,6 +749,10 @@ func (a *CoreApp) connectDeviceOnce(generation uint64, manual bool) bool {
 			}
 			a.deviceControlMutex.Unlock()
 		}
+		// 本进程第一次连上设备时，把 App 侧的转速控制也下发一次（灯带上面已经发过）。
+		if a.startupConfigApplied.CompareAndSwap(false, true) {
+			a.applyStartupDeviceConfig(generation)
+		}
 		if a.isConnectionAttemptCurrent(generation) {
 			a.ensureTemperatureMonitoring("device-connect")
 		}
@@ -790,6 +799,70 @@ func (a *CoreApp) DisconnectDevice() {
 	}
 }
 
+// applyStartupDeviceConfig 在本进程首次连上设备后把 App 侧配置下发一次。
+//
+// 软件启动之前散热器一直按固件自己保留的状态运行，App 配置里的智能变频/挡位都还
+// 没生效过。原先启动连接只下发灯带，转速则完全交给温度监控循环的下一拍——而开机
+// 自启动时温度桥接往往还在启动，那几拍读不到温度就什么都不会下发，散热器要等十几
+// 秒才被接管，表现就是"软件设置的智能控温开机没有自动下发"。
+func (a *CoreApp) applyStartupDeviceConfig(generation uint64) {
+	if a.configManager.Get().AutoControl && a.latestControlTemp() <= 0 {
+		// 智能变频的目标转速必须由实测温度查曲线得出，等桥接出第一个有效读数
+		// 再下发；等不到就按 automaticReplayTargetRPM 的曲线首点兜底。
+		a.safeGo("applyStartupDeviceConfig@await-temperature", func() {
+			a.awaitFirstControlTemp(startupControlTempWait)
+			a.replayStartupDeviceConfig(generation)
+		})
+		return
+	}
+	a.replayStartupDeviceConfig(generation)
+}
+
+func (a *CoreApp) replayStartupDeviceConfig(generation uint64) {
+	if !a.isConnectionAttemptCurrent(generation) {
+		a.startupConfigApplied.Store(false)
+		return
+	}
+	if !a.lockDeviceControlIfReady() {
+		// 没能下发就把标记退回去，下一次连接成功时重试。
+		a.startupConfigApplied.Store(false)
+		a.logInfo("设备尚未就绪或正在挂起，跳过启动配置下发")
+		return
+	}
+	defer a.deviceControlMutex.Unlock()
+
+	// 灯带在连接成功时已经单独下发过，这里不再重复上传灯效帧。
+	if err := a.replayDeviceConfigLocked("启动", false); err != nil {
+		a.logError("启动后部分配置下发失败: %v", err)
+	}
+}
+
+func (a *CoreApp) latestControlTemp() int {
+	a.mutex.RLock()
+	defer a.mutex.RUnlock()
+	if a.currentTemp.ControlTemp > 0 {
+		return a.currentTemp.ControlTemp
+	}
+	return a.currentTemp.MaxTemp
+}
+
+// awaitFirstControlTemp 等待温度监控循环写入第一个有效读数，超时即返回。
+func (a *CoreApp) awaitFirstControlTemp(timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for {
+		if a.stopping.Load() || a.systemSuspended.Load() {
+			return
+		}
+		if a.latestControlTemp() > 0 {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			return
+		}
+		time.Sleep(startupControlTempPollInterval)
+	}
+}
+
 // reapplyConfigAfterReconnect 重连后重新应用APP配置
 func (a *CoreApp) reapplyConfigAfterReconnect() {
 	if !a.lockDeviceControlIfReady() {
@@ -807,6 +880,12 @@ func (a *CoreApp) reapplyConfigAfterReconnect() {
 // must hold deviceControlMutex; this is shared by reconnect and firmware
 // maintenance so 0x03/0x06 side effects cannot leak into the visible state.
 func (a *CoreApp) reapplyDeviceConfigLocked(reason string) error {
+	return a.replayDeviceConfigLocked(reason, true)
+}
+
+// replayDeviceConfigLocked 与 reapplyDeviceConfigLocked 相同，但允许跳过灯带：
+// 启动路径已经在连接成功时单独下发过灯带，重复上传灯效帧毫无意义。
+func (a *CoreApp) replayDeviceConfigLocked(reason string, includeLightStrip bool) error {
 	cfg := a.configManager.Get()
 	var replayErrors []error
 
@@ -847,8 +926,10 @@ func (a *CoreApp) reapplyDeviceConfigLocked(reason string) error {
 			replayErrors = append(replayErrors, fmt.Errorf("重新应用智能启停失败: %s", cfg.SmartStartStop))
 		}
 
-		if err := a.applyConfiguredLightStrip(); err != nil {
-			replayErrors = append(replayErrors, fmt.Errorf("重新应用灯带配置: %w", err))
+		if includeLightStrip {
+			if err := a.applyConfiguredLightStrip(); err != nil {
+				replayErrors = append(replayErrors, fmt.Errorf("重新应用灯带配置: %w", err))
+			}
 		}
 	}
 

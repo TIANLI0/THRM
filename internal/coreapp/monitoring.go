@@ -272,8 +272,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		rawTempHistory = append(rawTempHistory, initialTemp.ControlTemp)
 	}
 	lastTargetRPM := -1
-	lastControlTemp := -1
-	laptopFanPeakRPM := 0
 	lastDeviceGeneration := a.deviceManager.ConnectionGeneration()
 	settingsRefreshGeneration := uint64(0)
 	learningDirty := false
@@ -289,7 +287,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 
 	// 每个曲线点对应一个稳态采样桶。
 	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
-	thermalPredictor := smartcontrol.NewThermalPredictor()
 	timer := time.NewTimer(updateInterval)
 	defer timer.Stop()
 	// 只统计"定时器等待"期间流逝的时间，不把本轮采样/控温的耗时算进去。
@@ -315,7 +312,6 @@ monitorLoop:
 			now := time.Now()
 			gap := now.Sub(lastTimerReset)
 			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
-				thermalPredictor.Reset()
 				resetTimer(updateInterval)
 				continue
 			}
@@ -330,9 +326,7 @@ monitorLoop:
 				// temperature sample re-enters realtime mode and writes a target.
 				lastDeviceGeneration = deviceGeneration
 				lastTargetRPM = -1
-				lastControlTemp = -1
 				steadyObserver.Reset()
-				thermalPredictor.Reset()
 				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
 			}
 
@@ -368,8 +362,6 @@ monitorLoop:
 				temp.CPUFanRPM = laptopSpeeds.CPUFanRPM
 				temp.GPUFanRPM = laptopSpeeds.GPUFanRPM
 			}
-			laptopFanRPM := max(temp.CPUFanRPM, temp.GPUFanRPM)
-			laptopFanPeakRPM = smartcontrol.DecayLaptopFanPeak(laptopFanPeakRPM, laptopFanRPM)
 			if temp.ControlTemp <= 0 {
 				// 桥接正在后台启动时读不到温度属于预期过渡态，不能计入"传感器失效"，
 				// 否则每次启动/自愈窗口都会把风扇推到安全兜底转速。
@@ -523,27 +515,6 @@ monitorLoop:
 					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
 				}
 
-				// 提前升速只作用于升温方向：短窗口温度斜率叠加 CPU/GPU 功耗突增，
-				// 得出"再过一会儿大概会到多少度"，据此提前查曲线升速。稳态学习仍使用
-				// learningControlTemp（实测值），避免把预测值写进长期学习偏移。
-				learningControlTemp := controlTemp
-				if smartcontrol.PredictiveBoostActive(tickCfg) {
-					prediction := thermalPredictor.Observe(temp, now, cfg.TempSource, tickCfg.TrendGain)
-					if prediction.ControlTemp > controlTemp {
-						controlTemp = prediction.ControlTemp
-						a.logDebug("预测控温: 实测=%d°C 预测=%d°C CPU+%.1f°C GPU+%.1f°C CPU功耗=%.1fW GPU功耗=%.1fW",
-							learningControlTemp,
-							controlTemp,
-							prediction.CPURise,
-							prediction.GPURise,
-							temp.CPUPower,
-							temp.GPUPower,
-						)
-					}
-				} else {
-					thermalPredictor.Reset()
-				}
-
 				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(activeCurve)
 
 				baseRPM := temperature.CalculateTargetRPM(controlTemp, activeCurve)
@@ -565,20 +536,6 @@ monitorLoop:
 					}
 				}
 
-				adjustedRPM, avoided := applySpeedAvoidance(targetRPM, curveMinRPM, curveMaxRPM, prevTargetRPM, controlTemp, lastControlTemp, cfg.SpeedAvoidance)
-				if avoided {
-					targetRPM = adjustedRPM
-				}
-
-				// 笔记本风扇仍接近近期最高转速时，限制散热器单次的降速幅度，
-				// 避免“温度一掉就急降速→温度立刻回升→又得升速”的来回摆动。
-				if smartcontrol.LaptopFanGuardActive(tickCfg) {
-					guardedRPM, guarded := smartcontrol.ApplyLaptopFanGuard(targetRPM, prevTargetRPM, laptopFanRPM, laptopFanPeakRPM)
-					if guarded {
-						a.logDebug("笔记本风扇高转，限制降速: 笔记本=%dRPM 近期峰值=%dRPM 目标 %d→%d RPM", laptopFanRPM, laptopFanPeakRPM, targetRPM, guardedRPM)
-						targetRPM = guardedRPM
-					}
-				}
 				fanData := a.deviceManager.GetCurrentFanData()
 				observedRPM := targetRPM
 				if fanData != nil && fanData.CurrentRPM > 0 {
@@ -609,7 +566,7 @@ monitorLoop:
 				switch {
 				case smartCfg.Learning:
 					if !spikeSuppressed {
-						steady := steadyObserver.Observe(learningControlTemp, observedRPM, cfg.FanCurve, smartCfg)
+						steady := steadyObserver.Observe(controlTemp, observedRPM, cfg.FanCurve, smartCfg)
 						if steady.Ready && steady.BucketIdx >= 0 {
 							newOffsets, changed := smartcontrol.LearnSteadyOffset(
 								steady.BucketIdx,
@@ -651,13 +608,10 @@ monitorLoop:
 				if baseRPM > 0 {
 					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%dRPM 目标=%dRPM", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, baseRPM, targetRPM)
 				}
-				lastControlTemp = learningControlTemp
 			}
 
 			if !cfg.AutoControl || !controlReady {
 				lastTargetRPM = -1
-				lastControlTemp = -1
-				thermalPredictor.Reset()
 			}
 
 			resetTimer(updateInterval)

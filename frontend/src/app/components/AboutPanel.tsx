@@ -34,7 +34,17 @@ import { apiService } from '../services/api';
 import { useAppStore } from '../store/app-store';
 import type { DeviceSettings } from '../types/app';
 import { SiGithub } from 'react-icons/si';
-import { Badge, Button, ScrollArea } from './ui/index';
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  ScrollArea,
+} from './ui/index';
+import { useUpdateStore } from '../store/update-store';
 
 type ReleaseChannel = 'stable' | 'prerelease';
 
@@ -66,8 +76,6 @@ function findInstallerAsset(assets: GithubReleaseAsset[] | undefined): string {
   );
   return fuzzy?.browser_download_url || '';
 }
-
-type UpdateStage = 'idle' | 'downloading' | 'installing' | 'done' | 'error';
 
 type CreditContributor = {
   login?: string;
@@ -249,10 +257,13 @@ export default function AboutPanel() {
   const [, setLatestReleaseIsPrerelease] = useState(false);
   const [releaseLoading, setReleaseLoading] = useState(false);
   const [releaseError, setReleaseError] = useState('');
-  const [installerUrl, setInstallerUrl] = useState('');
-  const [updateStage, setUpdateStage] = useState<UpdateStage>('idle');
-  const [updatePercent, setUpdatePercent] = useState(0);
-  const [updateError, setUpdateError] = useState('');
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  // 下载/安装状态放在全局 store：进度弹窗由 AppShell 常驻渲染，切页不中断。
+  const installerUrl = useUpdateStore((state) => state.installerUrl);
+  const updateStage = useUpdateStore((state) => state.stage);
+  const updatePercent = useUpdateStore((state) => state.percent);
+  const setRelease = useUpdateStore((state) => state.setRelease);
+  const startUpdateDownload = useUpdateStore((state) => state.startDownloadInstall);
   const [credits, setCredits] = useState<CreditsData | null>(null);
   const [creditsLoading, setCreditsLoading] = useState(false);
   const [creditsError, setCreditsError] = useState(false);
@@ -374,7 +385,7 @@ export default function AboutPanel() {
     async (channel: ReleaseChannel = releaseChannel) => {
       setReleaseLoading(true);
       setReleaseError('');
-      setInstallerUrl('');
+      setRelease('', BRAND.latestReleaseUrl);
 
       const headers = { Accept: 'application/vnd.github+json' };
 
@@ -415,7 +426,10 @@ export default function AboutPanel() {
             : '',
         );
         setLatestReleaseIsPrerelease(!!targetRelease?.prerelease);
-        setInstallerUrl(findInstallerAsset(targetRelease?.assets));
+        setRelease(
+          findInstallerAsset(targetRelease?.assets),
+          targetRelease?.html_url || BRAND.latestReleaseUrl,
+        );
       } catch {
         setLatestReleaseTag('');
         setLatestReleaseUrl(BRAND.latestReleaseUrl);
@@ -426,7 +440,7 @@ export default function AboutPanel() {
         setReleaseLoading(false);
       }
     },
-    [releaseChannel, t],
+    [releaseChannel, setRelease, t],
   );
 
   useEffect(() => {
@@ -477,53 +491,16 @@ export default function AboutPanel() {
     };
   }, []);
 
-  useEffect(() => {
-    const dispose = apiService.onUpdateDownloadProgress((payload) => {
-      const stage = payload?.stage;
-      if (stage === 'downloading') {
-        setUpdateStage('downloading');
-        setUpdatePercent(
-          typeof payload.percent === 'number' && payload.percent >= 0
-            ? payload.percent
-            : 0,
-        );
-      } else if (stage === 'installing') {
-        setUpdateStage('installing');
-        setUpdatePercent(100);
-      } else if (stage === 'done') {
-        setUpdateStage('done');
-        setUpdatePercent(100);
-      } else if (stage === 'error') {
-        setUpdateStage('error');
-        setUpdateError(payload?.message || '');
-      }
-    });
-    return () => {
-      dispose?.();
-    };
-  }, []);
-
   const startDownloadInstall = useCallback(async () => {
-    if (!installerUrl) {
-      return;
-    }
-    setUpdateStage('downloading');
-    setUpdatePercent(0);
-    setUpdateError('');
-    try {
-      await apiService.downloadAndInstallUpdate(
-        installerUrl,
-        t('aboutPanel.version.updaterWindowTitle'),
-        t('aboutPanel.version.updaterWindowBody'),
-        t('aboutPanel.version.updaterWindowRestarting'),
-      );
-    } catch (error) {
-      setUpdateStage('error');
-      const message = error instanceof Error ? error.message : String(error);
-      setUpdateError(message);
+    const message = await startUpdateDownload({
+      windowTitle: t('aboutPanel.version.updaterWindowTitle'),
+      windowBody: t('aboutPanel.version.updaterWindowBody'),
+      windowRestarting: t('aboutPanel.version.updaterWindowRestarting'),
+    });
+    if (message) {
       toast.error(t('aboutPanel.version.installFailed', { error: message }));
     }
-  }, [installerUrl, t]);
+  }, [startUpdateDownload, t]);
 
   const clearSponsorHoverTimer = useCallback(() => {
     if (sponsorHoverTimerRef.current !== null) {
@@ -991,6 +968,17 @@ export default function AboutPanel() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setChangelogOpen(true)}
+                icon={<Rocket className="h-4 w-4" />}
+              >
+                {hasNewVersion && latestReleaseTag
+                  ? t('aboutPanel.version.viewChangelogWithVersion', { version: latestReleaseTag })
+                  : t('aboutPanel.version.viewChangelog')}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() =>
                   openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
                 }
@@ -1003,90 +991,79 @@ export default function AboutPanel() {
         </div>
       </section>
 
-      {hasNewVersion && (
-        <section className={`${PANEL_CLASS} overflow-hidden`}>
-          <div className="flex flex-col gap-3 border-b border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Rocket className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-foreground">
-                  {t('aboutPanel.version.newVersionFound', {
-                    version: latestReleaseTag,
-                  })}
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {releaseChannel === 'prerelease'
-                    ? t('aboutPanel.version.channelPrerelease')
-                    : t('aboutPanel.version.channelStable')}
-                </div>
-              </div>
-            </div>
+      {/* 更新日志走弹窗：正文可能很长，铺在页面里会把"关于"页压得很散 */}
+      <Dialog open={changelogOpen} onOpenChange={setChangelogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Rocket className="h-4 w-4 text-primary" />
+              {latestReleaseTag
+                ? t('aboutPanel.version.changelogTitleWithVersion', { version: latestReleaseTag })
+                : t('aboutPanel.version.changelogTitle')}
+            </DialogTitle>
+          </DialogHeader>
 
+          {latestReleaseBody ? (
+            <ScrollArea className="max-h-[60vh] pr-3">
+              <div className="flex flex-col gap-2.5 text-sm leading-6 text-foreground/85">
+                {latestReleaseBody.split(/\r?\n/).map((line, index) => {
+                  const trimmed = line.trim();
+                  if (!trimmed) {
+                    return <div key={`release-line-${index}`} className="h-1" />;
+                  }
+
+                  if (/^#{1,6}\s+/.test(trimmed)) {
+                    return (
+                      <div
+                        key={`release-line-${index}`}
+                        className="pt-2 text-[15px] font-semibold text-foreground first:pt-0"
+                      >
+                        {trimmed.replace(/^#{1,6}\s+/, '')}
+                      </div>
+                    );
+                  }
+
+                  if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+                    const content = trimmed
+                      .replace(/^[-*]\s+/, '')
+                      .replace(/^\d+\.\s+/, '');
+
+                    return (
+                      <div
+                        key={`release-line-${index}`}
+                        className="grid grid-cols-[12px_minmax(0,1fr)] items-start gap-2"
+                      >
+                        <span className="mt-px text-primary">•</span>
+                        <span>{content}</span>
+                      </div>
+                    );
+                  }
+
+                  return <p key={`release-line-${index}`}>{trimmed}</p>;
+                })}
+              </div>
+            </ScrollArea>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('aboutPanel.version.emptyReleaseNotes')}
+            </p>
+          )}
+
+          <DialogFooter>
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
-              }
+              onClick={() => openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)}
               icon={<ExternalLink className="h-3.5 w-3.5" />}
             >
               {t('aboutPanel.version.openReleasePage')}
             </Button>
-          </div>
-
-          <div className="p-5 sm:p-6">
-            {latestReleaseBody ? (
-              <ScrollArea className="h-64 pr-3">
-                <div className="flex flex-col gap-2.5 text-sm leading-6 text-foreground/85">
-                  {latestReleaseBody.split(/\r?\n/).map((line, index) => {
-                    const trimmed = line.trim();
-                    if (!trimmed) {
-                      return (
-                        <div key={`release-line-${index}`} className="h-1" />
-                      );
-                    }
-
-                    if (/^#{1,6}\s+/.test(trimmed)) {
-                      return (
-                        <div
-                          key={`release-line-${index}`}
-                          className="pt-2 text-[15px] font-semibold text-foreground first:pt-0"
-                        >
-                          {trimmed.replace(/^#{1,6}\s+/, '')}
-                        </div>
-                      );
-                    }
-
-                    if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
-                      const content = trimmed
-                        .replace(/^[-*]\s+/, '')
-                        .replace(/^\d+\.\s+/, '');
-
-                      return (
-                        <div
-                          key={`release-line-${index}`}
-                          className="grid grid-cols-[12px_minmax(0,1fr)] items-start gap-2"
-                        >
-                          <span className="mt-px text-primary">•</span>
-                          <span>{content}</span>
-                        </div>
-                      );
-                    }
-
-                    return <p key={`release-line-${index}`}>{trimmed}</p>;
-                  })}
-                </div>
-              </ScrollArea>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t('aboutPanel.version.emptyReleaseNotes')}
-              </p>
-            )}
-          </div>
-        </section>
-      )}
+            <Button variant="secondary" size="sm" onClick={() => setChangelogOpen(false)}>
+              {t('common.actions.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0 space-y-5">
@@ -1533,120 +1510,6 @@ export default function AboutPanel() {
           document.body,
         )}
 
-      {updateStage !== 'idle' &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div className="fixed bottom-4 left-4 right-4 z-90 rounded-2xl border border-border/80 bg-popover/98 p-4 shadow-xl shadow-black/10 backdrop-blur-xl animate-in fade-in-0 slide-in-from-bottom-2 sm:bottom-6 sm:left-auto sm:right-6 sm:w-88">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                {updateStage === 'error' ? (
-                  <Rocket className="h-4 w-4 text-amber-500" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-foreground">
-                    {updateStage === 'downloading'
-                      ? t('aboutPanel.version.floatDownloadingTitle')
-                      : updateStage === 'installing'
-                        ? t('aboutPanel.version.floatInstallingTitle')
-                        : updateStage === 'done'
-                          ? t('aboutPanel.version.floatDoneTitle')
-                          : t('aboutPanel.version.floatErrorTitle')}
-                  </div>
-
-                  {(updateStage === 'error' || updateStage === 'done') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUpdateStage('idle');
-                        setUpdateError('');
-                      }}
-                      className="shrink-0 cursor-pointer rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                      aria-label={t('common.actions.close')}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                {updateStage === 'error' ? (
-                  <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                    {updateError
-                      ? t('aboutPanel.version.installFailed', {
-                          error: updateError,
-                        })
-                      : t('aboutPanel.version.floatErrorTitle')}
-                  </p>
-                ) : updateStage === 'done' ? (
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {t('aboutPanel.version.floatDoneHint')}
-                  </p>
-                ) : (
-                  <>
-                    <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-border/60">
-                      <div
-                        className={`h-full rounded-full bg-primary transition-[width] duration-200 ${
-                          updateStage !== 'downloading' ? 'animate-pulse' : ''
-                        }`}
-                        style={{
-                          width: `${
-                            updateStage === 'downloading' ? updatePercent : 100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                      <span className="min-w-0">
-                        {updateStage === 'downloading'
-                          ? t('aboutPanel.version.downloading', {
-                              percent: updatePercent,
-                            })
-                          : updateStage === 'installing'
-                            ? t('aboutPanel.version.installingHint')
-                            : t('aboutPanel.version.installStarted')}
-                      </span>
-                      {updateStage === 'downloading' && (
-                        <span className="shrink-0 tabular-nums">
-                          {updatePercent}%
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {updateStage === 'error' && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        void startDownloadInstall();
-                      }}
-                      icon={<Download className="h-3.5 w-3.5" />}
-                    >
-                      {t('aboutPanel.version.floatRetry')}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        openUrl(latestReleaseUrl || BRAND.latestReleaseUrl)
-                      }
-                      icon={<ExternalLink className="h-3.5 w-3.5" />}
-                    >
-                      {t('aboutPanel.version.openReleasePage')}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }

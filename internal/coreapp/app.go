@@ -65,6 +65,8 @@ type CoreApp struct {
 	legionFnQSupportChecked atomic.Bool
 	legionFnQRegistered     atomic.Bool
 	reconnectInProgress     atomic.Bool
+	// startupConfigApplied 标记"本进程已经把 App 配置整体下发过一次"。
+	startupConfigApplied atomic.Bool
 	autoReconnectSuppressed atomic.Bool
 	resumeRecoveryRunning   atomic.Bool
 	systemSuspended         atomic.Bool

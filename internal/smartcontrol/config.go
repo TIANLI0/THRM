@@ -59,10 +59,6 @@ func NormalizeConfig(cfg types.SmartControlConfig, curve []types.FanCurvePoint, 
 		cfg.NoiseWeight = defaults.NoiseWeight
 		changed = true
 	}
-	if cfg.TrendGain < 1 || cfg.TrendGain > 12 {
-		cfg.TrendGain = defaults.TrendGain
-		changed = true
-	}
 	if cfg.MaxLearnOffset < 100 || cfg.MaxLearnOffset > 2000 {
 		cfg.MaxLearnOffset = defaults.MaxLearnOffset
 		changed = true

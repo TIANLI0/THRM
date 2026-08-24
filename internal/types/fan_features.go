@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-type SpeedAvoidanceConfig struct {
-	Enabled             bool `json:"enabled"`
-	MinRPM              int  `json:"minRpm"`
-	MaxRPM              int  `json:"maxRpm"`
-	MarginRPM           int  `json:"marginRpm"`
-	EmergencyBypassTemp int  `json:"emergencyBypassTemp"`
-}
-
 type TimeCurveScheduleConfig struct {
 	Enabled bool                    `json:"enabled"`
 	Rules   []TimeCurveScheduleRule `json:"rules"`
@@ -30,49 +22,11 @@ type TimeCurveScheduleRule struct {
 	CurveProfileID string `json:"curveProfileId"`
 }
 
-func GetDefaultSpeedAvoidanceConfig() SpeedAvoidanceConfig {
-	return SpeedAvoidanceConfig{
-		Enabled:             false,
-		MinRPM:              1900,
-		MaxRPM:              2200,
-		MarginRPM:           100,
-		EmergencyBypassTemp: 80,
-	}
-}
-
 func GetDefaultTimeCurveScheduleConfig() TimeCurveScheduleConfig {
 	return TimeCurveScheduleConfig{
 		Enabled: false,
 		Rules:   []TimeCurveScheduleRule{},
 	}
-}
-
-func NormalizeSpeedAvoidanceConfig(cfg SpeedAvoidanceConfig) SpeedAvoidanceConfig {
-	defaults := GetDefaultSpeedAvoidanceConfig()
-
-	if cfg.MinRPM <= 0 {
-		cfg.MinRPM = defaults.MinRPM
-	}
-	if cfg.MaxRPM <= 0 {
-		cfg.MaxRPM = defaults.MaxRPM
-	}
-	if cfg.MinRPM > cfg.MaxRPM {
-		cfg.MinRPM, cfg.MaxRPM = cfg.MaxRPM, cfg.MinRPM
-	}
-	if cfg.MinRPM == cfg.MaxRPM {
-		cfg.MaxRPM = cfg.MinRPM + 50
-	}
-	if cfg.MarginRPM <= 0 {
-		cfg.MarginRPM = defaults.MarginRPM
-	}
-	cfg.MarginRPM = min(max(cfg.MarginRPM, 50), 500)
-	if cfg.EmergencyBypassTemp <= 0 {
-		cfg.EmergencyBypassTemp = defaults.EmergencyBypassTemp
-	} else {
-		cfg.EmergencyBypassTemp = min(max(cfg.EmergencyBypassTemp, 60), 95)
-	}
-
-	return cfg
 }
 
 func NormalizeTimeCurveScheduleConfig(cfg TimeCurveScheduleConfig, profiles []FanCurveProfile, activeProfileID string) TimeCurveScheduleConfig {

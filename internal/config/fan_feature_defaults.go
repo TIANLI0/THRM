@@ -11,33 +11,6 @@ func applyMissingFanFeatureDefaults(cfg *types.AppConfig, rawConfig map[string]j
 		return
 	}
 
-	speedDefaults := types.GetDefaultSpeedAvoidanceConfig()
-	if rawSpeedAvoidance, ok := rawConfig["speedAvoidance"]; !ok {
-		cfg.SpeedAvoidance = speedDefaults
-	} else {
-		var speedConfig map[string]json.RawMessage
-		if err := json.Unmarshal(rawSpeedAvoidance, &speedConfig); err != nil {
-			cfg.SpeedAvoidance = speedDefaults
-		} else {
-			if _, ok := speedConfig["enabled"]; !ok {
-				cfg.SpeedAvoidance.Enabled = speedDefaults.Enabled
-			}
-			if _, ok := speedConfig["minRpm"]; !ok {
-				cfg.SpeedAvoidance.MinRPM = speedDefaults.MinRPM
-			}
-			if _, ok := speedConfig["maxRpm"]; !ok {
-				cfg.SpeedAvoidance.MaxRPM = speedDefaults.MaxRPM
-			}
-			if _, ok := speedConfig["marginRpm"]; !ok {
-				cfg.SpeedAvoidance.MarginRPM = speedDefaults.MarginRPM
-			}
-			if _, ok := speedConfig["emergencyBypassTemp"]; !ok {
-				cfg.SpeedAvoidance.EmergencyBypassTemp = speedDefaults.EmergencyBypassTemp
-			}
-		}
-	}
-	cfg.SpeedAvoidance = types.NormalizeSpeedAvoidanceConfig(cfg.SpeedAvoidance)
-
 	scheduleDefaults := types.GetDefaultTimeCurveScheduleConfig()
 	if rawTimeCurveSchedule, ok := rawConfig["timeCurveSchedule"]; !ok {
 		cfg.TimeCurveSchedule = scheduleDefaults

@@ -1,7 +1,7 @@
 'use client';
 
 // 风扇噪音测试向导：引导用户在安静环境下用麦克风实测 1000→4000 RPM
-// 的噪音曲线，结果可写入学习模式噪音档案，并可一键设置共振避噪区间。
+// 的噪音曲线，结果可写入学习模式噪音档案。
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea } from 'recharts';
 import { AudioLines, Check, Mic, Play, RotateCw, TriangleAlert, Volume2, X } from 'lucide-react';
@@ -68,9 +68,7 @@ const NoiseTest = function NoiseTest({ open, onOpenChange, config, onConfigChang
   const [analysis, setAnalysis] = useState<NoiseAnalysis | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [applyProfileLoading, setApplyProfileLoading] = useState(false);
-  const [applyAvoidanceLoading, setApplyAvoidanceLoading] = useState(false);
   const [profileApplied, setProfileApplied] = useState(false);
-  const [avoidanceApplied, setAvoidanceApplied] = useState(false);
 
   const meterRef = useRef<NoiseMeter | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -99,7 +97,6 @@ const NoiseTest = function NoiseTest({ open, onOpenChange, config, onConfigChang
     setSamples([]);
     setAnalysis(null);
     setProfileApplied(false);
-    setAvoidanceApplied(false);
     setMicError(null);
   }, [cleanupMeter]);
 
@@ -183,7 +180,6 @@ const NoiseTest = function NoiseTest({ open, onOpenChange, config, onConfigChang
     setSamples([]);
     setAnalysis(null);
     setProfileApplied(false);
-    setAvoidanceApplied(false);
     setPhase('running');
 
     try {
@@ -253,33 +249,6 @@ const NoiseTest = function NoiseTest({ open, onOpenChange, config, onConfigChang
       toast.error(t('fanCurve.noiseTest.toast.applyFailed'), { description: getErrorMessage(err) });
     } finally {
       setApplyProfileLoading(false);
-    }
-  }, [analysis, config, onConfigChange, t]);
-
-  const applyResonanceAvoidance = useCallback(async () => {
-    if (!analysis?.resonance) return;
-    setApplyAvoidanceLoading(true);
-    try {
-      const existing = (config as unknown as { speedAvoidance?: Partial<types.SpeedAvoidanceConfig> }).speedAvoidance;
-      const nextAvoidance = types.SpeedAvoidanceConfig.createFrom({
-        enabled: true,
-        minRpm: analysis.resonance.startRpm,
-        maxRpm: analysis.resonance.endRpm,
-        marginRpm: existing?.marginRpm ?? 100,
-        emergencyBypassTemp: existing?.emergencyBypassTemp ?? 80,
-      });
-      const nextConfig = types.AppConfig.createFrom({ ...config, speedAvoidance: nextAvoidance });
-      await apiService.updateConfig(nextConfig);
-      onConfigChange(nextConfig);
-      setAvoidanceApplied(true);
-      toast.success(t('fanCurve.noiseTest.toast.avoidanceSaved', {
-        min: analysis.resonance.startRpm,
-        max: analysis.resonance.endRpm,
-      }));
-    } catch (err) {
-      toast.error(t('fanCurve.noiseTest.toast.applyFailed'), { description: getErrorMessage(err) });
-    } finally {
-      setApplyAvoidanceLoading(false);
     }
   }, [analysis, config, onConfigChange, t]);
 
@@ -508,20 +477,6 @@ const NoiseTest = function NoiseTest({ open, onOpenChange, config, onConfigChang
               >
                 {profileApplied ? t('fanCurve.noiseTest.done.profileApplied') : t('fanCurve.noiseTest.done.applyProfile')}
               </Button>
-              {analysis.resonance && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => void applyResonanceAvoidance()}
-                  loading={applyAvoidanceLoading}
-                  disabled={avoidanceApplied}
-                  icon={avoidanceApplied ? <Check className="h-3.5 w-3.5" /> : <TriangleAlert className="h-3.5 w-3.5" />}
-                >
-                  {avoidanceApplied
-                    ? t('fanCurve.noiseTest.done.avoidanceApplied')
-                    : t('fanCurve.noiseTest.done.applyAvoidance', { min: analysis.resonance.startRpm, max: analysis.resonance.endRpm })}
-                </Button>
-              )}
             </div>
 
             <DialogFooter>

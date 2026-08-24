@@ -1607,6 +1607,11 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
   // 预设 5 的颜色表由设备的运行配置字节（命令 0x09）决定，读不到时按固件复位默认值 0 处理。
   const runtimeProfile = deviceSettings?.runtimeProfileRaw ?? null;
   const smartTempPresets = useMemo(() => smartTempPresetOptions(runtimeProfile), [runtimeProfile]);
+  // 下拉列表统一走组件库的 Select，这里只把预设表翻译成它要的 value/label。
+  const smartTempPresetOptionList = useMemo(
+    () => smartTempPresets.map((item) => ({ value: item.value, label: t(item.labelKey) })),
+    [smartTempPresets, locale, t],
+  );
 
   // 优先用核心上报的真实状态（它带着回差历史）；核心还没上报时按当前温度预览。
   const activeSmartBandIndex = useMemo(() => {
@@ -1967,17 +1972,14 @@ export default function ControlPanel({ config, onConfigChange, isConnected, fanD
                             </span>
                           </div>
 
-                          <select
+                          <Select
                             value={band.preset}
-                            onChange={(e) => handleSmartBandPresetChange(index, Number(e.target.value))}
-                            className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
-                          >
-                            {smartTempPresets.map((item) => (
-                              <option key={item.value} value={item.value}>
-                                {t(item.labelKey)}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(value) => handleSmartBandPresetChange(index, Number(value))}
+                            options={smartTempPresetOptionList}
+                            size="sm"
+                            className="w-32 min-w-0 shrink-0"
+                            triggerClassName="h-8 text-xs"
+                          />
 
                           <button
                             type="button"

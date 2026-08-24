@@ -4,19 +4,6 @@ import (
 	"testing"
 )
 
-func TestGetDefaultSpeedAvoidanceConfig(t *testing.T) {
-	cfg := GetDefaultSpeedAvoidanceConfig()
-	if cfg.Enabled {
-		t.Error("Enabled should default to false")
-	}
-	if cfg.MinRPM <= 0 {
-		t.Error("MinRPM should be positive")
-	}
-	if cfg.MaxRPM <= cfg.MinRPM {
-		t.Error("MaxRPM should be greater than MinRPM")
-	}
-}
-
 func TestGetDefaultTimeCurveScheduleConfig(t *testing.T) {
 	cfg := GetDefaultTimeCurveScheduleConfig()
 	if cfg.Enabled {
@@ -24,44 +11,6 @@ func TestGetDefaultTimeCurveScheduleConfig(t *testing.T) {
 	}
 	if cfg.Rules == nil {
 		t.Error("Rules should not be nil")
-	}
-}
-
-func TestNormalizeSpeedAvoidanceConfig(t *testing.T) {
-	cfg := SpeedAvoidanceConfig{
-		Enabled:   true,
-		MinRPM:    0,
-		MaxRPM:    0,
-		MarginRPM: 0,
-	}
-	normalized := NormalizeSpeedAvoidanceConfig(cfg)
-	if normalized.MinRPM <= 0 {
-		t.Error("MinRPM should be replaced with default when <= 0")
-	}
-	if normalized.MaxRPM <= 0 {
-		t.Error("MaxRPM should be replaced with default when <= 0")
-	}
-	if normalized.MinRPM > normalized.MaxRPM {
-		t.Error("MinRPM should not exceed MaxRPM after normalization")
-	}
-	if normalized.MarginRPM < 50 || normalized.MarginRPM > 500 {
-		t.Errorf("MarginRPM = %d, want [50, 500]", normalized.MarginRPM)
-	}
-}
-
-func TestNormalizeSpeedAvoidanceConfig_Clamp(t *testing.T) {
-	cfg := SpeedAvoidanceConfig{
-		MinRPM:              5000,
-		MaxRPM:              1000,
-		MarginRPM:           550,
-		EmergencyBypassTemp: 100,
-	}
-	normalized := NormalizeSpeedAvoidanceConfig(cfg)
-	if normalized.MinRPM > normalized.MaxRPM {
-		t.Error("MinRPM and MaxRPM should be swapped")
-	}
-	if normalized.EmergencyBypassTemp > 95 {
-		t.Errorf("EmergencyBypassTemp = %d, should be clamped to max 95", normalized.EmergencyBypassTemp)
 	}
 }
 

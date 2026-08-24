@@ -531,3 +531,28 @@ textarea,
 .cn-toast-info {
   border-color: color-mix(in srgb, #3b82f6 40%, var(--border)) !important;
 }
+
+/* ── 首页卡片排序（SortableJS）──
+   ghost 是落点占位（真实节点被移到目标位置后留下的那个），
+   chosen 是被按住的那张，dragging 是跟着指针飞的克隆体。 */
+.home-card-ghost {
+  opacity: 0.35;
+  border-radius: 0.75rem;
+  outline: 2px dashed color-mix(in srgb, var(--primary) 60%, transparent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.home-card-ghost > * {
+  visibility: hidden;
+}
+
+.home-card-chosen {
+  cursor: grabbing;
+}
+
+.home-card-dragging {
+  cursor: grabbing;
+  opacity: 0.95;
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.35);
+}

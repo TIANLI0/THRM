@@ -1,6 +1,8 @@
 'use client';
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Sortable from 'sortablejs';
 import ConnectionRecoveryPanel from './ConnectionRecoveryPanel';
 import { motion } from 'framer-motion';
 import {
@@ -16,8 +18,16 @@ import {
   Fan,
   Gpu,
   Settings,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronsDown,
+  ChevronsUp,
   Gauge,
+  GripVertical,
+  Move,
   Power,
+  RotateCcw,
   Sparkles,
 } from 'lucide-react';
 import { types } from '../../../wailsjs/go/models';
@@ -27,7 +37,16 @@ import { clipHistoryToRecentWindow, downsampleHistoryPoints, HOME_CHART_WINDOW_M
 import { getManualGearLabel, getReportedMaxRpm } from '../lib/manualGearPresets';
 import type { DeviceSettings } from '../types/app';
 import { useTranslation } from 'react-i18next';
-import { ToggleSwitch, Button } from './ui/index';
+import {
+  Button,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+  ToggleSwitch,
+} from './ui/index';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import clsx from 'clsx';
 
@@ -54,6 +73,166 @@ interface BridgeRuntimeStatus {
   pipeName?: string;
   transport?: string;
   lastError?: string;
+}
+
+/* ── 首页卡片顺序 ──
+
+首页每张卡片都能拖动排序：拖拽由 SortableJS 实现，右键菜单（shadcn ContextMenu）提供
+不用拖也能改顺序的等价操作。顺序只影响本机界面、不参与设备配置，因此存 localStorage
+而不是 App 配置。
+*/
+
+type HomeCardId = 'hero' | 'cpu' | 'gpu' | 'fan' | 'runtime' | 'curve' | 'history';
+
+const HOME_CARD_IDS: HomeCardId[] = ['hero', 'cpu', 'gpu', 'fan', 'runtime', 'curve', 'history'];
+const HOME_CARD_ORDER_STORAGE_KEY = 'thrm.home.card-order';
+
+/**
+ * 每张卡片在 12 栅格里的默认宽度，保持与原布局一致：
+ * 概览与运行详情整行，三张指标卡各占三分之一，曲线与历史 7:5。
+ */
+const HOME_CARD_SPANS: Record<HomeCardId, string> = {
+  hero: 'md:col-span-12',
+  cpu: 'md:col-span-4',
+  gpu: 'md:col-span-4',
+  fan: 'md:col-span-4',
+  runtime: 'md:col-span-12',
+  curve: 'md:col-span-7',
+  history: 'md:col-span-5',
+};
+
+function isHomeCardId(value: unknown): value is HomeCardId {
+  return typeof value === 'string' && (HOME_CARD_IDS as string[]).includes(value);
+}
+
+function loadHomeCardOrder(): HomeCardId[] {
+  if (typeof window === 'undefined') return [...HOME_CARD_IDS];
+  try {
+    const raw = window.localStorage.getItem(HOME_CARD_ORDER_STORAGE_KEY);
+    if (!raw) return [...HOME_CARD_IDS];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...HOME_CARD_IDS];
+
+    const order: HomeCardId[] = [];
+    for (const item of parsed) {
+      if (isHomeCardId(item) && !order.includes(item)) order.push(item);
+    }
+    // 新版本新增的卡片补在末尾：旧记录不应让新卡片从首页消失。
+    for (const id of HOME_CARD_IDS) {
+      if (!order.includes(id)) order.push(id);
+    }
+    return order;
+  } catch {
+    return [...HOME_CARD_IDS];
+  }
+}
+
+function saveHomeCardOrder(order: HomeCardId[]) {
+  try {
+    window.localStorage.setItem(HOME_CARD_ORDER_STORAGE_KEY, JSON.stringify(order));
+  } catch {
+    /* 隐私模式等禁用存储的场景下顺序只在本次会话生效 */
+  }
+}
+
+interface HomeCardShellProps {
+  id: HomeCardId;
+  title: string;
+  /** 排序模式是否已开启：只有开启后卡片才可拖动。 */
+  sorting: boolean;
+  canMoveEarlier: boolean;
+  canMoveLater: boolean;
+  onMove: (id: HomeCardId, action: 'earlier' | 'later' | 'first' | 'last') => void;
+  onStartSorting: () => void;
+  onStopSorting: () => void;
+  onReset: () => void;
+  children: React.ReactNode;
+}
+
+/**
+ * HomeCardShell 给首页每张卡片套一层可排序外壳。
+ *
+ * 默认状态下这层外壳完全不拦事件、也不显示任何手柄，日常使用与没有排序功能时一样。
+ * 需要调整位置时右键卡片 → "拖动排序"，此时整张卡片才变成可拖动，并把卡片内部的
+ * 指针事件屏蔽掉，避免拖动时误触里面的开关和图表。
+ */
+function HomeCardShell({
+  id,
+  title,
+  sorting,
+  canMoveEarlier,
+  canMoveLater,
+  onMove,
+  onStartSorting,
+  onStopSorting,
+  onReset,
+  children,
+}: HomeCardShellProps) {
+  const { t } = useTranslation();
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-card-id={id}
+          className={clsx(
+            'relative min-w-0',
+            HOME_CARD_SPANS[id],
+            sorting && 'cursor-grab touch-none rounded-xl ring-2 ring-primary/35',
+          )}
+        >
+          {/* h-full 必须留在这里：卡片内部用 h-full 撑满整行高度，
+              少了这一层高度就会塌成内容高度，同一行的卡片高度参差不齐。 */}
+          <div className={clsx('h-full', sorting && 'pointer-events-none select-none')}>{children}</div>
+
+          {sorting && (
+            <span className="pointer-events-none absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-1.5 py-1 text-[11px] font-medium text-primary shadow-sm">
+              <GripVertical className="size-3.5" />
+              {title}
+            </span>
+          )}
+        </div>
+      </ContextMenuTrigger>
+
+      <ContextMenuContent className="w-56">
+        <ContextMenuLabel>{title}</ContextMenuLabel>
+        <ContextMenuSeparator />
+        {sorting ? (
+          <ContextMenuItem onSelect={onStopSorting}>
+            <Check />
+            {t('deviceStatus.layout.stopSorting')}
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem onSelect={onStartSorting}>
+            <Move />
+            {t('deviceStatus.layout.startSorting')}
+          </ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem disabled={!canMoveEarlier} onSelect={() => onMove(id, 'earlier')}>
+          <ArrowUp />
+          {t('deviceStatus.layout.moveEarlier')}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!canMoveLater} onSelect={() => onMove(id, 'later')}>
+          <ArrowDown />
+          {t('deviceStatus.layout.moveLater')}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!canMoveEarlier} onSelect={() => onMove(id, 'first')}>
+          <ChevronsUp />
+          {t('deviceStatus.layout.moveFirst')}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!canMoveLater} onSelect={() => onMove(id, 'last')}>
+          <ChevronsDown />
+          {t('deviceStatus.layout.moveLast')}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={onReset}>
+          <RotateCcw />
+          {t('deviceStatus.layout.reset')}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }
 
 const getTempStatus = (temp: number) => {
@@ -775,9 +954,121 @@ export default function DeviceStatus({
   const laptopCpuFanRpm = temperature?.cpuFanRpm ?? 0;
   const laptopGpuFanRpm = temperature?.gpuFanRpm ?? 0;
 
-  return (
-    <div className="space-y-3 min-[1800px]:space-y-4">
-      {/* ── Device header card ── */}
+  /* ── 首页卡片排序 ── */
+  const [cardOrder, setCardOrder] = useState<HomeCardId[]>(HOME_CARD_IDS);
+  // 排序模式默认关闭：不开启时栅格上没有任何拖拽实例，日常使用完全不受影响。
+  const [sortingActive, setSortingActive] = useState(false);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // 读 localStorage 放到挂载后：服务端渲染的首帧必须与客户端一致。
+  useEffect(() => {
+    setCardOrder(loadHomeCardOrder());
+  }, []);
+
+  useEffect(() => {
+    if (!isConnected) setSortingActive(false);
+  }, [isConnected]);
+
+  // 排序模式下 Esc 退出，不必非得再右键一次。
+  useEffect(() => {
+    if (!sortingActive) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSortingActive(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sortingActive]);
+
+  const commitCardOrder = useCallback((next: HomeCardId[]) => {
+    setCardOrder(next);
+    saveHomeCardOrder(next);
+  }, []);
+
+  // SortableJS 负责拖拽：它是直接把真实节点插到新位置，天然支持宽高不一样的卡片，
+  // 不需要"把卡片互相平移到对方位置"那套预览，也就不会把栅格挪乱。
+  // forceFallback 关掉原生 HTML5 拖放——WebView2 里原生拖放会和窗口拖动抢事件。
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!sortingActive || !grid) return;
+
+    const sortable = Sortable.create(grid, {
+      animation: 170,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      draggable: '[data-card-id]',
+      forceFallback: true,
+      fallbackOnBody: true,
+      fallbackTolerance: 4,
+      ghostClass: 'home-card-ghost',
+      chosenClass: 'home-card-chosen',
+      dragClass: 'home-card-dragging',
+      onEnd: (event) => {
+        const { item, from, oldIndex, newIndex } = event;
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+
+        // 先把 DOM 放回原位，顺序完全交给 React 按状态渲染，
+        // 避免"库改过的 DOM"和"React 认为的 DOM"对不上。
+        const cards = Array.from(from.children).filter(
+          (child) => child instanceof HTMLElement && child.dataset.cardId,
+        );
+        from.removeChild(item);
+        const anchor = cards.filter((card) => card !== item)[oldIndex] ?? null;
+        from.insertBefore(item, anchor);
+
+        setCardOrder((previous) => {
+          const draggedId = (item as HTMLElement).dataset.cardId as HomeCardId | undefined;
+          if (!draggedId) return previous;
+          const visible = previous.filter((id) => cards.some((card) => (card as HTMLElement).dataset.cardId === id));
+          const targetId = visible[newIndex];
+          if (!targetId || targetId === draggedId) return previous;
+          const next = previous.filter((id) => id !== draggedId);
+          next.splice(next.indexOf(targetId) + (newIndex > oldIndex ? 1 : 0), 0, draggedId);
+          saveHomeCardOrder(next);
+          return next;
+        });
+      },
+    });
+
+    return () => sortable.destroy();
+  }, [sortingActive]);
+
+  const resetCardOrder = useCallback(() => {
+    commitCardOrder([...HOME_CARD_IDS]);
+  }, [commitCardOrder]);
+
+  // 右键菜单里的移动按当前顺序整体挪一位，未渲染的卡片不参与。
+  const moveCard = useCallback(
+    (id: HomeCardId, action: 'earlier' | 'later' | 'first' | 'last') => {
+      setCardOrder((previous) => {
+        const from = previous.indexOf(id);
+        if (from < 0) return previous;
+        let to = from;
+        switch (action) {
+          case 'earlier':
+            to = Math.max(0, from - 1);
+            break;
+          case 'later':
+            to = Math.min(previous.length - 1, from + 1);
+            break;
+          case 'first':
+            to = 0;
+            break;
+          case 'last':
+            to = previous.length - 1;
+            break;
+        }
+        if (to === from) return previous;
+        const next = previous.filter((item) => item !== id);
+        next.splice(to, 0, id);
+        saveHomeCardOrder(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  /* ── 首页卡片：顺序由用户拖动/右键菜单决定，条件不满足的卡片渲染为 null ── */
+  const homeCards: Record<HomeCardId, React.ReactNode> = {
+    hero: (
       <div className="glacier-hero-card relative overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm shadow-black/5 min-[1800px]:p-5">
         <div className="theme-thrm-only glacier-hero-art pointer-events-none absolute inset-y-0 right-0 hidden overflow-hidden md:block" aria-hidden="true">
           <img
@@ -875,145 +1166,48 @@ export default function DeviceStatus({
           </div>
         </div>
       </div>
-
-      {/* ── Connection guide (centered in the empty area while offline) ── */}
-      {!isConnected && (
-        <div className="flex min-h-[56vh] items-center justify-center px-1 py-2">
-          <ConnectionRecoveryPanel
-            connected={false}
-            coreError={coreServiceError}
-            onRetry={onConnect}
-          />
-        </div>
-      )}
-
-      {/* ── Recovery guide while connected but core/temperature has issues ── */}
-      {isConnected && (!!coreServiceError || (tempPushed && referenceTemp <= 0)) && (
-        <ConnectionRecoveryPanel
-          connected
-          coreError={coreServiceError}
-          temperatureUnavailable={tempPushed && referenceTemp <= 0}
-          onRetry={onConnect}
+    ),
+    cpu: isConnected ? (
+      <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
+        <MetricHeader
+          icon={<Cpu className="h-4 w-4" />}
+          label={t('deviceStatus.metrics.cpuTemperature')}
         />
-      )}
-
-      {/* ── Metric cards ── */}
-      {isConnected && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-3 min-[1800px]:gap-4"
-        >
-          {/* CPU */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
-            <MetricHeader
-              icon={<Cpu className="h-4 w-4" />}
-              label={t('deviceStatus.metrics.cpuTemperature')}
-            />
-            <TempGaugeDisplay temp={temperature?.cpuTemp} ready={cpuReady} laptopFanRpm={laptopCpuFanRpm} />
-          </div>
-
-          {/* GPU */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
-            <MetricHeader
-              icon={<Gpu className="h-4 w-4" />}
-              label={t('deviceStatus.metrics.gpuTemperature')}
-            />
-            <TempGaugeDisplay
-              temp={temperature?.gpuTemp}
-              ready={gpuReady}
-              laptopFanRpm={laptopGpuFanRpm}
-              monitoringDisabled={!!(config as any).disableGpuMonitoring}
-            />
-          </div>
-
-          {/* Fan */}
-          <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
-            <MetricHeader
-              icon={(
-                <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />
-              )}
-              label={t('deviceStatus.metrics.fanRpm')}
-            />
-            <FanRpmDisplay
-              currentRpm={fanData?.currentRpm}
-              targetRpm={fanData?.targetRpm}
-              setGear={fanData?.setGear}
-              isBs1={isBs1Model}
-              maxRpm={maxGearHighLevelRpm || 4000}
-            />
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Bridge warning ── */}
-      {bridgeWarningReady && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: 'auto' }}
-          className="overflow-hidden"
-        >
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-sm dark:border-amber-800/60 dark:bg-amber-900/20">
-            <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div className="flex-1">
-                <p>{warningMessage}</p>
-                {bridgeStatus && (
-                  <div className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-200/80">
-                    {bridgeStateLabel && (
-                      <p>
-                        {t('deviceStatus.bridgeWarning.stateLine', { state: bridgeStateLabel })}
-                        {typeof bridgeStatus.ownsProcess === 'boolean' ? ` · ${bridgeStatus.ownsProcess ? t('deviceStatus.bridgeWarning.ownsProcess') : t('deviceStatus.bridgeWarning.sharedProcess')}` : ''}
-                      </p>
-                    )}
-                    {bridgeStatus.transport && <p>{t('deviceStatus.bridgeWarning.transportLine', { transport: bridgeStatus.transport })}</p>}
-                    {bridgeStatus.pipeName && <p>{t('deviceStatus.bridgeWarning.pipeLine', { pipe: bridgeStatus.pipeName })}</p>}
-                    {bridgeStatus.lastError && bridgeStatus.lastError !== temperature?.bridgeMessage && <p>{t('deviceStatus.bridgeWarning.diagnosticsLine', { message: bridgeStatus.lastError })}</p>}
-                  </div>
-                )}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await apiService.restartPawnIO();
-                      } catch { /* ignore */ }
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
-                  >
-                    <RotateCw className="h-3 w-3" />
-                    {t('deviceStatus.bridgeWarning.reinitialize')}
-                  </button>
-                  {/* CPU 温度只能由 PawnIO 提供，没有替代来源。安装包随 THRM 分发，
-                      因此把"重装"直接做成一次点击，而不是让用户自己去找下载页。 */}
-                  <button
-                    disabled={pawnIoReinstalling}
-                    onClick={async () => {
-                      setPawnIoReinstalling(true);
-                      try {
-                        await apiService.reinstallPawnIO();
-                        await apiService.restartPawnIO();
-                      } catch { /* 失败原因仍由告警文案与诊断行呈现 */ }
-                      finally {
-                        setPawnIoReinstalling(false);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
-                  >
-                    <Download className="h-3 w-3" />
-                    {pawnIoReinstalling
-                      ? t('deviceStatus.bridgeWarning.reinstallPawnIoRunning')
-                      : t('deviceStatus.bridgeWarning.reinstallPawnIo')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ── Running details ── */}
-      {isConnected && (
+        <TempGaugeDisplay temp={temperature?.cpuTemp} ready={cpuReady} laptopFanRpm={laptopCpuFanRpm} />
+      </div>
+    ) : null,
+    gpu: isConnected ? (
+      <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
+        <MetricHeader
+          icon={<Gpu className="h-4 w-4" />}
+          label={t('deviceStatus.metrics.gpuTemperature')}
+        />
+        <TempGaugeDisplay
+          temp={temperature?.gpuTemp}
+          ready={gpuReady}
+          laptopFanRpm={laptopGpuFanRpm}
+          monitoringDisabled={!!(config as any).disableGpuMonitoring}
+        />
+      </div>
+    ) : null,
+    fan: isConnected ? (
+      <div className="glacier-metric-card flex h-full min-h-[155px] flex-col items-center rounded-xl border border-border bg-card px-5 py-3 shadow-sm shadow-black/5 transition-shadow hover:shadow-md hover:shadow-primary/10 md:min-h-[171px] min-[1800px]:min-h-[212px] min-[1800px]:px-7 min-[1800px]:py-5">
+        <MetricHeader
+          icon={(
+            <SpinningFanIcon duration={fanSpinDuration} className="h-4 w-4" />
+          )}
+          label={t('deviceStatus.metrics.fanRpm')}
+        />
+        <FanRpmDisplay
+          currentRpm={fanData?.currentRpm}
+          targetRpm={fanData?.targetRpm}
+          setGear={fanData?.setGear}
+          isBs1={isBs1Model}
+          maxRpm={maxGearHighLevelRpm || 4000}
+        />
+      </div>
+    ) : null,
+    runtime: isConnected ? (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -1097,24 +1291,156 @@ export default function DeviceStatus({
           </div>
 
         </motion.div>
+    ) : null,
+    curve: isConnected ? (
+      <MiniFanCurveChart curve={homeCurve} currentTemp={referenceTemp} onOpen={onOpenCurveEditor} />
+    ) : null,
+    history: isConnected ? (
+      <TemperatureHistoryPanel
+        points={temperatureHistory}
+        enabled={temperatureHistoryEnabled}
+        source={temperatureHistorySource}
+        onOpen={onOpenHistoryDetails}
+      />
+    ) : null,
+  };
+
+  const connectionGuides = (
+    <>
+      {/* ── Connection guide (centered in the empty area while offline) ── */}
+      {!isConnected && (
+        <div className="flex min-h-[56vh] items-center justify-center px-1 py-2">
+          <ConnectionRecoveryPanel
+            connected={false}
+            coreError={coreServiceError}
+            onRetry={onConnect}
+          />
+        </div>
       )}
 
-      {isConnected && (
+      {/* ── Recovery guide while connected but core/temperature has issues ── */}
+      {isConnected && (!!coreServiceError || (tempPushed && referenceTemp <= 0)) && (
+        <ConnectionRecoveryPanel
+          connected
+          coreError={coreServiceError}
+          temperatureUnavailable={tempPushed && referenceTemp <= 0}
+          onRetry={onConnect}
+        />
+      )}
+      {/* ── Bridge warning ── */}
+      {bridgeWarningReady && (
         <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.3 }}
-          className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.95fr)] min-[1800px]:gap-4"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="overflow-hidden"
         >
-          <MiniFanCurveChart curve={homeCurve} currentTemp={referenceTemp} onOpen={onOpenCurveEditor} />
-          <TemperatureHistoryPanel
-            points={temperatureHistory}
-            enabled={temperatureHistoryEnabled}
-            source={temperatureHistorySource}
-            onOpen={onOpenHistoryDetails}
-          />
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-sm dark:border-amber-800/60 dark:bg-amber-900/20">
+            <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="flex-1">
+                <p>{warningMessage}</p>
+                {bridgeStatus && (
+                  <div className="mt-2 space-y-1 text-xs text-amber-700/90 dark:text-amber-200/80">
+                    {bridgeStateLabel && (
+                      <p>
+                        {t('deviceStatus.bridgeWarning.stateLine', { state: bridgeStateLabel })}
+                        {typeof bridgeStatus.ownsProcess === 'boolean' ? ` · ${bridgeStatus.ownsProcess ? t('deviceStatus.bridgeWarning.ownsProcess') : t('deviceStatus.bridgeWarning.sharedProcess')}` : ''}
+                      </p>
+                    )}
+                    {bridgeStatus.transport && <p>{t('deviceStatus.bridgeWarning.transportLine', { transport: bridgeStatus.transport })}</p>}
+                    {bridgeStatus.pipeName && <p>{t('deviceStatus.bridgeWarning.pipeLine', { pipe: bridgeStatus.pipeName })}</p>}
+                    {bridgeStatus.lastError && bridgeStatus.lastError !== temperature?.bridgeMessage && <p>{t('deviceStatus.bridgeWarning.diagnosticsLine', { message: bridgeStatus.lastError })}</p>}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await apiService.restartPawnIO();
+                      } catch { /* ignore */ }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
+                  >
+                    <RotateCw className="h-3 w-3" />
+                    {t('deviceStatus.bridgeWarning.reinitialize')}
+                  </button>
+                  {/* CPU 温度只能由 PawnIO 提供，没有替代来源。安装包随 THRM 分发，
+                      因此把"重装"直接做成一次点击，而不是让用户自己去找下载页。 */}
+                  <button
+                    disabled={pawnIoReinstalling}
+                    onClick={async () => {
+                      setPawnIoReinstalling(true);
+                      try {
+                        await apiService.reinstallPawnIO();
+                        await apiService.restartPawnIO();
+                      } catch { /* 失败原因仍由告警文案与诊断行呈现 */ }
+                      finally {
+                        setPawnIoReinstalling(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-800/60"
+                  >
+                    <Download className="h-3 w-3" />
+                    {pawnIoReinstalling
+                      ? t('deviceStatus.bridgeWarning.reinstallPawnIoRunning')
+                      : t('deviceStatus.bridgeWarning.reinstallPawnIo')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </motion.div>
       )}
-    </div>
+    </>
+  );
+
+  const visibleCards = cardOrder.filter((id) => homeCards[id] !== null);
+  // 三条引导都不显示时不要留一个空的栅格项，否则概览卡下面会多出一段空行。
+  const showConnectionGuides =
+    !isConnected || !!coreServiceError || (tempPushed && referenceTemp <= 0) || bridgeWarningReady;
+
+  return (
+    <>
+      <div
+        ref={gridRef}
+        className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-12 min-[1800px]:gap-4"
+      >
+        {visibleCards.map((id, index) => (
+          <Fragment key={id}>
+            <HomeCardShell
+              id={id}
+              title={t(`deviceStatus.layout.cards.${id}`)}
+              sorting={sortingActive}
+              canMoveEarlier={index > 0}
+              canMoveLater={index < visibleCards.length - 1}
+              onMove={moveCard}
+              onStartSorting={() => setSortingActive(true)}
+              onStopSorting={() => setSortingActive(false)}
+              onReset={resetCardOrder}
+            >
+              {homeCards[id]}
+            </HomeCardShell>
+            {/* 连接引导与桥接告警始终跟着设备概览走：它们描述的就是这张卡片的状态。
+                没有 data-card-id，SortableJS 不会把它当成可拖动项。 */}
+            {id === 'hero' && showConnectionGuides && (
+              <div className="flex flex-col gap-3 md:col-span-12 min-[1800px]:gap-4">{connectionGuides}</div>
+            )}
+          </Fragment>
+        ))}
+      </div>
+
+      {sortingActive &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed bottom-5 left-1/2 z-90 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border/80 bg-popover/98 px-3.5 py-2 text-xs text-muted-foreground shadow-xl shadow-black/10 backdrop-blur-xl">
+            <GripVertical className="size-3.5 text-primary" />
+            <span>{t('deviceStatus.layout.sortingHint')}</span>
+            <Button variant="primary" size="sm" onClick={() => setSortingActive(false)} icon={<Check className="h-3.5 w-3.5" />}>
+              {t('deviceStatus.layout.stopSorting')}
+            </Button>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

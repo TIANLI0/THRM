@@ -229,6 +229,25 @@
       "tempStatus": "温度状态",
       "cpuPower": "CPU 功耗",
       "gpuPower": "GPU 功耗"
+    },
+    "layout": {
+      "moveEarlier": "前移一位",
+      "moveLater": "后移一位",
+      "moveFirst": "移到最前",
+      "moveLast": "移到最后",
+      "reset": "恢复默认顺序",
+      "cards": {
+        "hero": "设备概览",
+        "cpu": "CPU 温度",
+        "gpu": "GPU 温度",
+        "fan": "风扇转速",
+        "runtime": "运行详情",
+        "curve": "温控曲线",
+        "history": "温度历史"
+      },
+      "startSorting": "拖动排序",
+      "stopSorting": "完成排序",
+      "sortingHint": "拖动卡片调整位置，按 Esc 结束"
     }
   },
   "manualGear": {
@@ -313,7 +332,11 @@
       "floatDoneHint": "本程序即将关闭并自动安装，更新窗口会展示进度，完成后自动重启新版本。",
       "updaterWindowTitle": "THRM 正在更新",
       "updaterWindowBody": "正在自动安装新版本，请勿关闭此窗口",
-      "updaterWindowRestarting": "更新完成，正在重启应用"
+      "updaterWindowRestarting": "更新完成，正在重启应用",
+      "changelogTitle": "更新日志",
+      "changelogTitleWithVersion": "更新日志 · {{version}}",
+      "viewChangelog": "查看更新日志",
+      "viewChangelogWithVersion": "查看 {{version}} 更新日志"
     },
     "contact": {
       "title": "开发者与联系",
@@ -403,7 +426,6 @@
     "learning": {
       "title": "自适应学习",
       "paused": "已暂停",
-      "requiresLearning": "需开启自适应学习",
       "description": "长时间运行后，自动微调每个温度点的目标转速，使实际温度更贴近曲线设定值。学到的偏移随时可一键重置。",
       "toggleAria": "切换自适应学习",
       "biasTitle": "学习倾向",
@@ -430,13 +452,7 @@
           "label": "静音优先",
           "description": "只允许学习降低转速，避免自动把风扇拉高。"
         }
-      },
-      "predictiveTitle": "提前升速",
-      "predictiveDescription": "CPU/GPU 功耗突增、温度正在上升时，按预计温度提前升速，不等实测温度真的越过曲线点。只提前升速、不提前降速；学习偏移仍按实测温度计算。",
-      "laptopGuardTitle": "笔记本风扇高转时缓慢降速",
-      "laptopGuardDescription": "笔记本自身风扇仍接近最近的最高转速时，散热器每个采样周期最多降 60 RPM，避免温度一掉就急降速、温度回升后又要升速的来回摆动。仅在能读到笔记本风扇转速的机型上可用。",
-      "laptopGuardToggleAria": "切换笔记本风扇高转时缓慢降速",
-      "predictiveToggleAria": "切换提前升速"
+      }
     },
     "noiseTest": {
       "title": "风扇噪音测试",
@@ -475,12 +491,10 @@
         "kneeTitle": "噪音拐点",
         "kneeValue": "约 {{rpm}} RPM 起噪音明显上升",
         "noKnee": "未检测到明显拐点",
-        "resonance": "检测到 {{rpm}} RPM 附近存在共振峰（高出趋势 {{db}} dB），建议设置 {{min}}-{{max}} RPM 避噪区间。",
+        "resonance": "检测到 {{rpm}} RPM 附近存在共振峰（高出趋势 {{db}} dB），可在曲线上避开这一转速附近。",
         "lowConfidence": "全程噪音变化过小，测量区分度不足。请把麦克风移近散热器、确认环境安静后重测；本次结果不建议写入学习档案。",
         "applyProfile": "写入学习模式噪音档案",
         "profileApplied": "噪音档案已写入",
-        "applyAvoidance": "设置避噪区间 {{min}}-{{max}} RPM",
-        "avoidanceApplied": "避噪区间已设置",
         "retest": "重新测试",
         "close": "完成"
       },
@@ -492,32 +506,8 @@
         "failed": "噪音测试失败",
         "restoreFailed": "恢复风扇设置失败，请手动检查转速模式",
         "profileSaved": "噪音档案已保存，学习模式将参考实测噪音进行静音优化",
-        "avoidanceSaved": "已启用 {{min}}-{{max}} RPM 避噪区间",
         "applyFailed": "保存失败"
       }
-    },
-    "avoidance": {
-      "title": "避噪转速区间",
-      "badge": "已启用",
-      "description": "当自动控温计算出的目标转速落入噪音敏感区间时，自动跳到区间外，减少轴噪概率。",
-      "toggleAria": "切换避噪转速区间",
-      "minTitle": "区间起点",
-      "minDescription": "噪音区间的较低转速边界。",
-      "maxTitle": "区间终点",
-      "maxDescription": "噪音区间的较高转速边界。",
-      "marginTitle": "避让余量",
-      "marginDescription": "落入区间时，额外向外跳开的 RPM 余量。",
-      "bypassTitle": "高温旁路",
-      "bypassDescription": "温度达到该阈值时临时忽略避让，优先散热。",
-      "summary": "避让区间 {{min}} - {{max}} RPM，余量 {{margin}} RPM",
-      "activeHint": "当前目标 {{rpm}} RPM 处于敏感区间，系统会自动避让",
-      "autoOnlyHint": "仅在智能变频模式下生效",
-      "revealButton": "调参",
-      "hiddenHint": "该功能已默认隐藏。以下均为通用默认值，需要按你的设备实测调参；如果不清楚需求请勿开启。",
-      "confirmTitle": "开启避噪转速区间调参",
-      "confirmBody1": "以下参数均为通用默认值，需要结合你设备的实测噪音进行调参才有意义。",
-      "confirmBody2": "如果不清楚具体需求，请不要开启，以免影响正常散热。",
-      "confirmAccept": "我已了解，展开设置"
     },
     "schedule": {
       "title": "分时曲线",

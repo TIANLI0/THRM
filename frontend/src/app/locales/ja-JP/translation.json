@@ -228,6 +228,25 @@
       "tempStatus": "温度状態",
       "cpuPower": "CPU 消費電力",
       "gpuPower": "GPU 消費電力"
+    },
+    "layout": {
+      "moveEarlier": "一つ前へ",
+      "moveLater": "一つ後へ",
+      "moveFirst": "先頭へ",
+      "moveLast": "末尾へ",
+      "reset": "既定の順序に戻す",
+      "cards": {
+        "hero": "デバイス概要",
+        "cpu": "CPU 温度",
+        "gpu": "GPU 温度",
+        "fan": "ファン回転数",
+        "runtime": "動作詳細",
+        "curve": "ファンカーブ",
+        "history": "温度履歴"
+      },
+      "startSorting": "ドラッグで並べ替え",
+      "stopSorting": "完了",
+      "sortingHint": "カードをドラッグして並べ替え（Esc で終了）"
     }
   },
   "manualGear": {
@@ -312,7 +331,11 @@
       "floatDoneHint": "本アプリは自動的に終了してインストールされます。ステータスウィンドウに進行状況が表示され、完了後に新しいバージョンが再起動します。",
       "updaterWindowTitle": "THRM を更新しています",
       "updaterWindowBody": "新しいバージョンを自動でインストールしています。このウィンドウを閉じないでください",
-      "updaterWindowRestarting": "更新が完了しました。アプリを再起動しています"
+      "updaterWindowRestarting": "更新が完了しました。アプリを再起動しています",
+      "changelogTitle": "更新履歴",
+      "changelogTitleWithVersion": "更新履歴 · {{version}}",
+      "viewChangelog": "更新履歴を見る",
+      "viewChangelogWithVersion": "{{version}} の更新履歴を見る"
     },
     "contact": {
       "title": "開発者と連絡先",
@@ -402,7 +425,6 @@
     "learning": {
       "title": "適応学習",
       "paused": "一時停止中",
-      "requiresLearning": "適応学習を有効にしてください",
       "description": "実際の温度が設定値に近づくよう各ポイントの目標回転数を微調整します。オフセットはいつでもリセットできます。",
       "toggleAria": "適応学習を切り替える",
       "biasTitle": "学習傾向",
@@ -429,13 +451,7 @@
           "label": "サイレント優先",
           "description": "RPM の低下のみを許可し、学習カーブによる不要な加速をできるだけを防ぎます。"
         }
-      },
-      "predictiveTitle": "早めに回転を上げる",
-      "predictiveDescription": "CPU/GPU の消費電力が急増して温度が上昇しているときは、実測温度がカーブ点を超えるのを待たず、予測温度に合わせて先に回転を上げます。上げる方向のみで、下げる方向には適用しません。学習オフセットは実測温度で計算されます。",
-      "laptopGuardTitle": "ノートPCのファンが高回転の間はゆっくり下げる",
-      "laptopGuardDescription": "ノートPC本体のファンが直近の最高回転に近いあいだ、クーラーの回転は1サンプリングあたり最大 60 RPM しか下げません。温度が少し下がった途端に回転を落とし、温度が戻って再び上げる、という往復を防ぎます。ファン回転数を読み取れる機種でのみ利用できます。",
-      "laptopGuardToggleAria": "ノートPCのファンが高回転の間はゆっくり下げるの切り替え",
-      "predictiveToggleAria": "早めに回転を上げるの切り替え"
+      }
     },
     "noiseTest": {
       "title": "ファン騒音テスト",
@@ -474,12 +490,10 @@
         "kneeTitle": "騒音の変化点",
         "kneeValue": "約 {{rpm}} RPM から騒音が急増します",
         "noKnee": "明確な変化点は検出されませんでした",
-        "resonance": "{{rpm}} RPM 付近に共振ピークを検出しました（トレンドより {{db}} dB 高い）。{{min}}-{{max}} RPM の回避範囲の設定をおすすめします。",
+        "resonance": "{{rpm}} RPM 付近に共振ピークを検出しました（トレンドより {{db}} dB 高い）。カーブでこの回転数付近を避けることを検討してください。",
         "lowConfidence": "騒音の変化が小さすぎて信頼できる測定になりませんでした。マイクをクーラーに近づけ、静かな環境で再テストしてください。この結果の保存はおすすめしません。",
         "applyProfile": "騒音プロファイルを適応学習に保存",
         "profileApplied": "騒音プロファイルを保存しました",
-        "applyAvoidance": "回避範囲 {{min}}-{{max}} RPM を設定",
-        "avoidanceApplied": "回避範囲を設定しました",
         "retest": "再テスト",
         "close": "完了"
       },
@@ -491,32 +505,8 @@
         "failed": "騒音テストに失敗しました",
         "restoreFailed": "ファン設定の復元に失敗しました。回転数モードを手動で確認してください",
         "profileSaved": "騒音プロファイルを保存しました。適応学習は実測騒音を参照して静音化します",
-        "avoidanceSaved": "回避範囲 {{min}}-{{max}} RPM を有効にしました",
         "applyFailed": "保存に失敗しました"
       }
-    },
-    "avoidance": {
-      "title": "共振回転数の回避",
-      "badge": "有効",
-      "description": "スマート制御で計算した目標 RPM がノイズの出やすい回転域に入った場合、その範囲外へ自動で逃がして軸音を抑えます。",
-      "toggleAria": "共振回転数回避を切り替える",
-      "minTitle": "開始 RPM",
-      "minDescription": "ノイズが出やすい回転域の下限です。",
-      "maxTitle": "終了 RPM",
-      "maxDescription": "ノイズが出やすい回転域の上限です。",
-      "marginTitle": "回避余白",
-      "marginDescription": "範囲外へ逃がすときに追加する RPM 余白です。",
-      "bypassTitle": "高温時のバイパス",
-      "bypassDescription": "この温度以上では回避を一時的に無視し、冷却を優先します。",
-      "summary": "{{min}} - {{max}} RPM を回避、余白 {{margin}} RPM",
-      "activeHint": "現在の目標 {{rpm}} RPM は敏感な回転域にあり、自動回避されます",
-      "autoOnlyHint": "スマート制御モードでのみ有効です",
-      "revealButton": "調整",
-      "hiddenHint": "この機能は既定で非表示です。これらは汎用の初期値で、お使いのデバイスに合わせて実測しながら調整する必要があります。要件が不明な場合は有効にしないでください。",
-      "confirmTitle": "避騒音回転数レンジの調整を有効化",
-      "confirmBody1": "以下のパラメーターはすべて汎用の初期値です。デバイスの実測ノイズに合わせて調整して初めて意味を持ちます。",
-      "confirmBody2": "要件が不明な場合は、通常の冷却に影響しないよう有効にしないでください。",
-      "confirmAccept": "了解しました。設定を表示"
     },
     "schedule": {
       "title": "時間帯別カーブ",

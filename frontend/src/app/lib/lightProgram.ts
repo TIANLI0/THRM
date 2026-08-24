@@ -179,65 +179,91 @@ function scale(value: number, brightness: number): number {
   return Math.trunc((value * brightness) / 100);
 }
 
-/**
- * 复刻固件 FUN_ram_00008180 的插值：在关键帧 k 与 k+1（回环）之间线性过渡，
- * 一次过渡 transitionTicks * 10 个子步。elapsedMs 为动画已播放的时长。
- */
-export function sampleLightProgram(program: LightProgram, elapsedMs: number): RGB[] {
-  const keyframeCount = Math.max(1, program.lastKeyframe + 1);
-  const output: RGB[] = [];
-
-  if (keyframeCount === 1) {
-    for (let led = 0; led < LIGHT_LED_COUNT; led++) {
-      const color = program.colors[led][0];
-      output.push({
-        r: scale(color.r, program.brightness),
-        g: scale(color.g, program.brightness),
-        b: scale(color.b, program.brightness),
-      });
-    }
-    return output;
-  }
-
-  const substeps = Math.max(1, program.transitionTicks * 10);
-  const transitionMs = substeps * LIGHT_SUBSTEP_MS;
-  const cycleMs = transitionMs * keyframeCount;
-  const position = ((elapsedMs % cycleMs) + cycleMs) % cycleMs;
-  const current = Math.floor(position / transitionMs);
-  const next = (current + 1) % keyframeCount;
-  // 固件按整数子步推进，这里同样量化，避免预览比设备更"顺滑"。
-  const step = Math.floor((position - current * transitionMs) / LIGHT_SUBSTEP_MS);
-
-  for (let led = 0; led < LIGHT_LED_COUNT; led++) {
-    const from = program.colors[led][current];
-    const to = program.colors[led][next];
-    const mix = (a: number, b: number) => {
-      const start = scale(a, program.brightness);
-      const end = scale(b, program.brightness);
-      return clampByte(Math.trunc(((end - start) * step) / substeps) + start);
-    };
-    output.push({ r: mix(from.r, to.r), g: mix(from.g, to.g), b: mix(from.b, to.b) });
-  }
-  return output;
-}
-
 export function rgbToCss(color: RGB): string {
   return `rgb(${color.r}, ${color.g}, ${color.b})`;
 }
 
+/** 灯条取样点数：沿灯条等距取这么多点，密到看不出是分段的。 */
+export const STRIP_SAMPLE_COUNT = 96;
+
+/** 平滑过渡曲线：两端斜率为 0，位置之间的过渡看不出接缝。 */
+function smoothstep(t: number): number {
+  const clamped = Math.max(0, Math.min(1, t));
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function lerp(from: number, to: number, t: number): number {
+  return from + (to - from) * t;
+}
+
 /**
- * 灯条是一整条、带导光罩的灯带，不是六个分开的点：相邻灯珠的光会互相融合。
- * 因此渲染成一条连续渐变，色标落在各灯珠的中心位置 (i + 0.5) / 6，
- * 两端补上首尾灯珠的颜色，避免边缘出现突兀的截断。
+ * 沿灯条连续取样，返回 resolution 个颜色。
+ *
+ * 预览要的是"一条连续的灯条"，所以这里不按六颗灯珠去算颜色，而是把程序的颜色表
+ * 当成一个连续场：横轴是灯条上的位置、纵轴是关键帧（时间），两个方向都插值。
+ * 位置方向用平滑曲线，时间方向按固件那样线性推进。于是一段亮光在灯条上是无级
+ * 滑动的，而不是六个格子轮流换色。
  */
+export function sampleStripColors(
+  program: LightProgram,
+  elapsedMs: number,
+  resolution: number = STRIP_SAMPLE_COUNT,
+): RGB[] {
+  const keyframeCount = Math.max(1, program.lastKeyframe + 1);
+  const substeps = Math.max(1, program.transitionTicks * 10);
+  const transitionMs = substeps * LIGHT_SUBSTEP_MS;
+
+  // 关键帧上的连续相位。固件按整数子步推进，这里同样量化，避免比设备更"顺滑"。
+  let keyframe = 0;
+  let keyframeBlend = 0;
+  if (keyframeCount > 1) {
+    const cycleMs = transitionMs * keyframeCount;
+    const position = ((elapsedMs % cycleMs) + cycleMs) % cycleMs;
+    keyframe = Math.floor(position / transitionMs);
+    keyframeBlend = Math.floor((position - keyframe * transitionMs) / LIGHT_SUBSTEP_MS) / substeps;
+  }
+  const nextKeyframe = (keyframe + 1) % keyframeCount;
+
+  const lastLed = LIGHT_LED_COUNT - 1;
+  const output: RGB[] = [];
+  for (let i = 0; i < resolution; i++) {
+    const at = resolution === 1 ? 0 : i / (resolution - 1);
+    const ledPosition = at * lastLed;
+    const led = Math.min(Math.floor(ledPosition), lastLed - 1);
+    const ledBlend = smoothstep(ledPosition - led);
+
+    const channel = (pick: (color: RGB) => number) => {
+      const current = lerp(
+        pick(program.colors[led][keyframe]),
+        pick(program.colors[led + 1][keyframe]),
+        ledBlend,
+      );
+      const next = lerp(
+        pick(program.colors[led][nextKeyframe]),
+        pick(program.colors[led + 1][nextKeyframe]),
+        ledBlend,
+      );
+      return clampByte(scale(lerp(current, next, keyframeBlend), program.brightness));
+    };
+
+    output.push({
+      r: channel((color) => color.r),
+      g: channel((color) => color.g),
+      b: channel((color) => color.b),
+    });
+  }
+  return output;
+}
+
+/** 把沿灯条取到的颜色铺成一条连续渐变。取样点足够密，直接等距落色标即可。 */
 export function stripGradient(colors: RGB[]): string {
   if (colors.length === 0) return 'rgb(0,0,0)';
-  const stops: string[] = [`${rgbToCss(colors[0])} 0%`];
-  colors.forEach((color, index) => {
-    const center = ((index + 0.5) / colors.length) * 100;
-    stops.push(`${rgbToCss(color)} ${center.toFixed(2)}%`);
+  if (colors.length === 1) return rgbToCss(colors[0]);
+
+  const stops = colors.map((color, index) => {
+    const at = (index / (colors.length - 1)) * 100;
+    return `${rgbToCss(color)} ${at.toFixed(2)}%`;
   });
-  stops.push(`${rgbToCss(colors[colors.length - 1])} 100%`);
   return `linear-gradient(90deg, ${stops.join(', ')})`;
 }
 
@@ -284,14 +310,23 @@ interface FirmwarePreset {
   frames: string[][];
 }
 
-/** 1..3 共用的流光排布：底色 A、过渡色 M、白色高光 W 依次错开。 */
+/** 1..3 共用的流光排布：底色 A、过渡色 M、白色高光 W 依次错开。
+ *
+ * 这张表逐字节核对过固件（预设 1 的生成器在 0x7b24，颜色写入循环在 0x7b4e）：
+ * 缓冲区基址 0x200049c8，`a4=0xff`、`a3=0x3f`、`zero=0`，三颗灯的关键帧依次落在
+ * 偏移 6..0x11 / 0x24..0x2f / 0x42..0x4d，得到
+ *
+ *     LED0 = [a, m, w, m]   LED1 = [m, w, m, a]   LED2 = [w, m, a, m]
+ *
+ * lastKeyframe = 3（四个关键帧），生成循环 `a5 += 0x5a` 跑两趟，所以后三颗灯与前
+ * 三颗完全相同。第四帧里确实没有白色高光——这是固件本身的排布，不是预览的错。
+ */
 function flowingPreset(transitionTicks: number, a: string, m: string, w: string): FirmwarePreset {
   const group = [
     [a, m, w, m],
     [m, w, m, a],
     [w, m, a, m],
   ];
-  // 固件的生成循环跑两趟、每趟前进 3 颗灯，所以后三颗与前三颗完全相同。
   return { transitionTicks, base: a, frames: [...group, ...group] };
 }
 
@@ -366,8 +401,8 @@ export function smartTempPresetDependsOnRuntimeProfile(preset: number): boolean 
 }
 
 /**
- * 还原固件为该原生预设生成的程序。返回的程序可直接交给 sampleLightProgram，
- * 与自定义灯效走完全相同的插值路径——因为设备端本来就是同一条路径。
+ * 还原固件为该原生预设生成的程序。返回的程序可直接交给 sampleStripColors，
+ * 与自定义灯效走完全相同的取样路径——因为设备端本来就是同一套关键帧插值。
  */
 export function buildSmartTempPresetProgram(preset: number, runtimeProfile?: number | null): LightProgram | null {
   const entry = presetEntry(preset, runtimeProfile);
