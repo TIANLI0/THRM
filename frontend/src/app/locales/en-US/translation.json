@@ -385,6 +385,21 @@
       "authorBadge": "Author",
       "anonymous": "Anonymous",
       "thanks": "Thank you for every bit of support — THRM is better because of you ❤"
+    },
+    "openSource": {
+      "title": "Open Source Notices",
+      "description": "THRM is open source under the MIT license. Distributed builds of this software include the open-source components listed below, each under its own license terms. Full license texts and copyright notices are available in the corresponding project repositories.",
+      "appLicense": "THRM itself is licensed under MIT",
+      "count": "{{total}} components",
+      "viewSource": "View this project's source",
+      "mplNotice": "LibreHardwareMonitorLib is licensed under MPL-2.0 and is used here as an unmodified binary; its source code is available from the repository linked above.",
+      "groups": {
+        "framework": "Application framework and runtime",
+        "frontend": "UI and frontend libraries",
+        "device": "Device and system integration",
+        "backend": "Backend libraries",
+        "fonts": "Fonts"
+      }
     }
   },
   "fanCurve": {

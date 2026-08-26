@@ -385,6 +385,21 @@
       "authorBadge": "作者",
       "anonymous": "匿名",
       "thanks": "感谢每一份支持，THRM 因你们而更好 ❤"
+    },
+    "openSource": {
+      "title": "开源声明",
+      "description": "THRM 以 MIT 协议开源。本软件的发行版本包含下列开源组件，各自按其原始许可证条款分发；完整许可证正文与版权声明见对应项目仓库。",
+      "appLicense": "THRM 自身以 MIT 协议授权",
+      "count": "共 {{total}} 个组件",
+      "viewSource": "查看本项目源码",
+      "mplNotice": "LibreHardwareMonitorLib 以 MPL-2.0 授权，本软件以未经修改的二进制形式使用；其源代码可在上述仓库获取。",
+      "groups": {
+        "framework": "应用框架与运行时",
+        "frontend": "界面与前端库",
+        "device": "设备与系统集成",
+        "backend": "后端基础库",
+        "fonts": "字体"
+      }
     }
   },
   "fanCurve": {

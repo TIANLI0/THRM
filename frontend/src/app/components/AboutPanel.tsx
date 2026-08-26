@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Rocket,
   ShieldCheck,
+  Scale,
   Sparkles,
   Users,
   Wifi,
@@ -30,6 +31,7 @@ import {
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BRAND } from '../lib/brand';
+import { OPEN_SOURCE_GROUPS, OPEN_SOURCE_TOTAL } from '../lib/open-source-notices';
 import { apiService } from '../services/api';
 import { useAppStore } from '../store/app-store';
 import type { DeviceSettings } from '../types/app';
@@ -97,6 +99,17 @@ type CreditsData = {
   contributors: CreditContributor[];
   sponsors: CreditSponsor[];
 };
+
+/**
+ * 许可证徽标配色。MPL/GPL 这类 copyleft 协议附带额外义务（提供源码等），
+ * 用不同颜色标出来，方便一眼看出哪些组件需要额外留意。
+ */
+function licenseToneClass(license: string) {
+  if (/^(MPL|GPL|LGPL|AGPL)/i.test(license)) {
+    return 'border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400';
+  }
+  return 'border-border/60 bg-muted/60 text-muted-foreground';
+}
 
 function openUrl(url: string) {
   try {
@@ -1456,6 +1469,93 @@ export default function AboutPanel() {
             </div>
           </section>
         </aside>
+
+        {/* 开源声明：随发行产物一起分发的组件必须逐项列出各自的许可证，
+            清单由 scripts/gen-oss-notices.mjs 从各组件自带的 LICENSE 生成。 */}
+        <section className={`${PANEL_CLASS} min-w-0 p-5 sm:p-6 lg:col-span-2`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <Scale className="h-4 w-4 text-primary" />
+                <span>{t('aboutPanel.openSource.title')}</span>
+              </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                {t('aboutPanel.openSource.description')}
+              </p>
+            </div>
+
+            <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {t('aboutPanel.openSource.appLicense')}
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {t('aboutPanel.openSource.count', { total: OPEN_SOURCE_TOTAL })}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-5 divide-y divide-border/60 border-y border-border/60">
+            {OPEN_SOURCE_GROUPS.filter((group) => group.items.length > 0).map((group, groupIndex) => (
+              <details key={group.id} className="group" open={groupIndex === 0}>
+                <summary className="flex cursor-pointer list-none items-center gap-3 py-3.5 text-left [&::-webkit-details-marker]:hidden">
+                  <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
+                    {t(`aboutPanel.openSource.groups.${group.id}`)}
+                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                    {group.items.length}
+                  </span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition group-open:rotate-180 group-open:text-foreground">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </span>
+                </summary>
+
+                <ul className="-mt-0.5 grid gap-1 pb-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {group.items.map((item) => (
+                    <li key={`${group.id}-${item.name}`} className="min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => openUrl(item.url)}
+                        title={`${item.name} ${item.version} — ${item.license}`}
+                        className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-muted/60"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                          {item.name}
+                        </span>
+                        {item.version && (
+                          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                            {item.version}
+                          </span>
+                        )}
+                        <span
+                          className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${licenseToneClass(item.license)}`}
+                        >
+                          {item.license}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ))}
+          </div>
+
+          {/* MPL-2.0 带有源码提供义务，单独说明使用方式，不能只丢一个协议名。 */}
+          <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3.5 py-2.5 text-xs leading-5 text-muted-foreground">
+            {t('aboutPanel.openSource.mplNotice')}
+          </p>
+
+          <div className="mt-3 flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openUrl(BRAND.repositoryUrl)}
+              icon={<SiGithub className="h-3.5 w-3.5" />}
+            >
+              {t('aboutPanel.openSource.viewSource')}
+            </Button>
+          </div>
+        </section>
       </div>
 
       {isSponsorOpen &&
