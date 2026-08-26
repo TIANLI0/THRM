@@ -142,15 +142,27 @@ func NormalizeDebugInput(input string) ([]byte, error) {
 	return frame, nil
 }
 
-// RGBFrameCount 是固件灯效帧缓冲区能容纳的帧数（索引 0..30）。
-const RGBFrameCount = 31
+const (
+	// RGBFrameBufferSize 是固件灯效流缓冲区的容量。它写在流状态结构
+	// （RAM 0x20002604）的第四个字里，实测镜像值为 0x100。
+	RGBFrameBufferSize = 256
+
+	// RGBFrameWriteSize 是 0x47 每帧固定写入的字节数。
+	RGBFrameWriteSize = 10
+
+	// RGBFrameCount 是 0x47 能安全写入的帧数。固件分支是
+	// copy(*stream + idx*10, payload+1, 10)，既不检查索引上界也不检查容量，
+	// 所以安全条件是 idx*10 + 10 <= 256，最大索引 24，共 25 帧。
+	// 旧值 31 抄自厂商抓包，按它放行会越过缓冲区末尾 54 字节。
+	RGBFrameCount = RGBFrameBufferSize / RGBFrameWriteSize
+)
 
 // ValidateOutboundFrame 拦截会让固件写越界的命令。
 //
 // 固件的 0x47 分支是 copy(stream_buffer + payload[0]*10, payload+1, 10)：既不检查
 // 帧索引上界，也不检查缓冲区指针是否已分配（只有 0x41 检查后者）。索引是一个完整
 // 字节，所以 0x47 FF ... 会往缓冲区后面 2550 字节处写数据，直接把固件打挂。
-// 正常控制路径固定使用 0..30，但调试控制台可以发任意帧，必须在这里挡住。
+// 正常控制路径只发到 0x12，但调试控制台可以发任意帧，必须在这里挡住。
 func ValidateOutboundFrame(frame []byte) error {
 	parsed, ok := ParseFrame(frame)
 	if !ok {

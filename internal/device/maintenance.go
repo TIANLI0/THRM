@@ -46,5 +46,7 @@ func (m *Manager) runFirmwareMaintenanceCommand(command byte, accepted ...byte) 
 	// 0x06 会重建固件的 LED/RGB 状态，0x03/0x05 也会改写运行期控制结构，
 	// 缓存的"设备侧灯光开关值"在这之后不再可信。
 	m.resetLightStateCacheLocked()
+	// 0x06 还会把四个挡位槽重置回 1700/2400/3000/4000，挡位转速缓存同样作废。
+	m.resetGearRPMCacheLocked()
 	return nil
 }

@@ -165,6 +165,9 @@ func (m *Manager) QueryDeviceSettings() (types.DeviceSettings, error) {
 	if settings.RGBStateName == "on" || settings.RGBStateName == "off" {
 		m.NoteRGBEnabledFromDevice(settings.RGBStateName == "on")
 	}
+	// 0x27 是唯一能读回"设备侧四个挡位槽当前转速"的命令。用它播种缓存后，
+	// 重连重放在转速本来就一致时可以退回 0x08，省掉 0x26 那次固件闪存擦写。
+	m.NoteGearRPMTableFromDevice(settings.GearRPMTable)
 	if settings.ControllerCapabilityTier != nil {
 		tier := *settings.ControllerCapabilityTier
 		m.noteControllerTier(tier)

@@ -91,6 +91,18 @@ const (
 	// 响应超时。事务期间改用毫秒级轮询把整个上传压回几百毫秒。
 	hidBusyReadPollInterval = 2 * time.Millisecond
 	hidReadErrorRetryDelay  = 500 * time.Millisecond
+
+	// gearRPMSlotCount 是固件挡位转速表的槽位数（0x26 的挡位索引 0..3）。
+	gearRPMSlotCount = 4
+
+	// flashWriteSpacing 是两条"会让固件擦写数据闪存"的命令之间强制拉开的最小间隔。
+	//
+	// 固件的闪存例程（RAM 0x200006ae）开头会把 PFIC->IRER[0]/[1] 全写 1，
+	// 连蓝牙链路层自己的 LLE/BB 中断一起关掉，直到一整页 256 字节擦除并回写完成。
+	// 连着下发多条落盘命令等于连续制造多个中断黑窗；HID over USB 只是被延迟，
+	// 但蓝牙连接下足以错过连续几个连接事件，攒够就是 supervision timeout 掉线，
+	// 用户看到的就是"散热器偶发重启"。留出几个连接间隔让链路自己恢复。
+	flashWriteSpacing = 150 * time.Millisecond
 )
 
 func modelNameForProductID(productID uint16) string {
@@ -142,6 +154,17 @@ type Manager struct {
 	// back-to-back flash cycles during a reconnect.
 	rgbEnabled    bool
 	hasRGBEnabled bool
+
+	// deviceGearRPM 缓存设备侧四个挡位槽当前存的转速。
+	//
+	// 0x26 同样每次调用都擦写一页数据闪存且不比较新旧值，但它比 0x46/0x48 麻烦：
+	// 除了写转速，它还负责换挡（清实时标志 + 写当前挡位）。所以转速没变时不能
+	// 整条跳过，只能改用"只换挡、不落盘"的 0x08。缓存由 0x27 读回播种。
+	deviceGearRPM    [gearRPMSlotCount]int
+	hasDeviceGearRPM [gearRPMSlotCount]bool
+
+	// lastFlashWriteAt 是最近一次下发落盘命令的时间，用于 flashWriteSpacing 限频。
+	lastFlashWriteAt time.Time
 	// controllerTier 是 0x07 读回的控制器能力档位，决定哪些挡位真的能选中。
 	controllerTier    int
 	hasControllerTier bool
@@ -489,6 +512,42 @@ func (m *Manager) resetLightStateCacheLocked() {
 	m.smartLightTemperature = 0
 }
 
+// resetGearRPMCacheLocked 丢弃挡位转速缓存。断开连接、以及会重建固件挡位转速表的
+// 维护命令之后，缓存都不再可信——此时必须退回用 0x26 下发，宁可多擦一次闪存，
+// 也不能用 0x08 换到一个转速其实对不上的挡位。
+func (m *Manager) resetGearRPMCacheLocked() {
+	m.deviceGearRPM = [gearRPMSlotCount]int{}
+	m.hasDeviceGearRPM = [gearRPMSlotCount]bool{}
+}
+
+// awaitFlashWriteWindowLocked 在下发落盘命令前，把它与上一条落盘命令拉开
+// flashWriteSpacing。调用方必须持有 m.mutex：这里的休眠是有意持锁的，
+// 就是要防止别的控制路径在这个间隔里插进另一条落盘命令。
+//
+// 持锁休眠不会挡住 ACK：读循环是在 responses.deliver 之后才去取锁的，
+// 取不到只会丢掉一帧 0xEF 状态通知，不影响命令应答。
+func (m *Manager) awaitFlashWriteWindowLocked() {
+	if m.lastFlashWriteAt.IsZero() {
+		return
+	}
+	elapsed := time.Since(m.lastFlashWriteAt)
+	wait := flashWriteSpacing - elapsed
+	if wait <= 0 {
+		return
+	}
+	m.logDebug("距上次固件闪存写入仅 %v，等待 %v 后再下发下一条落盘命令",
+		elapsed.Round(time.Millisecond), wait.Round(time.Millisecond))
+	time.Sleep(wait)
+}
+
+// noteFlashWriteLocked 记录一次已下发的落盘命令。
+//
+// 0x43 的落盘是固件回完 ACK 之后再由 TMOS 事件 0x20 异步做的，这里统一按
+// "命令返回时"记时；flashWriteSpacing 的余量覆盖了那点延迟。
+func (m *Manager) noteFlashWriteLocked() {
+	m.lastFlashWriteAt = time.Now()
+}
+
 func (m *Manager) resetRealtimeControlStateLocked() {
 	m.realtimeWakeGen++
 	m.lastCommandedRPM = 0
@@ -769,6 +828,7 @@ func (m *Manager) finalizeMonitor(device *hid.Device, done chan struct{}) {
 	m.disconnectNotify = false
 	m.resetRealtimeControlStateLocked()
 	m.resetLightStateCacheLocked()
+	m.resetGearRPMCacheLocked()
 	m.mutex.Unlock()
 
 	// 触发回调：显式断开按调用方意图，意外断开（读错误）则始终通知。
@@ -1208,6 +1268,12 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 		m.logError("未知挡位 %s", gear)
 		return false
 	}
+	// 固件的挡位槽只有四个（0x26 的挡位索引 0..3），挡位转速缓存也按这个长度开。
+	// 越界的索引既会写坏缓存数组，也会被固件当成非法参数拒掉。
+	if idx < 0 || idx >= gearRPMSlotCount {
+		m.logError("挡位 %s 的索引 %d 超出固件挡位槽范围 0..%d", gear, idx, gearRPMSlotCount-1)
+		return false
+	}
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -1229,19 +1295,45 @@ func (m *Manager) SetManualGearRPM(gear, level string, rpm int) bool {
 	}
 	defer m.beginTransaction()()
 
+	// 0x26 会擦写一整页数据闪存，而且固件不比较新旧值（0x0C/0x0D 会比较，
+	// 0x26/0x46/0x48 都漏了）。设备侧转速已经一致时改用只换挡、不落盘的 0x08：
+	// 0x08 放行的挡位集合在每个能力档位上都是 0x26 的超集（档位 1 时 0x08 允许
+	// 1..3、0x26 只允许 1..2），上面那道门控已经按 0x26 的规则挡过一次了。
+	command := deviceproto.CmdSetGearRPM
 	payload := []byte{byte(idx), byte(rpm), byte(rpm >> 8)}
-	// 0x26 always writes a valid slot and can still return ACK=1 when this
-	// controller tier refuses to select that gear. Register for 0xEF before the
-	// write because the firmware publishes status before its command ACK.
+	writesFlash := true
+	if m.hasDeviceGearRPM[idx] && m.deviceGearRPM[idx] == rpm {
+		command = deviceproto.CmdSetFixedGear
+		payload = []byte{byte(idx + 1)}
+		writesFlash = false
+		m.logDebug("挡位 %s 的设备侧转速已是 %d RPM，改用 0x08 换挡，跳过一次固件闪存写入", gear, rpm)
+	}
+	if writesFlash {
+		m.awaitFlashWriteWindowLocked()
+	}
+
+	// 两条命令都会照常回 ACK=1，却可能因为能力档位而静默不换挡。Register for 0xEF
+	// before the write because the firmware publishes status before its command ACK.
 	statusWaiter := m.responses.register(deviceproto.CmdStatusNotify)
-	ack, err := m.sendHIDCommandAndWaitLocked(deviceproto.CmdSetGearRPM, payload, hidControlReportLen, deviceResponseTimeout)
+	ack, err := m.sendHIDCommandAndWaitLocked(command, payload, hidControlReportLen, deviceResponseTimeout)
+	if writesFlash {
+		m.noteFlashWriteLocked()
+	}
 	if err == nil {
 		err = validateACK(ack, 1)
 	}
 	if err != nil {
 		m.responses.cancel(statusWaiter)
+		if writesFlash {
+			// 写入结果未知，缓存不再可信。
+			m.hasDeviceGearRPM[idx] = false
+		}
 		m.logError("设置挡位 %s %s (%d RPM) 失败: %v", gear, level, rpm, err)
 		return false
+	}
+	if writesFlash {
+		m.deviceGearRPM[idx] = rpm
+		m.hasDeviceGearRPM[idx] = true
 	}
 	if actualGear, err := m.waitForSelectedGearLocked(statusWaiter, idx+1, gearSelectionVerifyTimeout); err != nil {
 		if actualGear > 0 {
@@ -1290,6 +1382,23 @@ func (m *Manager) waitForSelectedGearLocked(first *responseWaiter, expectedGear 
 	}
 }
 
+// NoteGearRPMTableFromDevice 用 0x27 读回的挡位转速表播种缓存。
+//
+// 播种之后，重连重放在设备侧转速本来就一致时可以用 0x08 换挡，
+// 省掉一次固件数据闪存擦写——这是重连路径上仅剩的一次无条件擦写。
+func (m *Manager) NoteGearRPMTableFromDevice(table []types.DeviceGearRPM) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	for _, item := range table {
+		idx := item.Gear - 1
+		if idx < 0 || idx >= gearRPMSlotCount || item.RPM <= 0 {
+			continue
+		}
+		m.deviceGearRPM[idx] = item.RPM
+		m.hasDeviceGearRPM[idx] = true
+	}
+}
+
 // SetGearLight 设置挡位灯
 func (m *Manager) SetGearLight(enabled bool) bool {
 	if m.IsBS1() {
@@ -1315,7 +1424,10 @@ func (m *Manager) SetGearLight(enabled bool) bool {
 	if enabled {
 		payload = 0x01
 	}
-	if err := m.sendHIDAckLocked(deviceproto.CmdGearLight, []byte{payload}, 1); err != nil {
+	m.awaitFlashWriteWindowLocked()
+	err := m.sendHIDAckLocked(deviceproto.CmdGearLight, []byte{payload}, 1)
+	m.noteFlashWriteLocked()
+	if err != nil {
 		m.hasGearLight = false
 		m.logError("设置挡位灯失败: %v", err)
 		return false
@@ -1350,7 +1462,12 @@ func (m *Manager) SetPowerOnStart(enabled bool) bool {
 		payload = 0x02
 	}
 
-	if err := m.sendHIDAckLocked(deviceproto.CmdSetPowerOnStart, []byte{payload}, 1); err != nil {
+	// 固件的 0x0C 分支会先比较新旧值，值没变就不落盘；但值真变了仍是一次整页擦写，
+	// 所以照样纳入落盘限频。
+	m.awaitFlashWriteWindowLocked()
+	err := m.sendHIDAckLocked(deviceproto.CmdSetPowerOnStart, []byte{payload}, 1)
+	m.noteFlashWriteLocked()
+	if err != nil {
 		m.logError("设置通电自启动失败: %v", err)
 		return false
 	}
@@ -1384,7 +1501,11 @@ func (m *Manager) SetSmartStartStop(mode string) bool {
 		return false
 	}
 
-	if err := m.sendHIDAckLocked(deviceproto.CmdSetSmartStartStop, []byte{payload}, 1); err != nil {
+	// 同 0x0C：固件会比较，但值变了就是一次整页擦写。
+	m.awaitFlashWriteWindowLocked()
+	err := m.sendHIDAckLocked(deviceproto.CmdSetSmartStartStop, []byte{payload}, 1)
+	m.noteFlashWriteLocked()
+	if err != nil {
 		m.logError("设置智能启停失败: %v", err)
 		return false
 	}

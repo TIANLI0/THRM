@@ -137,7 +137,10 @@ func (m *Manager) setRGBEnableLocked(enabled bool) error {
 	if enabled {
 		payload = 0x01
 	}
-	if err := m.sendLightCommandLocked(deviceproto.CmdRGBEnable, payload); err != nil {
+	m.awaitFlashWriteWindowLocked()
+	err := m.sendLightCommandLocked(deviceproto.CmdRGBEnable, payload)
+	m.noteFlashWriteLocked()
+	if err != nil {
 		// 写入结果未知，缓存不再可信。
 		m.hasRGBEnabled = false
 		return err
@@ -266,7 +269,13 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 	// That is one erase/program cycle per applied custom effect and is the
 	// reason smart-temperature lighting uses native presets instead of
 	// re-uploading a program whenever the temperature crosses a band.
-	return m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 0x01)
+	//
+	// 它的落盘发生在 ACK 之后（TMOS 事件 0x20），所以既要与前一条落盘命令拉开，
+	// 也要记时，好让紧随其后的 0x0C/0x48 不会撞进这次异步擦写。
+	m.awaitFlashWriteWindowLocked()
+	err := m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 0x01)
+	m.noteFlashWriteLocked()
+	return err
 }
 
 func (m *Manager) setLightStaticSingleLocked(color types.RGBColor, brightness byte) error {

@@ -10,8 +10,17 @@ import (
 
 const (
 	hidControlReportLen = 25
-	hidLightReportLen   = 65
-	maxDebugFrames      = 100
+
+	// hidLightReportLen 必须与控制命令一致。
+	//
+	// 固件的 BLE HID 分支（0x2A4D 特征）只接受恰好 24 字节的写入，长度不符直接
+	// 回 ATT 0x0D：`li a5,24; bne a4,a5 -> li s0,13`。而 hidapi 在 Windows 上只把
+	// 偏小的缓冲区补齐到设备声明的报告长度，偏大的会原样交给 WriteFile 由系统拒绝。
+	// 原来的 65 是照着 USB 抓包写的，蓝牙连接下会让整组灯效命令（0x41/0x43/0x44/
+	// 0x46/0x47）全部发不出去。0x47 是最长的灯效帧，算上校验和也只有 16 字节。
+	hidLightReportLen = hidControlReportLen
+
+	maxDebugFrames = 100
 )
 
 func DebugCommandPresets() []types.DeviceDebugCommandPreset {
