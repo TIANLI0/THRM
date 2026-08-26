@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Sortable from 'sortablejs';
 import ConnectionRecoveryPanel from './ConnectionRecoveryPanel';
@@ -87,19 +87,76 @@ type HomeCardId = 'hero' | 'cpu' | 'gpu' | 'fan' | 'runtime' | 'curve' | 'histor
 const HOME_CARD_IDS: HomeCardId[] = ['hero', 'cpu', 'gpu', 'fan', 'runtime', 'curve', 'history'];
 const HOME_CARD_ORDER_STORAGE_KEY = 'thrm.home.card-order';
 
+const HOME_GRID_COLUMNS = 12;
+
 /**
  * 每张卡片在 12 栅格里的默认宽度，保持与原布局一致：
  * 概览与运行详情整行，三张指标卡各占三分之一，曲线与历史 7:5。
+ *
+ * 这里是"卡片有多宽"的唯一来源：既生成栅格类名，也用来把卡片按视觉行分组，
+ * 免得改了宽度却忘了同步进场动画的分行。
  */
-const HOME_CARD_SPANS: Record<HomeCardId, string> = {
-  hero: 'md:col-span-12',
-  cpu: 'md:col-span-4',
-  gpu: 'md:col-span-4',
-  fan: 'md:col-span-4',
-  runtime: 'md:col-span-12',
-  curve: 'md:col-span-7',
-  history: 'md:col-span-5',
+const HOME_CARD_COLUMNS: Record<HomeCardId, number> = {
+  hero: 12,
+  cpu: 4,
+  gpu: 4,
+  fan: 4,
+  runtime: 12,
+  curve: 7,
+  history: 5,
 };
+
+/** Tailwind 只能扫到字面量类名，所以列数到类名的映射必须逐条写出来。 */
+const HOME_COLUMN_SPAN_CLASS: Record<number, string> = {
+  4: 'md:col-span-4',
+  5: 'md:col-span-5',
+  7: 'md:col-span-7',
+  12: 'md:col-span-12',
+};
+
+/**
+ * 按 12 栅格的换行规则，算出每个栅格项落在第几行。
+ *
+ * 进场动画要以"行"为单位错开，而不是按卡片顺序：CPU/GPU/风扇三张卡并排在同一行，
+ * 它们必须同时淡入，否则一行之内还会从左到右依次亮起，看着像在逐个加载。
+ * 卡片顺序可由用户拖动调整，所以行的划分只能在运行时按当前顺序算。
+ */
+function homeGridRowIndexes(columns: number[]): number[] {
+  const rows: number[] = [];
+  let row = 0;
+  let used = 0;
+
+  for (const span of columns) {
+    const width = Math.min(Math.max(span, 1), HOME_GRID_COLUMNS);
+    // 放不下就换行；注意是"先换行再放"，与 CSS 栅格的自动放置一致。
+    if (used > 0 && used + width > HOME_GRID_COLUMNS) {
+      row += 1;
+      used = 0;
+    }
+    rows.push(row);
+    used += width;
+    if (used >= HOME_GRID_COLUMNS) {
+      row += 1;
+      used = 0;
+    }
+  }
+
+  return rows;
+}
+
+/** 行号越大延迟越久，但整段进场不应无限拉长，超过这一行之后不再继续延后。 */
+const HOME_REVEAL_MAX_STEP = 4;
+
+/**
+ * 写在栅格项上的进场分组：--reveal-row 用于多列布局（同一行同时进场），
+ * --reveal-index 用于窄到单列时（每项自成一行）。哪个生效由 globals.css 的断点决定。
+ */
+function homeRevealStyle(row: number, index: number): React.CSSProperties {
+  return {
+    ['--reveal-row' as string]: Math.min(row, HOME_REVEAL_MAX_STEP),
+    ['--reveal-index' as string]: Math.min(index, HOME_REVEAL_MAX_STEP),
+  } as React.CSSProperties;
+}
 
 function isHomeCardId(value: unknown): value is HomeCardId {
   return typeof value === 'string' && (HOME_CARD_IDS as string[]).includes(value);
@@ -138,6 +195,9 @@ function saveHomeCardOrder(order: HomeCardId[]) {
 interface HomeCardShellProps {
   id: HomeCardId;
   title: string;
+  /** 该卡片所在的视觉行与线性序号，决定进场动画的延迟分组。 */
+  revealRow: number;
+  revealIndex: number;
   /** 排序模式是否已开启：只有开启后卡片才可拖动。 */
   sorting: boolean;
   canMoveEarlier: boolean;
@@ -159,6 +219,8 @@ interface HomeCardShellProps {
 function HomeCardShell({
   id,
   title,
+  revealRow,
+  revealIndex,
   sorting,
   canMoveEarlier,
   canMoveLater,
@@ -175,9 +237,11 @@ function HomeCardShell({
       <ContextMenuTrigger asChild>
         <div
           data-card-id={id}
+          data-reveal-row=""
+          style={homeRevealStyle(revealRow, revealIndex)}
           className={clsx(
             'relative min-w-0',
-            HOME_CARD_SPANS[id],
+            HOME_COLUMN_SPAN_CLASS[HOME_CARD_COLUMNS[id]],
             sorting && 'cursor-grab touch-none rounded-xl ring-2 ring-primary/35',
           )}
         >
@@ -1399,34 +1463,65 @@ export default function DeviceStatus({
   const showConnectionGuides =
     !isConnected || !!coreServiceError || (tempPushed && referenceTemp <= 0) || bridgeWarningReady;
 
+  // 先把栅格项按渲染顺序摊平（卡片 + 跟在概览后面的连接引导），再按 12 栅格分行。
+  // 引导块占满整行，所以它自成一行，不会把下一行的卡片挤到别的分组里去。
+  const gridSlots = useMemo(() => {
+    const slots: Array<{ id: HomeCardId; cardIndex: number } | { id: null; cardIndex: -1 }> = [];
+    visibleCards.forEach((id, cardIndex) => {
+      slots.push({ id, cardIndex });
+      if (id === 'hero' && showConnectionGuides) slots.push({ id: null, cardIndex: -1 });
+    });
+    return slots;
+  }, [visibleCards, showConnectionGuides]);
+
+  const gridSlotRows = useMemo(
+    () => homeGridRowIndexes(gridSlots.map((slot) => (slot.id === null ? HOME_GRID_COLUMNS : HOME_CARD_COLUMNS[slot.id]))),
+    [gridSlots],
+  );
+
   return (
     <>
       <div
         ref={gridRef}
         className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-12 min-[1800px]:gap-4"
       >
-        {visibleCards.map((id, index) => (
-          <Fragment key={id}>
+        {gridSlots.map((slot, slotIndex) => {
+          const row = gridSlotRows[slotIndex] ?? 0;
+
+          // 连接引导与桥接告警始终跟着设备概览走：它们描述的就是这张卡片的状态。
+          // 没有 data-card-id，SortableJS 不会把它当成可拖动项。
+          if (slot.id === null) {
+            return (
+              <div
+                key="connection-guides"
+                data-reveal-row=""
+                style={homeRevealStyle(row, slotIndex)}
+                className="flex flex-col gap-3 md:col-span-12 min-[1800px]:gap-4"
+              >
+                {connectionGuides}
+              </div>
+            );
+          }
+
+          return (
             <HomeCardShell
-              id={id}
-              title={t(`deviceStatus.layout.cards.${id}`)}
+              key={slot.id}
+              id={slot.id}
+              title={t(`deviceStatus.layout.cards.${slot.id}`)}
+              revealRow={row}
+              revealIndex={slotIndex}
               sorting={sortingActive}
-              canMoveEarlier={index > 0}
-              canMoveLater={index < visibleCards.length - 1}
+              canMoveEarlier={slot.cardIndex > 0}
+              canMoveLater={slot.cardIndex < visibleCards.length - 1}
               onMove={moveCard}
               onStartSorting={() => setSortingActive(true)}
               onStopSorting={() => setSortingActive(false)}
               onReset={resetCardOrder}
             >
-              {homeCards[id]}
+              {homeCards[slot.id]}
             </HomeCardShell>
-            {/* 连接引导与桥接告警始终跟着设备概览走：它们描述的就是这张卡片的状态。
-                没有 data-card-id，SortableJS 不会把它当成可拖动项。 */}
-            {id === 'hero' && showConnectionGuides && (
-              <div className="flex flex-col gap-3 md:col-span-12 min-[1800px]:gap-4">{connectionGuides}</div>
-            )}
-          </Fragment>
-        ))}
+          );
+        })}
       </div>
 
       {sortingActive &&

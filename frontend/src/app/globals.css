@@ -248,6 +248,23 @@
   animation-delay: 0.32s;
 }
 
+/* 首页栅格是多列的：一行里可能并排好几张卡片，上面那套按元素顺序的阶梯会让
+   同一行的卡片从左到右依次亮起，看着像在逐个加载。改成按"视觉行"分组——
+   行号由组件按 12 栅格算好写在 --reveal-row 上，同一行的卡片拿到同一个延迟。
+
+   与上面的 :nth-child 规则特殊度相同，靠书写顺序覆盖；其它标签页没有
+   data-reveal-row，仍然走按元素顺序的阶梯。 */
+[data-page-reveal="cards"] > * > [data-reveal-row] {
+  animation-delay: calc(var(--reveal-index, 0) * 0.08s);
+}
+
+/* 栅格在 md 以上才是 12 列；窄到单列时每张卡片自成一行，按元素顺序即可。 */
+@media (min-width: 768px) {
+  [data-page-reveal="cards"] > * > [data-reveal-row] {
+    animation-delay: calc(var(--reveal-row, 0) * 0.08s);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-page-reveal="cards"] > * > * {
     animation: none;
