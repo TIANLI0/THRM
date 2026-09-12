@@ -61,13 +61,10 @@ LangString THRM_STR_PAWNIO_MISSING ${LANG_SIMPCHINESE} "未找到 PawnIO_setup.e
 LangString THRM_STR_PAWNIO_MISSING ${LANG_ENGLISH} "PawnIO_setup.exe was not found in build\\bin. Run build_bridge.bat to download it before packaging the installer."
 LangString THRM_STR_PAWNIO_MISSING ${LANG_JAPANESE} "build\\bin に PawnIO_setup.exe が見つかりません。先に build_bridge.bat を実行してダウンロードしてからインストーラーを作成してください。"
 
-LangString THRM_STR_PAWNIO_INTERACTIVE_FAIL ${LANG_SIMPCHINESE} "PawnIO 交互安装/更新失败（返回码: $0）。$\n$\n常见原因：驱动服务被系统标记删除（错误 1072）。$\n请先重启系统后重新运行安装程序。"
-LangString THRM_STR_PAWNIO_INTERACTIVE_FAIL ${LANG_ENGLISH} "PawnIO interactive install/update failed (exit code: $0).$\n$\nCommon cause: the driver service is marked for deletion (error 1072).$\nPlease reboot and run the installer again."
-LangString THRM_STR_PAWNIO_INTERACTIVE_FAIL ${LANG_JAPANESE} "PawnIO の対話式インストール/更新に失敗しました (終了コード: $0)。$\n$\n一般的な原因: ドライバーサービスが削除待ちとしてマークされています (エラー 1072)。$\nシステムを再起動してから、もう一度インストーラーを実行してください。"
 
-LangString THRM_STR_PAWNIO_FAIL ${LANG_SIMPCHINESE} "PawnIO 安装/更新失败（返回码: $0）。$\n$\n常见原因：驱动服务被系统标记删除（错误 1072）。$\n请先重启系统后重新运行安装程序。"
-LangString THRM_STR_PAWNIO_FAIL ${LANG_ENGLISH} "PawnIO install/update failed (exit code: $0).$\n$\nCommon cause: the driver service is marked for deletion (error 1072).$\nPlease reboot and run the installer again."
-LangString THRM_STR_PAWNIO_FAIL ${LANG_JAPANESE} "PawnIO のインストール/更新に失敗しました (終了コード: $0)。$\n$\n一般的な原因: ドライバーサービスが削除待ちとしてマークされています (エラー 1072)。$\nシステムを再起動してから、もう一度インストーラーを実行してください。"
+LangString THRM_STR_PAWNIO_FAIL ${LANG_SIMPCHINESE} "PawnIO 安装/更新失败（返回码: $0）。$\n$\nTHRM 会继续安装并可以正常使用，但在 PawnIO 修好之前读不到 CPU 温度。$\n$\n常见原因：驱动服务被系统标记删除（错误 1072）。请重启系统，然后在 THRM 中点击“重装 PawnIO”。"
+LangString THRM_STR_PAWNIO_FAIL ${LANG_ENGLISH} "PawnIO install/update failed (exit code: $0).$\n$\nTHRM will still be installed and usable, but CPU temperature cannot be read until PawnIO is fixed.$\n$\nCommon cause: the driver service is marked for deletion (error 1072). Reboot, then use Reinstall PawnIO inside THRM."
+LangString THRM_STR_PAWNIO_FAIL ${LANG_JAPANESE} "PawnIO のインストール/更新に失敗しました (終了コード: $0)。$\n$\nTHRM のインストールは続行され、通常どおり使用できますが、PawnIO を修復するまで CPU 温度を読み取れません。$\n$\n一般的な原因: ドライバーサービスが削除待ちとしてマークされています (エラー 1072)。システムを再起動してから、THRM 内の「PawnIO を再インストール」を実行してください。"
 
 LangString THRM_STR_UNINSTALL_REMOVE_CONFIG ${LANG_SIMPCHINESE} "是否删除所有配置文件和日志？"
 LangString THRM_STR_UNINSTALL_REMOVE_CONFIG ${LANG_ENGLISH} "Remove all configuration files and logs?"
@@ -264,6 +261,10 @@ LangString THRM_STR_PAWNIO_UPDATE ${LANG_JAPANESE} "古い PawnIO バージョ�
 LangString THRM_STR_PAWNIO_SKIP ${LANG_SIMPCHINESE} "PawnIO 已安装且版本满足要求，跳过驱动安装。"
 LangString THRM_STR_PAWNIO_SKIP ${LANG_ENGLISH} "PawnIO is already installed and satisfies the required version. Skipping driver installation."
 LangString THRM_STR_PAWNIO_SKIP ${LANG_JAPANESE} "PawnIO は既にインストールされており、必要なバージョンを満たしています。ドライバーのインストールをスキップします。"
+
+LangString THRM_STR_PAWNIO_ALREADY ${LANG_SIMPCHINESE} "PawnIO 安装器返回 183（已存在），系统中确实已安装，跳过。检测到版本:"
+LangString THRM_STR_PAWNIO_ALREADY ${LANG_ENGLISH} "The PawnIO installer returned 183 (already exists) and PawnIO is indeed installed. Skipping. Detected version:"
+LangString THRM_STR_PAWNIO_ALREADY ${LANG_JAPANESE} "PawnIO インストーラーが 183 (既に存在) を返し、実際にインストール済みでした。スキップします。検出されたバージョン:"
 
 LangString THRM_STR_PAWNIO_SKIP_DONE ${LANG_SIMPCHINESE} "跳过 PawnIO 处理。"
 LangString THRM_STR_PAWNIO_SKIP_DONE ${LANG_ENGLISH} "Skipping PawnIO processing."

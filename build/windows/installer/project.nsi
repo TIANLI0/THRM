@@ -1012,6 +1012,66 @@ Section "$(THRM_STR_SECTION_AUTOSTART)" SEC_AUTOSTART
     ${EndIf}
 SectionEnd
 
+# DetectPawnIOVersion pushes the installed PawnIO version, or "" when absent.
+#
+# Looking only at the 64-bit HKLM uninstall key misses per-user installs and
+# machines whose uninstall entry was cleaned up while the driver stayed behind.
+# A miss sends a machine that already has PawnIO into the forced-install branch,
+# where PawnIO's own setup then fails with 183 (issue #40).
+Function DetectPawnIOVersion
+    Push $0
+    Push $1
+
+    StrCpy $0 ""
+    SetRegView 64
+    ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
+    ${If} $0 == ""
+        SetRegView 32
+        ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
+    ${EndIf}
+    SetRegView 64
+    ${If} $0 == ""
+        ReadRegStr $0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
+    ${EndIf}
+    ${If} $0 == ""
+        # No uninstall entry but the driver service exists: still installed. Report
+        # 0.0.0.0 so the version compare treats it as outdated and tries an upgrade,
+        # rather than as "not installed".
+        ReadRegStr $1 HKLM "SYSTEM\CurrentControlSet\Services\PawnIO" "ImagePath"
+        ${If} $1 != ""
+            StrCpy $0 "0.0.0.0"
+        ${EndIf}
+    ${EndIf}
+
+    Pop $1
+    Exch $0
+FunctionEnd
+
+# PawnIOAlreadyInstalled reports whether the failure in $0 really means
+# "already installed", pushing "1" or "0".
+#
+# 183 is ERROR_ALREADY_EXISTS, which is exactly how PawnIO's setup reports an
+# existing installation. Treating it as a hard failure walked such machines
+# through silent-fail -> interactive-fail -> abort the whole install (issue #40).
+# The in-app reinstaller in the core service already applies this same rule.
+Function PawnIOAlreadyInstalled
+    Push $1
+    Push $2
+
+    StrCpy $1 "0"
+    ${If} $0 == 183
+        Call DetectPawnIOVersion
+        Pop $2
+        ${If} $2 != ""
+            DetailPrint "$(THRM_STR_PAWNIO_ALREADY) $2"
+            StrCpy $1 "1"
+        ${EndIf}
+    ${EndIf}
+
+    Pop $2
+    Exch $1
+FunctionEnd
+
 # Required PawnIO installer section
 Section "$(THRM_STR_SECTION_PAWNIO)" SEC_PAWNIO
     SectionIn RO
@@ -1031,14 +1091,8 @@ Section "$(THRM_STR_SECTION_PAWNIO)" SEC_PAWNIO
     ${EndIf}
 
     # Detect installed PawnIO version
-    StrCpy $6 ""
-    SetRegView 64
-    ReadRegStr $6 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
-    ${If} $6 == ""
-        SetRegView 32
-        ReadRegStr $6 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO" "DisplayVersion"
-    ${EndIf}
-    SetRegView 64
+    Call DetectPawnIOVersion
+    Pop $6
 
     # Decide install strategy:
     # $9 = 0 skip, 1 install/update without uninstalling the shared driver first
@@ -1071,25 +1125,35 @@ Section "$(THRM_STR_SECTION_PAWNIO)" SEC_PAWNIO
         nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /IM "PawnIO_setup.exe" /T'
         Pop $2
         Pop $3
-        ExecWait '"$7" -install' $0
-        ${If} $0 == 0
-            DetailPrint "$(THRM_STR_PAWNIO_INTERACTIVE_OK)"
-        ${Else}
-            MessageBox MB_OK|MB_ICONSTOP "$(THRM_STR_PAWNIO_INTERACTIVE_FAIL)"
-            Abort
-        ${EndIf}
-    ${ElseIf} $0 == 0
-        DetailPrint "$(THRM_STR_PAWNIO_SILENT_OK)"
-    ${Else}
-        DetailPrint "$(THRM_STR_PAWNIO_FALLBACK)"
-        ExecWait '"$7" -install' $0
-        ${If} $0 == 0
-            DetailPrint "$(THRM_STR_PAWNIO_INTERACTIVE_OK)"
-        ${Else}
-            MessageBox MB_OK|MB_ICONSTOP "$(THRM_STR_PAWNIO_FAIL)"
-            Abort
-        ${EndIf}
+        Goto pawnio_interactive
     ${EndIf}
+    ${If} $0 == 0
+        DetailPrint "$(THRM_STR_PAWNIO_SILENT_OK)"
+        Goto pawnio_done
+    ${EndIf}
+    Call PawnIOAlreadyInstalled
+    Pop $8
+    ${If} $8 == "1"
+        Goto pawnio_done
+    ${EndIf}
+    DetailPrint "$(THRM_STR_PAWNIO_FALLBACK)"
+
+    pawnio_interactive:
+    ExecWait '"$7" -install' $0
+    ${If} $0 == 0
+        DetailPrint "$(THRM_STR_PAWNIO_INTERACTIVE_OK)"
+        Goto pawnio_done
+    ${EndIf}
+    Call PawnIOAlreadyInstalled
+    Pop $8
+    ${If} $8 == "1"
+        Goto pawnio_done
+    ${EndIf}
+
+    # A failed PawnIO install only costs CPU temperature readings: THRM itself runs
+    # fine, the setup binary is already on disk, and the app can reinstall it with
+    # one click. Aborting here used to deny the user the main program as well.
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(THRM_STR_PAWNIO_FAIL)"
 
     pawnio_done:
     Pop $9
