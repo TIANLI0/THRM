@@ -2,6 +2,7 @@ package device
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -37,9 +38,63 @@ type BLEManager struct {
 	queryMutex   sync.Mutex
 	responses    *responseBroker
 	scanTimeout  time.Duration
+
+	// realtimeMode 记录固件当前是否处于实时转速模式（0x23）。保活包要据此决定
+	// 能不能发 0x23——挡位模式下发它会把设备踢回实时模式，见 heartbeatLoop。
+	realtimeMode bool
+
+	// writeFrame 下发一帧原始数据，nil 时走 GATT 写入特征值。
+	// 模式切换的正确性没有硬件就无法验证，测试注入替身来观察实际发出的命令序列。
+	writeFrame func(cmd []byte) error
 }
 
 const defaultBLEScanTimeout = 10 * time.Second
+
+// bs1ModeSwitchDelay 是 0x23 与随后的 0x21 之间的间隔。固件切模式需要一点时间，
+// 紧挨着发目标转速会被丢弃。只在真正发生模式切换时付出这次等待。
+const bs1ModeSwitchDelay = 50 * time.Millisecond
+
+// bs1KeepAliveCommand 选择本轮保活要发的帧。
+//
+// 实时模式下交替发 0x23 与 0x45，让固件的实时会话保持续期；挡位模式下只能发
+// 0x45——0x23 会把设备切出挡位模式，参见 heartbeatLoop 的说明。
+func bs1KeepAliveCommand(realtime bool, index int) []byte {
+	if realtime && index%2 == 0 {
+		return types.BS1CmdEnterRealtime
+	}
+	return types.BS1CmdKeepAlive
+}
+
+// RoInitialize/CoInitializeEx 表示“本线程此前已初始化，可继续使用”的两个 HRESULT。
+const (
+	hresultSFalse         = 0x00000001 // S_FALSE
+	hresultRPCChangedMode = 0x80010106 // RPC_E_CHANGED_MODE
+)
+
+// isAdapterEnabled 判断 Adapter.Enable() 的返回值是否其实代表成功。
+//
+// tinygo 在 Windows 上的 Enable() 只是一句 ole.RoInitialize(1)，而 go-ole 把任何
+// 非零 HRESULT 一律包成 error 返回。RoInitialize 在当前 OS 线程已经初始化过 COM
+// 时返回的是 S_FALSE(1)——这是成功语义，格式化出来却成了 errno 1 的“函数不正确”。
+// Go 的协程不绑定 OS 线程，于是重连恰好落在哪个线程决定了这里是成功还是“失败”，
+// 表现就是休眠唤醒若干次之后 BS1 随机连不上（issue #43）。
+// internal/laptopfan 的 coInitialize 早就按同一规则放行了这两个 HRESULT。
+func isAdapterEnabled(err error) bool {
+	if err == nil {
+		return true
+	}
+	// 用结构化断言取 HRESULT，避免在跨平台文件里引入只在 Windows 构建的 go-ole。
+	var coded interface{ Code() uintptr }
+	if !errors.As(err, &coded) {
+		return false
+	}
+	switch coded.Code() {
+	case hresultSFalse, hresultRPCChangedMode:
+		return true
+	default:
+		return false
+	}
+}
 
 // tinygo's Scan blocks until StopScan is called. Keeping this small interface
 // makes that lifecycle testable without requiring Bluetooth hardware.
@@ -81,7 +136,7 @@ func (b *BLEManager) Connect() (bool, map[string]string) {
 	}
 
 	b.logInfo("初始化 BLE 适配器...")
-	if err := b.adapter.Enable(); err != nil {
+	if err := b.adapter.Enable(); !isAdapterEnabled(err) {
 		b.logError("启用 BLE 适配器失败: %v", err)
 		return false, nil
 	}
@@ -158,6 +213,8 @@ func (b *BLEManager) Connect() (bool, map[string]string) {
 
 	b.isConnected = true
 	b.stopChan = make(chan struct{})
+	// 新连接建立时固件处于挡位模式，实时模式标记必须跟着复位。
+	b.realtimeMode = false
 
 	// 启用通知
 	b.enableNotifications()
@@ -351,7 +408,12 @@ func parseBS1WorkMode(mode uint8) string {
 	}
 }
 
-// heartbeatLoop 定时发送心跳包保持 BLE 连接
+// heartbeatLoop 定时发送保活包维持 BLE 连接。
+//
+// 0x23 不是无副作用的保活包，它的语义是“进入实时转速模式”。挡位模式下发出去会
+// 把固件踢回实时模式，而此时实时目标还是 0，风扇随即停转——用户看到的就是刚切好
+// 的挡位几秒后掉到 0 转（issue #44）。因此 0x23 只在确实处于实时模式时用来续期，
+// 挡位模式一律只发 0x45（纯状态查询，对风扇模式没有副作用）。
 func (b *BLEManager) heartbeatLoop() {
 	// 系统休眠/唤醒后蓝牙栈状态可能异常，写入操作的 panic 不应导致进程崩溃。
 	defer func() {
@@ -371,23 +433,18 @@ func (b *BLEManager) heartbeatLoop() {
 		case <-ticker.C:
 			b.mutex.RLock()
 			connected := b.isConnected
+			realtime := b.realtimeMode
 			b.mutex.RUnlock()
 
 			if !connected {
 				return
 			}
 
-			// 交替发送两种心跳包
-			var cmd []byte
-			if heartbeatIndex%2 == 0 {
-				cmd = types.BS1CmdHeartbeat1
-			} else {
-				cmd = types.BS1CmdHeartbeat2
-			}
+			cmd := bs1KeepAliveCommand(realtime, heartbeatIndex)
 			heartbeatIndex++
 
 			if err := b.WriteCommand(cmd); err != nil {
-				b.logError("发送心跳包失败: %v", err)
+				b.logError("发送保活包失败: %v", err)
 				b.handleDisconnect()
 				return
 			}
@@ -405,6 +462,22 @@ func (b *BLEManager) WriteCommand(cmd []byte) error {
 		return fmt.Errorf("BLE 设备未连接")
 	}
 
+	b.mutex.RLock()
+	write := b.writeFrame
+	b.mutex.RUnlock()
+	if write == nil {
+		write = b.writeGATT
+	}
+
+	if err := write(cmd); err != nil {
+		return err
+	}
+	b.recordDebugFrame("tx", types.DeviceTypeBLE, cmd)
+	return nil
+}
+
+// writeGATT 通过写入特征值下发一帧。
+func (b *BLEManager) writeGATT(cmd []byte) error {
 	// 优先使用 WriteWithoutResponse（抓包显示 BS1 使用 Write Command 0x52）
 	_, err := b.writeChar.WriteWithoutResponse(cmd)
 	if err != nil {
@@ -414,7 +487,6 @@ func (b *BLEManager) WriteCommand(cmd []byte) error {
 			return fmt.Errorf("BLE 写入失败: WriteWithoutResponse=%v, Write=%v", err, err2)
 		}
 	}
-	b.recordDebugFrame("tx", types.DeviceTypeBLE, cmd)
 	return nil
 }
 
@@ -428,6 +500,7 @@ func (b *BLEManager) Disconnect() {
 	}
 
 	b.isConnected = false
+	b.realtimeMode = false
 
 	// 防止与 handleDisconnect 竞争导致 stopChan 被重复关闭。
 	select {
@@ -453,6 +526,7 @@ func (b *BLEManager) handleDisconnect() {
 	b.mutex.Lock()
 	wasConnected := b.isConnected
 	b.isConnected = false
+	b.realtimeMode = false
 	b.mutex.Unlock()
 
 	if wasConnected {
@@ -482,21 +556,52 @@ func (b *BLEManager) GetCurrentFanData() *types.FanData {
 	return b.currentFanData
 }
 
-// SetFanSpeed 设置 BS1 风扇转速
+// SetFanSpeed 设置 BS1 实时目标转速。
+//
+// 前置命令是 0x23（进入实时转速模式）。此前这里发的是 0x46 0x01——那是 RGB 使能，
+// 与转速无关；真正的 0x23 反倒被当成保活包周期性发送，两者位置刚好写反了。
 func (b *BLEManager) SetFanSpeed(rpm int) error {
-	// 先进入动态模式
-	if err := b.WriteCommand(types.BS1CmdEnterDynamic); err != nil {
-		return fmt.Errorf("进入动态模式失败: %v", err)
+	// BS1 走的是与 HID 相同的 uint16 协议字段，App 只开放 0..5000 RPM。
+	// Manager.SetFanSpeed 的范围校验写在 BS1 分支之后，BS1 得自己拦一道。
+	if rpm < 0 || rpm > types.RealtimeRPMMax {
+		return fmt.Errorf("转速超出有效范围: %d RPM", rpm)
 	}
-	time.Sleep(50 * time.Millisecond)
 
-	// 发送转速命令
-	cmd := types.BuildBS1RPMCommand(rpm)
-	if err := b.WriteCommand(cmd); err != nil {
+	b.mutex.RLock()
+	inRealtime := b.realtimeMode
+	b.mutex.RUnlock()
+
+	if !inRealtime {
+		if err := b.WriteCommand(types.BS1CmdEnterRealtime); err != nil {
+			return fmt.Errorf("进入实时转速模式失败: %v", err)
+		}
+		time.Sleep(bs1ModeSwitchDelay)
+		b.mutex.Lock()
+		b.realtimeMode = true
+		b.mutex.Unlock()
+	}
+
+	if err := b.WriteCommand(types.BuildBS1RPMCommand(rpm)); err != nil {
+		// 目标写入失败后固件模式未知，下次重新走一遍模式握手而不是假定 0x23 已生效。
+		b.mutex.Lock()
+		b.realtimeMode = false
+		b.mutex.Unlock()
 		return fmt.Errorf("设置转速失败: %v", err)
 	}
 
-	b.logInfo("BS1 已设置转速: %d RPM", rpm)
+	// 自动调速每隔几秒就写一次，Info 级会把唤醒/重连这些真正有用的事件淹掉。
+	b.logDebug("BS1 已设置转速: %d RPM", rpm)
+	return nil
+}
+
+// EnterRealtimeMode 让 BS1 进入实时转速控制模式。
+func (b *BLEManager) EnterRealtimeMode() error {
+	if err := b.WriteCommand(types.BS1CmdEnterRealtime); err != nil {
+		return err
+	}
+	b.mutex.Lock()
+	b.realtimeMode = true
+	b.mutex.Unlock()
 	return nil
 }
 
@@ -510,6 +615,11 @@ func (b *BLEManager) SetManualGear(gear string) error {
 	if err := b.WriteCommand(cmd.Command); err != nil {
 		return fmt.Errorf("设置挡位 %s 失败: %v", gear, err)
 	}
+
+	// 固件已回到挡位模式，保活包必须随之停发 0x23，否则几秒后就被踢回实时模式。
+	b.mutex.Lock()
+	b.realtimeMode = false
+	b.mutex.Unlock()
 
 	b.logInfo("BS1 设置挡位成功: %s (目标转速: %d RPM)", gear, cmd.RPM)
 	return nil
@@ -542,5 +652,11 @@ func (b *BLEManager) logInfo(format string, v ...any) {
 func (b *BLEManager) logError(format string, v ...any) {
 	if b.logger != nil {
 		b.logger.Error(format, v...)
+	}
+}
+
+func (b *BLEManager) logDebug(format string, v ...any) {
+	if b.logger != nil {
+		b.logger.Debug(format, v...)
 	}
 }

@@ -1153,7 +1153,7 @@ func (m *Manager) noteRealtimeWriteResultLocked(success bool) {
 // EnterAutoMode 进入自动模式
 func (m *Manager) EnterAutoMode() error {
 	if m.IsBS1() {
-		return m.bleManager.WriteCommand(types.BS1CmdEnterDynamic)
+		return m.bleManager.EnterRealtimeMode()
 	}
 
 	m.mutex.Lock()

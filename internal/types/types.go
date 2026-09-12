@@ -963,16 +963,17 @@ var BS1GearCommands = map[string]GearCommand{
 
 // BS1 BLE 命令常量
 var (
-	// BS1CmdEnterDynamic 进入动态转速模式
-	BS1CmdEnterDynamic = deviceproto.BuildFrame(deviceproto.CmdRGBEnable, 0x01)
+	// BS1CmdEnterRealtime 进入实时转速模式（0x23）。
+	// 必须先发它，随后的 0x21 目标转速才会生效；它同时会把设备从挡位模式切走，
+	// 所以只能在确实要做实时控制时发送——当保活包用会让挡位掉到 0 转。
+	BS1CmdEnterRealtime = deviceproto.BuildFrame(deviceproto.CmdEnterRealtimeRPM)
 	// BS1CmdPowerOnStartEnable 开启通电自启动
 	BS1CmdPowerOnStartEnable = deviceproto.BuildFrame(deviceproto.CmdSetPowerOnStart, 0x01)
 	// BS1CmdPowerOnStartDisable 关闭通电自启动
 	BS1CmdPowerOnStartDisable = deviceproto.BuildFrame(deviceproto.CmdSetPowerOnStart, 0x02)
-	// BS1CmdHeartbeat1 动态模式心跳包1
-	BS1CmdHeartbeat1 = deviceproto.BuildFrame(deviceproto.CmdEnterRealtimeRPM)
-	// BS1CmdHeartbeat2 动态模式心跳包2
-	BS1CmdHeartbeat2 = deviceproto.BuildFrame(deviceproto.CmdRGBStatus)
+	// BS1CmdKeepAlive 连接保活包（0x45 RGB 状态查询）。
+	// 纯查询，不改变风扇模式，挡位模式与实时模式下都可以安全发送。
+	BS1CmdKeepAlive = deviceproto.BuildFrame(deviceproto.CmdRGBStatus)
 )
 
 // BS1DeviceName BS1 蓝牙设备名称
@@ -1011,6 +1012,8 @@ func buildGearRPMCommand(gear int, rpm int) []byte {
 const (
 	ManualGearMinRPM = 800  // 自定义挡位转速下限
 	ManualGearMaxRPM = 5000 // 自定义挡位转速上限
+	// RealtimeRPMMax 是实时转速（0x21）的上限。协议字段是 uint16，App 开放到 5000 RPM。
+	RealtimeRPMMax = 5000
 )
 
 // ManualGearOrder 四个大挡位从低到高顺序
