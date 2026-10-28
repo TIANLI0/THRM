@@ -170,6 +170,7 @@ func modelNameForProductID(productID uint16) string {
 // Manager 设备管理器
 type Manager struct {
 	device              *hid.Device
+	hidReportFormat     hidReportFormat
 	isConnected         bool
 	productID           uint16 // 当前连接的产品ID
 	deviceType          string // "hid" 或 "ble"
@@ -415,6 +416,7 @@ func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 	if err == nil && device != nil {
 		// HID 连接成功 (BS2/BS2PRO/BS3/BS3PRO)
 		m.device = device
+		m.configureHIDReportFormatLocked(device)
 		m.isConnected = true
 		m.productID = connectedProductID
 		m.deviceType = types.DeviceTypeHID
@@ -868,6 +870,10 @@ func (m *Manager) monitorDeviceData(device *hid.Device, stop <-chan struct{}, do
 		// 空闲时短暂休眠，避免无数据轮询占用 CPU，且能快速响应停止/重连请求。
 		n, err := device.Read(buffer)
 		if err != nil {
+			if isInterruptedHIDRead(err) {
+				// A signal interrupted poll/read; the HID connection is still valid.
+				continue
+			}
 			if err == hid.ErrTimeout {
 				consecutiveErrors = 0
 				if !m.waitPollInterval(stop) {

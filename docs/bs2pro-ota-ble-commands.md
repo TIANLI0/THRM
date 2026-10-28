@@ -24,7 +24,7 @@ BS2PRO 的蓝牙写入层使用 BLE GATT Write Command / Write Without Response�
 
 仓库脚本中曾发现通知特征 UUID 为 `0000fff1-0000-1000-8000-00805f9b34fb`。写入特征在同类设备上通常与 `FFF0/FFF1/FFF2` 私有服务族相关，但 BS2PRO 的可写特征以实际枚举结果和抓包 handle 为准。
 
-HID 模式与 BLE payload 共用 `5A A5` 内层协议，但 HID 写入前面会额外加 Report ID `0x02` 并补齐到报告长度；BLE GATT 写入不带 Report ID。
+HID 模式与 BLE payload 共用 `5A A5` 内层协议。蓝牙 HID（HOGP）写入使用 Report ID `0x02`；直接 BLE GATT 写入不带 Report ID。USB HID 的封装必须根据实际报告描述符判断，不能直接套用 HOGP 格式。
 
 > [!IMPORTANT]
 > 走 BLE HID（HOGP）时，固件的 `0x2A4D` 写回调只接受**恰好 24 字节**的写入
@@ -32,6 +32,38 @@ HID 模式与 BLE payload 共用 `5A A5` 内层协议，但 HID 写入前面会�
 > Invalid Attribute Value Length）。主机端所有命令的报告长度因此必须统一成
 > 25（1 字节 Report ID + 24 字节）。照着 USB 抓包用 64 字节报告发灯效命令，
 > 在蓝牙连接下会被整组拒绝。
+
+### Linux USB HID（issue #45）
+
+[issue #45](https://github.com/TIANLI0/THRM/issues/45) 提供的 BS2PRO USB 描述符为：
+
+```text
+06 A0 FF 09 01 A1 01 09 03 15 80 25 7F 35 00 45 FF
+75 08 95 20 81 02 09 05 15 80 25 7F 35 00 45 FF
+75 08 95 1F 91 02 C0
+```
+
+它声明 32 字节输入、31 字节输出，没有 `85 xx`（Report ID）项。输入数据的
+`03 5A A5 ...` 前缀是设备数据，不能据此推导输出使用 Report ID `0x02`。
+该版本固件的 USB OUT 路径（`0x4b84` → `0x4904` → `0x5e7a`）直接把接收缓冲区交给协议解析器，要求首字节为 `5A`。
+
+Linux 对这份描述符使用 hidapi 缓冲区 `00 5A A5 <CMD> <LEN> ... <CHECKSUM>`，
+总长 32 字节（首字节为 hidapi 的占位 ID，其余不足 31 字节的数据补零）。
+内核去掉占位 `00` 后，USB 上传输的是以 `5A A5` 开头的 31 字节数据。
+这遵循 [Linux hidraw 的无编号报告写入规则](https://www.kernel.org/doc/Documentation/hid/hidraw.txt)。
+实现只对 Linux USB 且完整匹配上述描述符的接口启用此封装；蓝牙、其它描述符和其它平台继续使用原有格式。
+
+查询成功必须收到同命令且校验通过的响应，例如 `0x01` 查询须收到 `0x01` 回复。
+期间穿插的 `0xEF` 仅代表状态上报，不能证明输出命令被接收。Linux 硬件回归测试会检查
+`0x01`、`0x25`、`0x27`、`0x45` 的对应回复：
+
+```bash
+go test -v -run '^TestBS2PRO_ProtocolRoundTrip$' -count=1 ./internal/device
+```
+
+测试前需完全退出 THRM，安装 udev 规则，并接入设备。无硬件时可以执行
+`go test -short ./internal/device ./internal/deviceproto`，其中包含 issue 中原始 USB 状态数据的解析及响应路由回归测试。
+此修复针对 USB 已枚举但控制命令无回复的情形；USB Hub 导致内核枚举失败仍需单独排查。
 
 ## 帧格式
 

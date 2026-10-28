@@ -3,7 +3,7 @@
 package device
 
 import (
-	"bytes"
+	"errors"
 	"testing"
 	"time"
 
@@ -37,18 +37,39 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	}
 	defer dev.Close()
 
-	info, _ := dev.GetDeviceInfo()
+	info, err := dev.GetDeviceInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("Device: %s (VID=%04X PID=%04X Serial=%s)", info.ProductStr, flydigiVID, foundPID, info.SerialNbr)
+	manager := NewManager(testLogger{})
+	manager.configureHIDReportFormatLocked(dev)
+	buildReport := func(frame []byte) []byte {
+		t.Helper()
+		report, err := manager.hidReportFormat.build(frame, hidControlReportLen)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report
+	}
 
 	// Set non-blocking mode for reads
 	if err := dev.SetNonblock(true); err != nil {
-		t.Logf("SetNonblock warning: %v", err)
+		t.Fatal(err)
+	}
+	// Status notifications prove only USB IN works. Require an actual query
+	// reply to prove that the device also accepted the USB OUT framing.
+	if err := writeHIDReport(dev, buildReport(deviceproto.BuildFrame(0x01))); err != nil {
+		t.Fatal(err)
+	}
+	if resp := readCommandWithTimeout(t, dev, 0x01, deviceResponseTimeout); resp == nil {
+		t.Fatal("No firmware-version response to 0x01 query")
 	}
 
 	// Test 1: Build and send Query Work Mode command (0x25)
 	t.Log("=== Test 1: Query Work Mode (0x25) ===")
 	queryFrame := deviceproto.BuildFrame(0x25)
-	report := deviceproto.BuildReport(queryFrame, 25)
+	report := buildReport(queryFrame)
 
 	if _, err := dev.Write(report); err != nil {
 		t.Fatalf("Write 0x25 failed: %v", err)
@@ -56,7 +77,7 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	t.Logf("Sent 0x25 query: % X", report)
 
 	// Read response with timeout
-	resp := readWithTimeout(t, dev, 500*time.Millisecond)
+	resp := readCommandWithTimeout(t, dev, 0x25, deviceResponseTimeout)
 	if resp == nil {
 		t.Fatal("No response to 0x25 query")
 	}
@@ -72,30 +93,19 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 	t.Logf("Parsed: cmd=0x%02X len=%d payload=% X checksumOK=%v",
 		parsed.Command, parsed.Length, parsed.Payload, parsed.ChecksumOK)
 
-	// Handle EF status notification (device may respond with status instead of direct reply)
-	if parsed.Command == 0xEF {
-		t.Log("Device responded with EF status notification (async mode)")
-		if len(parsed.Payload) >= 7 {
-			currentRPM := uint16(parsed.Payload[3]) | uint16(parsed.Payload[4])<<8
-			targetRPM := uint16(parsed.Payload[5]) | uint16(parsed.Payload[6])<<8
-			t.Logf("Status: gearSettings=0x%02X workMode=0x%02X currentRPM=%d targetRPM=%d",
-				parsed.Payload[0], parsed.Payload[1], currentRPM, targetRPM)
-		}
-	}
-
 	// Test 2: Query Gear RPM Table (0x27) - with delay to let device process
 	time.Sleep(100 * time.Millisecond)
 	t.Log("=== Test 2: Query Gear RPM Table (0x27) ===")
 	queryGearFrame := deviceproto.BuildFrame(0x27)
-	report2 := deviceproto.BuildReport(queryGearFrame, 25)
+	report2 := buildReport(queryGearFrame)
 
 	if _, err := dev.Write(report2); err != nil {
 		t.Fatalf("Write 0x27 failed: %v", err)
 	}
 
-	resp2 := readWithTimeout(t, dev, 1*time.Second)
+	resp2 := readCommandWithTimeout(t, dev, 0x27, deviceResponseTimeout)
 	if resp2 == nil {
-		t.Log("No response to 0x27 query (device may use async mode)")
+		t.Error("No response to 0x27 query")
 	} else {
 		parsed2, ok := deviceproto.ParseFrame(resp2)
 		if !ok {
@@ -132,19 +142,21 @@ func TestBS2PRO_ProtocolRoundTrip(t *testing.T) {
 
 	// Test 4: RGB query (0x45) - safe read-only command
 	t.Log("=== Test 4: Query RGB Status (0x45) ===")
-	rgbFrame := deviceproto.BuildFrame(0x45, 0x00)
-	report4 := deviceproto.BuildReport(rgbFrame, 25)
+	rgbFrame := deviceproto.BuildFrame(0x45)
+	report4 := buildReport(rgbFrame)
 
 	if _, err := dev.Write(report4); err != nil {
 		t.Fatalf("Write 0x45 failed: %v", err)
 	}
 
-	resp4 := readWithTimeout(t, dev, 500*time.Millisecond)
+	resp4 := readCommandWithTimeout(t, dev, 0x45, deviceResponseTimeout)
 	if resp4 != nil {
 		parsed4, ok := deviceproto.ParseFrame(resp4)
 		if ok {
 			t.Logf("RGB status: cmd=0x%02X payload=% X", parsed4.Command, parsed4.Payload)
 		}
+	} else {
+		t.Error("No response to 0x45 query")
 	}
 
 	t.Log("=== All hardware protocol tests passed ===")
@@ -158,6 +170,9 @@ func readWithTimeout(t *testing.T, dev *hid.Device, timeout time.Duration) []byt
 	for time.Now().Before(deadline) {
 		n, err := dev.ReadWithTimeout(buf, 100*time.Millisecond)
 		if err != nil {
+			if isInterruptedHIDRead(err) {
+				continue
+			}
 			if !isTimeoutError(err) {
 				t.Logf("Read error: %v", err)
 				return nil
@@ -167,7 +182,7 @@ func readWithTimeout(t *testing.T, dev *hid.Device, timeout time.Duration) []byt
 		if n > 0 {
 			result := make([]byte, n)
 			copy(result, buf[:n])
-			return bytes.TrimRight(result, "\x00")
+			return result
 		}
 	}
 	return nil
@@ -177,5 +192,21 @@ func isTimeoutError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return err.Error() == "hid: read timed out" || err.Error() == "timeout"
+	return errors.Is(err, hid.ErrTimeout) || err.Error() == "hid: read timed out"
+}
+
+func readCommandWithTimeout(t *testing.T, dev *hid.Device, command byte, timeout time.Duration) []byte {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		raw := readWithTimeout(t, dev, time.Until(deadline))
+		if raw == nil {
+			return nil
+		}
+		frame, ok := deviceproto.ParseFrame(raw)
+		if ok && frame.ChecksumOK && frame.Command == command {
+			return raw
+		}
+	}
+	return nil
 }

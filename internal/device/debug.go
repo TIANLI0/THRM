@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	// 默认 HOGP 报告长度；Linux USB 的已知无编号描述符由 hidReportFormat 覆盖。
 	hidControlReportLen = 25
 
 	// hidLightReportLen 必须与控制命令一致。
@@ -40,9 +41,7 @@ func DebugCommandPresets() []types.DeviceDebugCommandPreset {
 
 func (m *Manager) writeHIDFrameLocked(cmd byte, payload []byte, reportLen int) error {
 	frame := deviceproto.BuildFrame(cmd, payload...)
-	report := deviceproto.BuildReport(frame, reportLen)
-	m.recordDebugFrame("tx", types.DeviceTypeHID, report)
-	_, err := m.device.Write(report)
+	_, err := m.writeHIDReportLocked(frame, reportLen)
 	return err
 }
 
@@ -163,9 +162,7 @@ func (m *Manager) SendDebugCommand(input string, waitMs int) (types.DeviceDebugC
 		m.mutex.Unlock()
 		return types.DeviceDebugCommandResult{}, fmt.Errorf("device is not connected")
 	}
-	report := deviceproto.BuildReport(frame, hidControlReportLen)
-	m.recordDebugFrame("tx", types.DeviceTypeHID, report)
-	_, err = m.device.Write(report)
+	report, err := m.writeHIDReportLocked(frame, hidControlReportLen)
 	if err == nil && debugFrameMutatesDevice(frame) {
 		// 调试命令绕过了正常的设置路径，设备状态可能已和"减少闪存擦写"用的缓存不一致
 		// （例如 06 恢复出厂挡位转速、46 00 关灯），之后的正常写入会被当成重复而跳过。
