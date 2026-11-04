@@ -1043,6 +1043,7 @@ func (m *Manager) parseFanData(data []byte, length int) *types.FanData {
 	maxGear, setGear := m.parseGearSettings(fanData.GearSettings)
 	fanData.MaxGear = maxGear
 	fanData.SetGear = setGear
+	fanData.SelectedGear = deviceproto.DecodeSelectedGear(fanData.GearSettings)
 
 	fanData.WorkMode = m.parseWorkMode(fanData.CurrentMode)
 
@@ -1289,6 +1290,12 @@ func fixedGearForWake(data *types.FanData) byte {
 	if data == nil {
 		return 1
 	}
+	// 优先用解析层归一化好的挡位：BS1 走 USB HID 时 0xEF 首字节是 ASCII 挡位码
+	// （0x30/0x32/0x34），低 4 位按位域解会得到 0x0，唤醒时会被错当成静音挡。
+	if data.SelectedGear >= 1 && data.SelectedGear <= 4 {
+		return byte(data.SelectedGear)
+	}
+	// 兼容只有原始字节的调用方（例如测试直接构造 FanData）。
 	switch data.GearSettings & 0x0f {
 	case 0x08:
 		return 1

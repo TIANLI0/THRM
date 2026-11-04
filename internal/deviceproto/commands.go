@@ -241,6 +241,25 @@ func DecodeSelectedGear(value byte) int {
 	}
 }
 
+// GearCodeName 把公开的 1..4 挡位编号换成协议里的英文挡位名。
+//
+// 与 DecodeGearSetting 的输出保持一致，供已经拿到归一化挡位的调用方使用
+// （BS1 走 USB HID 时挡位字节不是位域，不能再用 DecodeGearSetting 解）。
+func GearCodeName(gear int) string {
+	switch gear {
+	case 1:
+		return "quiet"
+	case 2:
+		return "standard"
+	case 3:
+		return "performance"
+	case 4:
+		return "extreme"
+	default:
+		return ""
+	}
+}
+
 func formatIdentifier(payload []byte) string {
 	parts := make([]string, len(payload))
 	for i, value := range payload {
