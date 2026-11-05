@@ -2,6 +2,7 @@ package device
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
@@ -46,14 +47,13 @@ type lightCommand struct {
 
 // SetLightStrip 设置灯带模式
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
-	if m.IsBS1() {
-		return fmt.Errorf("BS1 不支持灯带设置")
-	}
-
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected || m.device == nil {
+	// BS1 的连接由 bleManager 持有句柄，m.device 始终为 nil，不能用它判连接。
+	// 注意这里读 deviceType 而不是调 IsBS1()：后者会拿 m.mutex.RLock，
+	// 而本函数已持有写锁，RWMutex 不可重入，调用会直接自死锁。
+	if !m.isConnected || (m.device == nil && m.deviceType != types.DeviceTypeBLE) {
 		return fmt.Errorf("设备未连接")
 	}
 	if err := m.setLightStripLocked(cfg); err != nil {
@@ -103,14 +103,10 @@ func (m *Manager) setLightStripLocked(cfg types.LightStripConfig) error {
 
 // SetRGBOff 关闭RGB灯光
 func (m *Manager) SetRGBOff() bool {
-	if m.IsBS1() {
-		return false
-	}
-
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected || m.device == nil {
+	if !m.isConnected || (m.device == nil && m.deviceType != types.DeviceTypeBLE) {
 		return false
 	}
 
@@ -215,12 +211,55 @@ func ensureMinColors(colors []types.RGBColor, min int) []types.RGBColor {
 // sendLightCommandLocked sends one RGB write and waits for its firmware ACK.
 // BuildFrame derives LEN from payload, so callers cannot accidentally repeat
 // the old captures' invalid/redundant length variants.
-func (m *Manager) sendLightCommandLocked(command byte, payload ...byte) error {
-	frame, err := m.sendHIDCommandAndWaitLocked(command, payload, hidLightReportLen, deviceResponseTimeout)
+// lightFrameRetries 是单条灯效命令的重发次数。
+//
+// 实测（BS1，2026-11-06）：连续上传时约每两三次就会漏掉某一帧 0x47 的 ACK，
+// 单帧超时会让整次上传失败，用户看到的是"设置灯带失败: 等待命令 0x47 响应超时"。
+// 帧载荷带序号且内容幂等，重发不会污染缓冲区。
+const lightFrameRetries = 2
+
+// lightCommitTimeout 是提交命令 0x43 的专用等待时间。
+//
+// 0x43 会让固件擦写数据闪存，应答明显慢于普通命令；默认的 900ms 实测经常不够，
+// 现象是"设置灯带失败: 等待命令 0x43 响应超时"，但灯效其实已经生效——属于假失败。
+// 提交内容幂等（同一份缓冲区），重发一次不会产生副作用。
+const lightCommitTimeout = 2500 * time.Millisecond
+
+// sendLightCommandWithTimeoutLocked 按指定超时下发一条灯效命令。
+func (m *Manager) sendLightCommandWithTimeoutLocked(timeout time.Duration, command byte, payload ...byte) error {
+	// BS1 的 HID 句柄由 bleManager 的传输层持有，命令必须走那条通道。
+	// 直接读 deviceType 而不是调 IsBS1()：调用方已持有 m.mutex 写锁。
+	if m.deviceType == types.DeviceTypeBLE {
+		frame, err := m.bleManager.sendBLECommandAndWait(command, payload, timeout)
+		if err != nil {
+			return err
+		}
+		return validateACK(frame, 1)
+	}
+	frame, err := m.sendHIDCommandAndWaitLocked(command, payload, hidLightReportLen, timeout)
 	if err != nil {
 		return err
 	}
 	return validateACK(frame, 1)
+}
+
+// sendLightCommandRetryLocked 下发一条灯效命令，失败时按指定超时重发。
+func (m *Manager) sendLightCommandRetryLocked(retries int, timeout time.Duration, command byte, payload ...byte) error {
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		err = m.sendLightCommandWithTimeoutLocked(timeout, command, payload...)
+		if err == nil {
+			return nil
+		}
+		if attempt < retries {
+			m.logDebug("灯效命令 0x%02X 第 %d 次下发失败，重发: %v", command, attempt+1, err)
+		}
+	}
+	return err
+}
+
+func (m *Manager) sendLightCommandLocked(command byte, payload ...byte) error {
+	return m.sendLightCommandWithTimeoutLocked(deviceResponseTimeout, command, payload...)
 }
 
 func newLightProgram(lastKeyframe, speed, brightness byte) lightProgram {
@@ -260,7 +299,8 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 
 	for i := range program {
 		framePayload := append([]byte{byte(i)}, program[i][:]...)
-		if err := m.sendLightCommandLocked(deviceproto.CmdRGBFrameWrite, framePayload...); err != nil {
+		if err := m.sendLightCommandRetryLocked(lightFrameRetries, deviceResponseTimeout,
+			deviceproto.CmdRGBFrameWrite, framePayload...); err != nil {
 			return err
 		}
 	}
@@ -273,7 +313,7 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 	// 它的落盘发生在 ACK 之后（TMOS 事件 0x20），所以既要与前一条落盘命令拉开，
 	// 也要记时，好让紧随其后的 0x0C/0x48 不会撞进这次异步擦写。
 	m.awaitFlashWriteWindowLocked()
-	err := m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 0x01)
+	err := m.sendLightCommandRetryLocked(1, lightCommitTimeout, deviceproto.CmdRGBCommit, 0x01)
 	m.noteFlashWriteLocked()
 	return err
 }
