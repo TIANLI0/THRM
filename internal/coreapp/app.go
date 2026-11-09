@@ -89,10 +89,10 @@ type CoreApp struct {
 	hasSuspendInputTick atomic.Bool
 	// quietHoldMutex 串行化自动唤醒期间的"连上设备把风扇压到 0"，HID 到达通知与
 	// 等待协程可能同时触发。
-	quietHoldMutex sync.Mutex
-	connectGeneration       atomic.Uint64
-	stopping                atomic.Bool
-	lastResumeRecoveryUnix  int64
+	quietHoldMutex         sync.Mutex
+	connectGeneration      atomic.Uint64
+	stopping               atomic.Bool
+	lastResumeRecoveryUnix int64
 
 	powerNotifyStop      func()
 	hidArrivalNotifyStop func()
