@@ -70,7 +70,7 @@ func TestRegister_SignalDelivery(t *testing.T) {
 
 	stop, err := RegisterSuspendResumeNotifications(
 		func() { mu.Lock(); suspendCalled = true; mu.Unlock() },
-		func() { mu.Lock(); suspendCalled = true; mu.Unlock() },
+		func(bool) { mu.Lock(); suspendCalled = true; mu.Unlock() },
 	)
 	if err != nil {
 		t.Skipf("D-Bus system bus unavailable: %v", err)
