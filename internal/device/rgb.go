@@ -101,6 +101,22 @@ func (m *Manager) setLightStripLocked(cfg types.LightStripConfig) error {
 	}
 }
 
+// SetRGBOn 打开灯光输出，沿用设备里已经存好的灯效程序。
+//
+// 与 SetRGBOff 对称：只切 0x46 的开关，不上传程序、不重写那 19 帧。
+// 关机时关掉输出、开机时再打开，用户看到的灯效因此能跨关机保留，
+// 而代价只有一条命令（不额外消耗闪存擦写）。
+func (m *Manager) SetRGBOn() bool {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if !m.isConnected || (m.device == nil && m.deviceType != types.DeviceTypeBLE) {
+		return false
+	}
+
+	return m.setRGBEnableLocked(true) == nil
+}
+
 // SetRGBOff 关闭RGB灯光
 func (m *Manager) SetRGBOff() bool {
 	m.mutex.Lock()

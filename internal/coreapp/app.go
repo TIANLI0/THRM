@@ -89,9 +89,12 @@ type CoreApp struct {
 	hasSuspendInputTick atomic.Bool
 	// quietHoldMutex 串行化自动唤醒期间的"连上设备把风扇压到 0"，HID 到达通知与
 	// 等待协程可能同时触发。
-	quietHoldMutex         sync.Mutex
-	connectGeneration      atomic.Uint64
-	stopping               atomic.Bool
+	quietHoldMutex    sync.Mutex
+	connectGeneration atomic.Uint64
+	stopping          atomic.Bool
+	// shutdownInProgress 在系统广播"即将关机"后置位，用来拦住控温循环：
+	// 关机前已经下发目标 0，若循环随后又把曲线目标写回去，风扇就会一直转。
+	shutdownInProgress     atomic.Bool
 	lastResumeRecoveryUnix int64
 
 	powerNotifyStop      func()

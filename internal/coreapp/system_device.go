@@ -606,6 +606,90 @@ func (a *CoreApp) powerOffDeviceOutputsForSuspend() {
 	}
 }
 
+// handleSystemShutdown 在系统关机/注销前把散热器转速降到 0。
+//
+// 依据（2026-11-05 实测）：设备不会因为"主机不再发命令"而停转——关掉 THRM 后
+// 连续监控 48 秒，目标值仍是 2760，风扇照转。所以关机必须主动下发一次 0，
+// 否则它会一直转到拔电为止。
+//
+// 时序上也留有余量：实测从 2200 转到完全停转约 20 秒，而这段时间里固件会自己
+// 走完降速（降速过程不依赖主机继续发命令），所以只要在断电前把目标发出去即可。
+// 尽力而为，任何失败都不阻塞关机。
+func (a *CoreApp) handleSystemShutdown() {
+	if a.stopping.Load() {
+		return
+	}
+	if !a.deviceManager.IsConnected() {
+		a.logInfo("系统即将关机：设备未连接，跳过停转")
+		return
+	}
+
+	// 先置位再写：控温循环每几秒会按曲线重算目标，若不在写之前拦住它，
+	// 刚下发的 0 会在关机完成前被覆盖回正常转速。
+	if a.shutdownInProgress.Swap(true) {
+		return // 已经处理过（WM_QUERYENDSESSION 与 WM_ENDSESSION 都会走到这里）
+	}
+
+	a.logInfo("系统即将关机：下发目标 0 转速，让散热器停转")
+	// 这里直接取锁而不是 lockDeviceControlIfReady：后者会因为刚置位的
+	// shutdownInProgress 而拒绝，那条门禁是留给自动控制的。
+	a.deviceControlMutex.Lock()
+	ok := a.deviceManager.SetCustomFanSpeed(0)
+	a.deviceControlMutex.Unlock()
+
+	if ok {
+		a.logInfo("系统即将关机：已下发 0 转速，等待固件自行降速")
+	} else {
+		a.logError("系统即将关机：下发 0 转速失败")
+	}
+
+	// 关灯：只切 0x46 的输出开关，不动设备 flash 里已存的灯效程序。
+	// 开机时重新打开输出即可恢复原来的效果，不需要重传那 19 帧。
+	// 用户本来就把灯设成"关闭"时跳过——那会白写一次闪存。
+	if a.configManager.Get().LightStrip.Mode != "off" {
+		if a.deviceManager.SetRGBOff() {
+			a.logInfo("系统即将关机：已关闭灯光输出")
+		} else {
+			a.logError("系统即将关机：关闭灯光输出失败")
+		}
+	}
+
+	// BS2/BS3 的挡位灯是独立于灯带的另一套灯（0x48），SetRGBOff 关不掉它。
+	// BS1 没有这套灯——SetGearLight 对 BS1 直接返回 false，它的 6 颗灯由上面的
+	// RGB 程序驱动，SetRGBOff 已经一起关掉。
+	// 开机时 replayDeviceConfigLocked 会按配置重新应用挡位灯，不会丢。
+	if !a.deviceManager.IsBS1() {
+		if a.deviceManager.SetGearLight(false) {
+			a.logInfo("系统即将关机：已关闭挡位灯")
+		} else {
+			a.logError("系统即将关机：关闭挡位灯失败")
+		}
+	}
+}
+
+// handleShutdownCancelled 在系统取消关机时恢复自动控制。
+func (a *CoreApp) handleShutdownCancelled() {
+	if !a.shutdownInProgress.Swap(false) {
+		return
+	}
+	a.logInfo("系统取消了关机：恢复自动控制")
+
+	// 灯光输出在关机流程里已经被关掉了，这里必须补一次打开，
+	// 否则用户取消关机后会看到灯一直黑着——控温循环能自动恢复转速，
+	// 但没有别的路径会把 0x46 重新打开。
+	if !a.deviceManager.IsConnected() {
+		return
+	}
+	if a.configManager.Get().LightStrip.Mode == "off" {
+		return
+	}
+	if a.deviceManager.SetRGBOn() {
+		a.logInfo("系统取消了关机：已恢复灯光输出")
+	} else {
+		a.logError("系统取消了关机：恢复灯光输出失败")
+	}
+}
+
 // onSystemResume 收到系统唤醒通知时调用，触发设备与监控的恢复。
 //
 // userPresent=false 对应 PBT_APMRESUMEAUTOMATIC：计划任务、Windows 更新、网络唤醒
@@ -940,8 +1024,26 @@ func (a *CoreApp) connectDeviceOnce(generation uint64, manual bool) bool {
 		}
 		a.mutex.Unlock()
 		a.deviceControlMutex.Unlock()
+
+		// 只记当前转速：0xEF 里的"目标转速"是会话级回显，新会话恒为 0，
+		// 拿它判断"上次关机停没停"会得出错误结论。转速是物理量，可信。
+		if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil {
+			a.logInfo("连接时设备转速：%d RPM", fanData.CurrentRPM)
+		}
+
 		if !a.isConnectionAttemptCurrent(generation) {
 			return false
+		}
+
+		// BS1 的灯光输出在关机时被关掉了，这里只重新打开输出开关，
+		// 沿用设备 flash 里已经存好的灯效程序——不重传那 19 帧，也就不会多写一次闪存。
+		// BS2/BS3 由下面的 applyConfiguredLightStrip 完整重放，不需要这一步。
+		if a.deviceManager.IsBS1() && a.configManager.Get().LightStrip.Mode != "off" {
+			if a.deviceManager.SetRGBOn() {
+				a.logInfo("已恢复灯光输出")
+			} else {
+				a.logError("恢复灯光输出失败")
+			}
 		}
 
 		a.persistLastDeviceTransport(a.deviceManager.GetDeviceType())
@@ -1318,7 +1420,7 @@ func (a *CoreApp) isDeviceControlReady() bool {
 		a.systemSuspended.Load(),
 		coreConnected,
 		a.deviceManager.IsConnected(),
-	)
+	) && !a.shutdownInProgress.Load()
 }
 
 // lockDeviceControlIfReady serializes all automatic/recovery writes with the
