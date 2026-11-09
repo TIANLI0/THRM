@@ -151,7 +151,7 @@ export class AppConfig {
         }
         if (!("uiLanguage" in $$source)) {
             /**
-             * 界面语言(zh-CN/en-US/ja-JP)，供托盘与系统通知使用；空表示按系统语言推断。仅由 SetUILanguage 维护
+             * 界面语言(zh-CN/en-US/ja-JP/ko-KR)，供托盘与系统通知使用；空表示按系统语言推断。仅由 SetUILanguage 维护
              * @member
              * @type {string}
              */

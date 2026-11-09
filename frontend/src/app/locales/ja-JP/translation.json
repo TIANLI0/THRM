@@ -61,7 +61,8 @@
     "languages": {
       "zh-CN": "簡体字中国語",
       "en-US": "英語",
-      "ja-JP": "日本語"
+      "ja-JP": "日本語",
+      "ko-KR": "韓国語"
     },
     "actions": {
       "apply": "適用",

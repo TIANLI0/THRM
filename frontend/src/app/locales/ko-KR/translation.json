@@ -1,0 +1,1184 @@
+{
+  "firmwareUpdate": {
+    "rowTitle": "펌웨어 업데이트",
+    "rowDescription": "공식 또는 사용자 지정 펌웨어 플래싱(다운로드 모드 필요)",
+    "rowAction": "열기",
+    "title": "펌웨어 업데이트",
+    "subtitle": "최신 공식 펌웨어 또는 사용자 지정 펌웨어를 플래싱합니다",
+    "unsupported": "펌웨어 플래싱은 현재 Windows에서만 지원됩니다.",
+    "unknownDevice": "알 수 없는 장치",
+    "ispReady": "다운로드 모드 진입됨",
+    "ispWaiting": "다운로드 모드 대기 중",
+    "driverOk": "드라이버 준비됨",
+    "driverMissing": "드라이버 설치 필요",
+    "enterDownloadMode": "장치를 다운로드 모드로 전환하세요: 장치의 버튼을 누른 상태에서 USB를 컴퓨터에 연결합니다.",
+    "installDriver": "드라이버 설치",
+    "uninstallDriver": "드라이버 제거",
+    "driverInstalled": "드라이버가 설치되었습니다",
+    "driverUninstalled": "드라이버가 제거되었습니다",
+    "checkOfficial": "공식 업데이트 확인",
+    "pickLocal": "로컬 파일 선택",
+    "official": "공식",
+    "custom": "THRM 사용자 지정",
+    "currentFirmware": "현재 펌웨어",
+    "noFirmware": "사용 가능한 펌웨어 없음",
+    "flashNow": "플래싱",
+    "flashing": "플래싱 중…",
+    "writing": "쓰기",
+    "verifying": "검증",
+    "flashSuccess": "플래싱 완료, 장치가 재설정되었습니다",
+    "flashFailed": "플래싱 실패",
+    "footer": "드라이버는 시스템 기본 WinUSB를 사용하며(관리자 승인 1회만 필요), 여기 또는 장치 관리자에서 언제든 제거할 수 있습니다. 플래싱에 실패하면 다운로드 모드로 다시 진입해 재시도하세요. 벽돌이 될 가능성은 거의 없습니다."
+  },
+  "connectionRecovery": {
+    "title": "연결 도우미",
+    "temperatureTitle": "온도 모니터링 복구 필요",
+    "steps": {
+      "connection": "장치에 전원이 공급되는지 확인하세요. BS1은 THRM이 자동으로 연결하며, BS2/BS3 시리즈는 먼저 시스템 설정에서 블루투스로 직접 연결해야 합니다.",
+      "release": "센서나 장치 연결을 점유하고 있을 수 있는 다른 하드웨어 도구를 종료하세요.",
+      "diagnostics": "다시 시도해도 실패하면 진단 패키지를 내보내 피드백과 함께 제출해 주세요."
+    },
+    "actions": {
+      "retry": "다시 연결",
+      "temperatureTest": "온도 점검",
+      "exportDiagnostics": "진단 패키지 내보내기"
+    },
+    "toasts": {
+      "retryStarted": "장치 연결을 다시 시작했습니다",
+      "recoveryFailed": "복구 실패",
+      "temperatureRecovered": "온도 소스 복구됨: {{temperature}}°C",
+      "temperatureUnavailable": "아직 유효한 온도를 얻지 못했습니다",
+      "temperatureUnavailableDescription": "다른 하드웨어 모니터링 도구를 종료한 후 다시 시도하세요. 앱은 안전한 회전 속도를 유지합니다.",
+      "temperatureTestFailed": "온도 점검 실패",
+      "diagnosticsExported": "진단 패키지를 내보냈습니다",
+      "diagnosticsExportFailed": "진단 패키지 내보내기 실패"
+    }
+  },
+  "common": {
+    "appName": "THRM",
+    "metaDescription": "Flydigi 노트북 쿨러 시리즈를 위한 서드파티 드라이버 및 제어 도구",
+    "language": "언어",
+    "languages": {
+      "zh-CN": "중국어(간체)",
+      "en-US": "영어",
+      "ja-JP": "일본어",
+      "ko-KR": "한국어"
+    },
+    "actions": {
+      "apply": "적용",
+      "back": "뒤로",
+      "cancel": "취소",
+      "close": "닫기",
+      "confirm": "확인",
+      "copy": "복사",
+      "delete": "삭제",
+      "done": "완료",
+      "export": "내보내기",
+      "import": "가져오기",
+      "refresh": "새로 고침",
+      "retry": "다시 시도",
+      "save": "저장"
+    }
+  },
+  "ui": {
+    "select": {
+      "placeholder": "선택하세요"
+    },
+    "toggle": {
+      "defaultAriaLabel": "전환"
+    }
+  },
+  "fatalError": {
+    "title": "앱 초기화 실패",
+    "retry": "다시 시도"
+  },
+  "appShell": {
+    "tabs": {
+      "status": "상태",
+      "curve": "곡선",
+      "control": "설정",
+      "about": "정보"
+    },
+    "status": {
+      "connected": "연결됨",
+      "offline": "오프라인",
+      "smartControl": "스마트 제어",
+      "manualMode": "수동 모드"
+    },
+    "titleBar": {
+      "minimize": "최소화",
+      "maximize": "최대화",
+      "restore": "이전 크기로",
+      "close": "닫기"
+    },
+    "repository": {
+      "openAria": "{{name}} GitHub 저장소 열기",
+      "openTooltip": "GitHub 저장소 열기"
+    },
+    "sidebar": {
+      "expand": "사이드바 펼치기",
+      "collapse": "사이드바 접기"
+    },
+    "bridgeWarning": {
+      "closeAria": "경고 닫기"
+    }
+  },
+  "store": {
+    "bridgeWarning": {
+      "default": "CPU/GPU 온도를 읽지 못했습니다. CPU 온도는 PawnIO 드라이버를 통해 읽습니다. \"PawnIO 재설치\"를 클릭한 후 THRM을 다시 시작하세요. 그래도 안 되면 다른 하드웨어 모니터링 도구를 종료한 후 다시 시도하세요."
+    },
+    "coreService": {
+      "unavailable": "코어 서비스를 사용할 수 없습니다. THRM Core.exe가 보안 소프트웨어에 의해 격리되었는지 확인하거나, Core를 복원/재설치한 후 다시 시도하세요.",
+      "unavailableWithDetail": "코어 서비스를 사용할 수 없습니다: {{detail}}"
+    },
+    "errors": {
+      "initializeApp": "앱 초기화 실패",
+      "connectDevice": "장치 연결 실패",
+      "saveConfig": "설정 저장 실패"
+    },
+    "hotkey": {
+      "successTitle": "기능 변경됨",
+      "failureTitle": "작업 실패"
+    },
+    "legionFnQ": {
+      "modeChangedTitle": "Legion 성능 모드 변경",
+      "modeDescription": "현재 모드: {{mode}}"
+    },
+    "legionModes": {
+      "Quiet": "저소음 모드",
+      "Balance": "균형 모드",
+      "Performance": "성능 모드",
+      "Extreme": "익스트림 모드",
+      "GodMode": "사용자 지정 모드"
+    }
+  },
+  "deviceStatus": {
+    "tempStatus": {
+      "overheat": "과열",
+      "high": "높음",
+      "normal": "정상",
+      "good": "양호"
+    },
+    "tempGauge": {
+      "loading": "읽는 중…"
+    },
+    "gpuAbsent": {
+      "hint": "GPU 온도를 찾을 수 없음",
+      "action": "GPU 모니터링 끄기",
+      "actionTooltip": "온도 센서가 있는 그래픽 카드를 찾지 못했습니다. 외장 GPU가 없거나 내장 GPU가 온도를 제공하지 않는 PC에서는 GPU 모니터링을 끌 수 있습니다. 이 경우 온도 제어는 CPU 온도만 사용하며, 홈 화면에서도 이 카드가 표시되지 않습니다.",
+      "disabledHint": "홈 화면에서 GPU 카드를 숨겼습니다. 다시 표시하려면 \"설정 → 팬 제어 → GPU 기준\"에서 \"모니터링\"을 다시 켜세요."
+    },
+    "fan": {
+      "targetSummary": "목표 {{target}} · {{gear}}"
+    },
+    "chart": {
+      "fanCurve": "팬 속도 곡선",
+      "openCurve": "곡선 페이지"
+    },
+    "history": {
+      "title": "온도 및 팬 기록",
+      "details": "자세히",
+      "waiting": "온도 데이터 대기 중",
+      "disabled": "백그라운드 기록이 꺼져 있습니다. 이번 실행 중의 임시 기록만 표시합니다.",
+      "singleSampleCore": "백그라운드 샘플 1개가 기록되었습니다. 더 많은 데이터를 기다리는 중입니다.",
+      "singleSampleSession": "세션 샘플 1개가 기록되었습니다. 더 많은 데이터를 기다리는 중입니다.",
+      "source": {
+        "core": "백그라운드",
+        "session": "이번 실행"
+      }
+    },
+    "device": {
+      "unknown": "알 수 없는 장치",
+      "imageAlt": "{{model}} 장치 이미지"
+    },
+    "connectStatus": {
+      "connected": "연결됨",
+      "offline": "오프라인"
+    },
+    "mode": {
+      "smartControl": "스마트 제어",
+      "fixedSpeed": "고정 속도",
+      "manualStrategy": "수동 전략",
+      "smartDescription": "실시간 온도에 따라 회전 속도를 자동 조절합니다",
+      "fixedDescription": "현재 {{rpm}} RPM으로 고정됨",
+      "manualDescription": "설정 페이지에서 모드와 매개변수를 조정할 수 있습니다",
+      "withProfile": "{{mode}} ({{profile}})"
+    },
+    "bridgeState": {
+      "runningOwned": "단독 실행 중",
+      "attached": "공유 인스턴스에 연결됨",
+      "starting": "시작 중",
+      "degraded": "성능 저하",
+      "failed": "실패",
+      "stopping": "중지 중",
+      "stopped": "중지됨",
+      "notStarted": "시작되지 않음"
+    },
+    "maxRpmHint": {
+      "bs1": "BS1은 오버클럭 단계에서 최대 3000 RPM까지 도달할 수 있습니다.",
+      "max5000": "현재 사용자 지정 회전 속도 상한은 최대 5000 RPM입니다.",
+      "max4000": "오버클럭 상한이 잠금 해제되어 최대 4000 RPM까지 도달할 수 있습니다.",
+      "max3300": "현재 최고 단계는 강력 단계(최대 3300 RPM)입니다. PD 27W 충전기를 사용하면 상한이 잠금 해제됩니다.",
+      "max2760": "현재 최고 단계는 표준 단계(최대 2760 RPM)입니다. PD 27W 충전기를 사용하면 상한이 잠금 해제됩니다.",
+      "unknownCode": "장치가 매핑되지 않은 최고 단계 코드를 보고했습니다: {{code}}",
+      "waiting": "장치가 최대 회전 속도 정보를 보고하기를 기다리는 중입니다."
+    },
+    "hero": {
+      "modeLine": "{{mode}} · {{description}}",
+      "waitingBluetooth": "블루투스 연결 대기 중…",
+      "coreUnavailable": "코어 서비스를 사용할 수 없습니다. 먼저 백그라운드 서비스를 복구하세요."
+    },
+    "actions": {
+      "smartControl": "스마트 제어",
+      "disconnect": "연결 해제",
+      "connect": "연결",
+      "connectDevice": "장치 연결"
+    },
+    "metrics": {
+      "cpuTemperature": "CPU 온도",
+      "gpuTemperature": "GPU 온도",
+      "fanRpm": "팬 속도",
+      "laptopFan": "노트북 팬 속도",
+      "laptopFanTooltip": "노트북 내장 팬의 회전 속도입니다"
+    },
+    "disconnected": {
+      "title": "장치가 연결되지 않음",
+      "description": "블루투스로 쿨러를 컴퓨터에 연결하세요"
+    },
+    "bridgeWarning": {
+      "default": "온도 브리지가 데이터를 읽지 못했습니다. 온도 모니터링을 다시 초기화한 후 다시 시도하세요.",
+      "stateLine": "브리지 상태: {{state}}",
+      "ownsProcess": "현재 인스턴스가 프로세스를 소유함",
+      "sharedProcess": "현재 인스턴스가 공유 프로세스를 재사용 중",
+      "transportLine": "통신 방식: {{transport}}",
+      "pipeLine": "명명된 파이프: {{pipe}}",
+      "diagnosticsLine": "진단 정보: {{message}}",
+      "reinitialize": "온도 모니터링 다시 초기화",
+      "reinstallPawnIo": "PawnIO 재설치",
+      "reinstallPawnIoRunning": "PawnIO 재설치 중…"
+    },
+    "controlProtection": "제어 및 보호",
+    "stats": {
+      "controlMode": "제어 모드",
+      "maxRpm": "최대 회전 속도",
+      "maxRpmHintAria": "최대 회전 속도 안내",
+      "workMode": "작동 모드",
+      "tempStatus": "온도 상태",
+      "cpuPower": "CPU 전력",
+      "gpuPower": "GPU 전력"
+    },
+    "layout": {
+      "moveEarlier": "앞으로 이동",
+      "moveLater": "뒤로 이동",
+      "moveFirst": "맨 앞으로 이동",
+      "moveLast": "맨 뒤로 이동",
+      "reset": "기본 순서로 복원",
+      "cards": {
+        "hero": "장치 개요",
+        "cpu": "CPU 온도",
+        "gpu": "GPU 온도",
+        "fan": "팬 속도",
+        "runtime": "실행 정보",
+        "curve": "온도 제어 곡선",
+        "history": "온도 기록"
+      },
+      "startSorting": "드래그하여 정렬",
+      "stopSorting": "정렬 완료",
+      "sortingHint": "카드를 드래그해 위치를 조정하고, Esc를 눌러 완료하세요"
+    }
+  },
+  "manualGear": {
+    "gears": {
+      "quiet": "저소음",
+      "standard": "표준",
+      "strong": "강력",
+      "overclock": "오버클럭"
+    },
+    "levels": {
+      "low": "낮음",
+      "medium": "중간",
+      "high": "높음"
+    }
+  },
+  "fanCurveProfileSelect": {
+    "placeholder": "곡선 프로필 선택",
+    "empty": "곡선 프로필 없음",
+    "addNewAria": "곡선 프로필 추가",
+    "addNewTooltip": "곡선 프로필 추가",
+    "manageAria": "곡선 프로필 관리",
+    "manageTooltip": "곡선 프로필 관리"
+  },
+  "aboutPanel": {
+    "title": "{{name}} 정보",
+    "description": "{{name}}은(는) Flydigi 노트북 쿨러 시리즈를 위한 서드파티 드라이버 및 제어 도구입니다.",
+    "images": {
+      "wordmarkAlt": "{{name}} 워드마크",
+      "avatarAlt": "Tianli 아바타",
+      "supportQrAlt": "{{label}} QR 코드"
+    },
+    "specs": {
+      "license": "오픈 소스 라이선스",
+      "platform": "지원 운영 체제",
+      "models": "지원 장치 시리즈"
+    },
+    "version": {
+      "current": "현재 {{version}}",
+      "latest": "최신 {{version}}",
+      "deviceFirmware": "현재 장치 펌웨어",
+      "firmwareReading": "읽는 중…",
+      "firmwareReadFailed": "펌웨어 버전을 읽지 못했습니다",
+      "firmwareRetry": "다시 읽기",
+      "firmwareUnsupported": "이 장치는 펌웨어 버전 읽기를 지원하지 않습니다",
+      "firmwareDisconnected": "장치가 연결되지 않음",
+      "copyFirmwareTooltip": "클릭하여 펌웨어 버전 복사",
+      "deviceIdentifier": "장치 ID: {{id}}",
+      "deviceIdentifierLabel": "장치 ID",
+      "deviceCpu": "장치 MCU: {{model}}",
+      "deviceCpuUnknown": "펌웨어에서 식별되지 않음",
+      "hidRelease": "HID 버전 필드: {{value}}",
+      "noDevice": "연결되지 않음",
+      "copyTooltip": "클릭하여 버전 복사",
+      "copied": "복사됨: {{version}}",
+      "copyFailed": "복사 실패",
+      "checkingShort": "확인 중…",
+      "checkingButton": "확인 중",
+      "checkUpdate": "업데이트 확인",
+      "checkUpdateSubtitle": "최신 버전 정보 가져오기",
+      "channelStable": "정식 버전",
+      "channelPrerelease": "사전 릴리스",
+      "prereleaseBadge": "Pre-release",
+      "noPrereleaseFound": "현재 사용 가능한 사전 릴리스 버전이 없습니다.",
+      "openReleasePage": "릴리스 페이지 열기",
+      "updatable": "업데이트 가능",
+      "checkFailed": "업데이트 확인에 실패했습니다. 잠시 후 다시 시도하세요.",
+      "newVersionFound": "새 버전 발견: {{version}}",
+      "emptyReleaseNotes": "릴리스 노트가 없거나 이번에 가져오지 못했습니다.",
+      "downloadAndInstall": "다운로드 및 설치",
+      "downloading": "다운로드 중 {{percent}}%",
+      "installing": "설치 중…",
+      "installStarted": "곧 다시 시작됩니다",
+      "autoInstallHint": "다운로드 후 완전 자동으로 백그라운드 설치하며, 완료되면 자동으로 다시 시작합니다(UAC 승인 1회만 필요, 수동 설치 확인 불필요).",
+      "installingHint": "설치 중입니다. 완료되면 새 버전이 자동으로 다시 시작됩니다…",
+      "installFailed": "업데이트 다운로드 또는 설치 실패: {{error}}",
+      "noInstallerHint": "이번 릴리스에는 자동 설치 가능한 설치 패키지가 없습니다. 릴리스 페이지에서 직접 다운로드하세요.",
+      "floatDownloadingTitle": "업데이트 다운로드 중",
+      "floatInstallingTitle": "업데이트 설치 중",
+      "floatDoneTitle": "곧 설치를 시작합니다",
+      "floatErrorTitle": "업데이트 실패",
+      "floatRetry": "다시 시도",
+      "floatDoneHint": "이 프로그램이 곧 종료되고 자동으로 설치됩니다. 업데이트 창에 진행 상황이 표시되며, 완료되면 새 버전이 자동으로 다시 시작됩니다.",
+      "updaterWindowTitle": "THRM 업데이트 중",
+      "updaterWindowBody": "새 버전을 자동으로 설치하는 중입니다. 이 창을 닫지 마세요",
+      "updaterWindowRestarting": "업데이트 완료, 앱을 다시 시작하는 중",
+      "changelogTitle": "업데이트 내역",
+      "changelogTitleWithVersion": "업데이트 내역 · {{version}}",
+      "viewChangelog": "업데이트 내역 보기",
+      "viewChangelogWithVersion": "{{version}} 업데이트 내역 보기"
+    },
+    "contact": {
+      "title": "개발자 및 연락처",
+      "tagline": "무명의 개발자",
+      "email": "이메일",
+      "feedbackGroup": "피드백 그룹",
+      "feedbackGroupEntry": "QQ 그룹 링크",
+      "website": "공식 웹사이트",
+      "repository": "오픈 소스 저장소",
+      "repositoryPlatform": "GitHub"
+    },
+    "faq": {
+      "title": "자주 묻는 질문",
+      "items": [
+        {
+          "question": "CPU 온도가 0℃로 표시되는 이유는 무엇인가요?",
+          "answer": "CPU 온도가 0℃로 표시되면 일반적으로 PawnIO 통신이 정상적으로 이루어지지 않았음을 의미합니다. PawnIO 관련 구성 요소를 다시 설치하고, 설치가 끝나면 컴퓨터를 다시 시작한 후 THRM을 다시 실행하여 확인하세요."
+        },
+        {
+          "question": "현재 어떤 장치를 지원하나요?",
+          "answer": "현재 지원되는 모델은 Flydigi BS1, BS2, BS2PRO, BS3, BS3PRO입니다."
+        },
+        {
+          "question": "블루투스에서 장치를 찾을 수 없으면 어떻게 해야 하나요?",
+          "answer": "블루투스 검색 목록에 장치가 나타나지 않으면 쿨러 버튼을 길게 눌러 블루투스 광고 상태를 재설정해 보세요. 그래도 복구되지 않으면 공식 고객 지원에 문의하여 추가 도움을 받으세요."
+        }
+      ]
+    },
+    "sponsor": {
+      "button": "후원",
+      "title": "프로젝트 후원",
+      "pinned": "고정됨",
+      "methods": {
+        "alipay": "Alipay",
+        "wechat": "WeChat"
+      }
+    },
+    "credits": {
+      "title": "감사의 말",
+      "description": "코드를 기여해 주신 모든 개발자와 이 프로젝트를 후원해 주신 분들께 감사드립니다.",
+      "loading": "감사 목록을 불러오는 중…",
+      "error": "감사 목록을 불러오지 못했습니다. 잠시 후 다시 시도하세요.",
+      "contributorsTitle": "코드 기여자",
+      "contributorsEmpty": "아직 기여자 기록이 없습니다.",
+      "sponsorsTitle": "후원자",
+      "sponsorsEmpty": "아직 후원자 기록이 없습니다.",
+      "authorBadge": "제작자",
+      "anonymous": "익명",
+      "thanks": "모든 후원에 감사드립니다. 여러분 덕분에 THRM이 더 좋아집니다 ❤"
+    },
+    "openSource": {
+      "title": "오픈 소스 고지",
+      "description": "THRM은 MIT 라이선스로 공개된 오픈 소스입니다. 이 소프트웨어의 배포판에는 아래의 오픈 소스 구성 요소가 포함되어 있으며, 각 구성 요소는 고유한 라이선스 조건에 따라 배포됩니다. 전체 라이선스 전문과 저작권 고지는 해당 프로젝트 저장소에서 확인할 수 있습니다.",
+      "appLicense": "THRM 자체는 MIT 라이선스로 제공됩니다",
+      "count": "총 {{total}}개 구성 요소",
+      "viewSource": "이 프로젝트의 소스 보기",
+      "mplNotice": "LibreHardwareMonitorLib는 MPL-2.0 라이선스로 제공되며, 이 소프트웨어는 이를 수정하지 않은 바이너리 형태로 사용합니다. 소스 코드는 위 저장소에서 받을 수 있습니다.",
+      "groups": {
+        "framework": "애플리케이션 프레임워크 및 런타임",
+        "frontend": "UI 및 프런트엔드 라이브러리",
+        "device": "장치 및 시스템 통합",
+        "backend": "백엔드 기본 라이브러리",
+        "fonts": "글꼴"
+      }
+    }
+  },
+  "fanCurve": {
+    "title": "팬 곡선",
+    "badges": {
+      "unsaved": "저장 안 됨",
+      "editing": "편집 중"
+    },
+    "actions": {
+      "smartControl": "스마트 제어",
+      "reset": "초기화"
+    },
+    "chart": {
+      "currentTemperature": "현재 {{temperature}}°C",
+      "tooltipDescriptionAria": "{{label}} 설명",
+      "axes": {
+        "temperature": "온도 (°C)",
+        "rpm": "회전 속도 (RPM)"
+      },
+      "series": {
+        "base": "기본 곡선",
+        "learned": "학습 곡선"
+      },
+      "temperatureLabel": "온도: {{temperature}}°C"
+    },
+    "manualGear": {
+      "title": "수동 단계",
+      "bs1SliderHint": "4개 제어점 슬라이더",
+      "defaultSliderHint": "12개 제어점 슬라이더",
+      "pointTooltip": "{{gear}} {{level}} · {{rpm}} RPM",
+      "pointIndex": "{{index}}단계",
+      "customize": "사용자 지정 속도",
+      "editTitle": "단계별 회전 속도 사용자 지정",
+      "editHint": "12개 단계는 낮은 단계에서 높은 단계로 갈수록 증가해야 하며, 최대 {{max}} RPM입니다",
+      "restoreDefault": "기본값 복원",
+      "rpmSaved": "단계별 회전 속도가 저장되었습니다",
+      "rpmSaveFailed": "단계별 회전 속도 저장 실패: {{error}}"
+    },
+    "learning": {
+      "title": "적응형 학습",
+      "paused": "일시 중지됨",
+      "description": "장시간 실행하면 각 온도 지점의 목표 회전 속도를 자동으로 미세 조정하여 실제 온도가 곡선 설정값에 더 가까워지도록 합니다. 학습된 오프셋은 언제든지 한 번에 초기화할 수 있습니다.",
+      "toggleAria": "적응형 학습 전환",
+      "biasTitle": "학습 성향",
+      "targetTitle": "목표 온도",
+      "targetDescription": "학습 모드는 정상 상태 온도를 이 상한 근처로 수렴시키려고 합니다. 낮추면 냉각 우선, 높이면 정숙 우선입니다.",
+      "offsetTitle": "학습 오프셋",
+      "offsetDescription": "현재 학습 곡선이 기본 곡선에 비해 주로 보정한 RPM 지점입니다.",
+      "reset": "학습 초기화",
+      "noOffsets": "학습 오프셋 없음",
+      "noiseTestTitle": "실측 소음 보정",
+      "noiseTestDescription": "마이크로 각 회전 속도의 실제 소음을 측정합니다. 학습 모드는 \"속도를 낮출 때 소음이 가장 많이 줄어드는\" 구간을 우선하여 정숙 최적화를 수행합니다.",
+      "noiseTestButton": "소음 테스트",
+      "noiseTestCalibrated": "{{date}} 보정됨",
+      "biasOptions": {
+        "balanced": {
+          "label": "균형",
+          "description": "학습 곡선이 기본 곡선의 위아래로 미세 조정되도록 허용합니다."
+        },
+        "cooling": {
+          "label": "냉각 우선",
+          "description": "학습으로 회전 속도를 높이는 것만 허용하여 대기 온도가 높아지는 것을 방지합니다."
+        },
+        "quiet": {
+          "label": "정숙 우선",
+          "description": "학습으로 회전 속도를 낮추는 것만 허용하여 팬이 불필요하게 빨라지는 것을 방지합니다."
+        }
+      }
+    },
+    "noiseTest": {
+      "title": "팬 소음 테스트",
+      "description": "마이크로 회전 속도별 소음 수준을 실측하고, 학습 모드 최적화에 사용할 소음 프로필을 생성합니다.",
+      "intro": {
+        "envTitle": "테스트 전에 주변이 조용한지 확인하세요",
+        "point1": "음악, 동영상, 에어컨 등 지속적인 소리를 끄고, 테스트 중에는 말하거나 키보드를 치지 마세요.",
+        "point2": "마이크가 있는 장치를 쿨러에서 약 20-30 cm 거리에 두고, 마이크를 가리지 마세요.",
+        "point3": "노트북 내장 마이크를 사용하는 경우 테스트 중에 장치를 움직이지 마세요.",
+        "point4": "측정값은 상대 소음(가장 조용한 단계 기준)이므로 전문적인 음향 보정이 필요하지 않습니다.",
+        "sweepNotice": "테스트는 팬을 {{min}} RPM에서 {{max}} RPM까지 단계적으로 올리며, 총 {{steps}}개 지점을 측정하고 약 2-3분이 걸립니다. 테스트 중에는 팬 소리가 눈에 띄게 커지며, 테스트가 끝나면 이전 설정이 자동으로 복원됩니다.",
+        "next": "마이크 선택"
+      },
+      "setup": {
+        "micTitle": "마이크 선택",
+        "refresh": "새로 고침",
+        "noMicFound": "사용 가능한 마이크를 찾을 수 없음",
+        "permissionError": "마이크에 액세스할 수 없습니다. 시스템 개인 정보 설정에서 마이크 권한을 확인하세요({{error}})",
+        "levelTitle": "실시간 주변 소음 수준",
+        "stable": "안정적",
+        "unstable": "변동 큼",
+        "stableHint": "배경 소음 수준이 안정적입니다. 테스트를 시작할 수 있습니다.",
+        "unstableHint": "소음 수준 변동이 감지되었습니다. 조용히 한 후(말하지 않고 소리를 끈 상태) 시작하세요.",
+        "deviceRequired": "장치가 연결되지 않아 팬 속도를 제어할 수 없습니다.",
+        "start": "테스트 시작"
+      },
+      "running": {
+        "preparing": "준비 중…",
+        "settling": "팬이 {{rpm}} RPM에서 안정될 때까지 대기 중…",
+        "sampling": "{{rpm}} RPM 소음 측정 중…",
+        "keepQuiet": "테스트 진행 중입니다. 주변을 조용히 유지하고 말하거나 마이크를 움직이지 마세요.",
+        "cancel": "테스트 취소"
+      },
+      "done": {
+        "riseTitle": "전체 소음 상승폭",
+        "kneeTitle": "소음 변곡점",
+        "kneeValue": "약 {{rpm}} RPM부터 소음이 뚜렷하게 증가",
+        "noKnee": "뚜렷한 변곡점이 감지되지 않음",
+        "resonance": "{{rpm}} RPM 부근에서 공진 피크가 감지되었습니다(추세보다 {{db}} dB 높음). 곡선에서 이 회전 속도 부근을 피하는 것이 좋습니다.",
+        "lowConfidence": "전체 소음 변화가 너무 작아 측정 구분도가 부족합니다. 마이크를 쿨러에 더 가까이 두고 주변이 조용한지 확인한 후 다시 테스트하세요. 이번 결과는 학습 프로필에 저장하지 않는 것이 좋습니다.",
+        "applyProfile": "학습 모드 소음 프로필에 저장",
+        "profileApplied": "소음 프로필이 저장되었습니다",
+        "retest": "다시 테스트",
+        "close": "완료"
+      },
+      "chart": {
+        "series": "상대 소음"
+      },
+      "toast": {
+        "cancelled": "소음 테스트가 취소되고 팬 설정이 복원되었습니다",
+        "failed": "소음 테스트 실패",
+        "restoreFailed": "팬 설정을 복원하지 못했습니다. 회전 속도 모드를 직접 확인하세요",
+        "profileSaved": "소음 프로필이 저장되었습니다. 학습 모드가 실측 소음을 참고하여 정숙 최적화를 수행합니다",
+        "applyFailed": "저장 실패"
+      }
+    },
+    "schedule": {
+      "title": "시간대별 곡선",
+      "description": "시간대에 따라 다른 곡선 프로필로 자동 전환합니다. 낮에는 성능, 밤에는 정숙이 필요한 경우에 적합합니다.",
+      "toggleAria": "시간대별 곡선 전환",
+      "currentBadge": "현재 적용",
+      "currentRule": "현재 규칙: {{name}}",
+      "noRuleMatched": "현재 시간에 해당하는 규칙이 없습니다",
+      "autoControlHint": "활성 곡선 프로필만 전환하며, 스마트 제어를 강제로 켜지 않습니다",
+      "addRule": "규칙 추가",
+      "empty": "아직 시간대 규칙이 없습니다. 오른쪽 위에서 추가하세요.",
+      "newRuleName": "새 시간대",
+      "defaultRuleName": "시간대 {{index}}",
+      "ruleName": "규칙 이름",
+      "ruleNamePlaceholder": "예: 심야 정숙",
+      "profileTitle": "곡선 프로필",
+      "startTitle": "시작 시간",
+      "endTitle": "종료 시간",
+      "daysTitle": "적용 요일",
+      "ruleToggleAria": "시간대 규칙 전환",
+      "days": {
+        "mon": "월",
+        "tue": "화",
+        "wed": "수",
+        "thu": "목",
+        "fri": "금",
+        "sat": "토",
+        "sun": "일"
+      }
+    },
+    "hints": {
+      "dragPoint": "파란 점을 드래그하여 회전 속도 조정",
+      "curveLegend": "실선: 기본 · 점선: 학습"
+    },
+    "history": {
+      "detailsTitle": "온도 및 팬 기록 상세",
+      "detailsDescription": "곡선 페이지는 설정한 기간(기본 1시간) 동안의 온도, 전력, 팬 기록을 보관하여 현재 곡선 및 부하 변화와 비교할 수 있게 합니다.",
+      "saving": "저장 중",
+      "backgroundRecording": "백그라운드 기록",
+      "emptyEnabled": "백그라운드 기록이 켜져 있습니다. 더 많은 온도 및 팬 샘플을 기다리는 중입니다.",
+      "emptyDisabled": "백그라운드 기록이 현재 꺼져 있습니다. 이 페이지에서 켤 수 있습니다.",
+      "recentTrend": "최근 추세",
+      "resetZoom": "확대/축소 초기화",
+      "zoomHint": "차트에서 드래그하여 시간 범위를 선택하세요",
+      "powerTrend": "전력 추세",
+      "waitingMoreSamples": "샘플 1개가 기록되었습니다. 더 많은 데이터가 모이면 추세 차트를 표시합니다.",
+      "retention": {
+        "label": "보관",
+        "hours": "{{count}}시간"
+      },
+      "timeline": {
+        "deviceConnected": "장치 연결됨",
+        "deviceDisconnected": "장치 연결 끊김",
+        "smartControlOn": "스마트 온도 제어 켜짐",
+        "smartControlOff": "스마트 온도 제어 꺼짐",
+        "curveSwitched": "팬 곡선 전환됨",
+        "resumeFromSleep": "절전 모드에서 깨어남",
+        "systemSuspended": "시스템 절전 진입",
+        "coreStarted": "코어 서비스 시작됨"
+      },
+      "series": {
+        "cpu": "CPU",
+        "gpu": "GPU",
+        "fan": "팬 RPM",
+        "cpuFan": "노트북 CPU 팬",
+        "gpuFan": "노트북 GPU 팬",
+        "cpuPower": "CPU 전력",
+        "gpuPower": "GPU 전력"
+      },
+      "duration": {
+        "ltOneMinute": "< 1분",
+        "minutes": "{{count}}분",
+        "hoursAndMinutes": "{{hours}}시간 {{minutes}}분",
+        "hours": "{{hours}}시간"
+      },
+      "summary": {
+        "cpuPeak": "CPU 최고",
+        "gpuPeak": "GPU 최고",
+        "cpuPowerPeak": "CPU 전력 최고",
+        "gpuPowerPeak": "GPU 전력 최고",
+        "fanPeak": "팬 최고",
+        "averageTemperature": "평균 {{value}}°C",
+        "averagePower": "평균 {{value}} W",
+        "averageFan": "평균 {{value}} RPM",
+        "noCpuTemperature": "CPU 온도 없음",
+        "noGpuTemperature": "GPU 온도 없음",
+        "noCpuPower": "CPU 전력 데이터 없음",
+        "noGpuPower": "GPU 전력 데이터 없음",
+        "noFanData": "팬 데이터 없음"
+      },
+      "recordingGap": "기록 중단"
+    },
+    "profiles": {
+      "title": "곡선 프로필",
+      "currentCurveName": "현재 곡선",
+      "newCurveName": "새 곡선",
+      "add": "새로 만들기",
+      "manage": "관리",
+      "createTitle": "새 곡선 프로필",
+      "createDescription": "현재 곡선을 기반으로 새 프로필을 만듭니다. 원래 프로필은 변경되지 않습니다.",
+      "createAction": "만들고 전환",
+      "newNamePlaceholder": "새 프로필 이름(최대 6자)",
+      "manageTitle": "곡선 프로필 관리",
+      "manageDescription": "현재 프로필의 이름을 바꾸거나 프로필을 가져오고 내보냅니다.",
+      "renameLabel": "현재 프로필 이름",
+      "namePlaceholder": "현재 프로필 이름(최대 6자)",
+      "saveName": "이름 저장",
+      "saveAsNew": "새 프로필로 저장",
+      "deleteCurrent": "현재 프로필 삭제",
+      "addAction": "프로필 추가",
+      "activeBadge": "현재",
+      "deleteLastError": "곡선 프로필은 최소 1개 이상 있어야 합니다",
+      "deleteProfileLabel": "{{name}} 프로필 삭제",
+      "unsavedSwitchTitle": "현재 곡선이 저장되지 않았습니다",
+      "unsavedSwitchDescription": "프로필을 전환하기 전에 현재 변경 사항을 저장하거나 취소할 수 있습니다.",
+      "saveAndSwitch": "저장 후 전환",
+      "discardAndSwitch": "취소 후 전환",
+      "deleteConfirmTitle": "프로필 삭제 확인",
+      "deleteDescription": "\"{{name}}\"을(를) 삭제하시겠습니까? 삭제 후 인접한 프로필로 자동 전환됩니다.",
+      "deleteUnsavedDescription": "\"{{name}}\"에 저장되지 않은 변경 사항이 있습니다. 프로필을 삭제하면 이 변경 사항도 함께 취소됩니다."
+    },
+    "importExport": {
+      "title": "곡선 프로필 가져오기 / 내보내기",
+      "description": "프로필 코드 복사 및 붙여넣기 지원",
+      "exportTitle": "내보내기",
+      "exportHint": "프로필 코드를 복사해 빠르게 공유할 수 있습니다. 저장되지 않은 현재 곡선은 먼저 저장됩니다.",
+      "copyCode": "프로필 코드 복사",
+      "importTitle": "가져오기",
+      "importPlaceholder": "B2C1.로 시작하는 프로필 코드를 붙여넣으세요",
+      "importAction": "새 프로필로 가져오기"
+    },
+    "warning": {
+      "title": "주의",
+      "body": "1000 RPM 미만은 Flydigi 공식 설계 최저 회전 속도 기준에 미달합니다. 이로 인해 발생하는 모든 문제는 사용자 본인이 책임져야 합니다!",
+      "confirm": "확인했습니다"
+    },
+    "toast": {
+      "saveCurveFailed": "곡선 저장 실패: {{error}}",
+      "profileSwitched": "온도 제어 곡선이 전환되었습니다",
+      "switchFailed": "전환 실패: {{error}}",
+      "profileRenamed": "프로필 이름이 변경되었습니다",
+      "renameFailed": "이름 변경 실패: {{error}}",
+      "profileSavedAsNew": "새 프로필로 저장되었습니다",
+      "saveAsFailed": "새 프로필로 저장 실패: {{error}}",
+      "profileDeleted": "곡선 프로필이 삭제되었습니다",
+      "deleteFailed": "삭제 실패: {{error}}",
+      "exportCopied": "내보내기 문자열이 복사되었습니다",
+      "exportGenerated": "내보내기 문자열이 생성되었습니다",
+      "exportCopiedAgain": "내보내기 문자열을 복사했습니다",
+      "exportFailed": "내보내기 실패: {{error}}",
+      "importMissingCode": "먼저 가져올 문자열을 붙여넣으세요",
+      "importSucceeded": "새 곡선 프로필로 가져왔습니다",
+      "importFailed": "가져오기 실패: {{error}}",
+      "saveLearningFailed": "학습 설정 저장 실패",
+      "saveFeatureFailed": "팬 고급 설정 저장 실패",
+      "learningReset": "학습 오프셋이 초기화되었습니다",
+      "learningResetDescription": "팬 곡선이 사용자 설정값을 그대로 따릅니다",
+      "resetFailed": "초기화 실패"
+    },
+    "benefit": {
+      "title": "냉각 효과 실측",
+      "entryDescription": "이 쿨러가 회전 속도별로 실제 어떤 효과를 내는지 측정합니다. 몇 도가 내려가는지, 몇 와트를 더 낼 수 있는지, 어느 부품이 가장 큰 효과를 보는지 확인할 수 있습니다. 학습 모드와는 무관합니다.",
+      "entryButton": "실측 시작",
+      "entryBadge": "{{span}} RPM → {{effect}}",
+      "description": "같은 부하에서 회전 속도를 단계별로 고정하고 열이 안정된 후 샘플링하므로, 회전 속도 간의 차이를 쿨러 자체의 효과로 볼 수 있습니다.",
+      "intro": "테스트는 쿨러를 {{steps}}개 회전 속도 단계에 차례로 고정하고, 단계마다 온도가 안정된 후 샘플링합니다. 전체 약 {{minutes}}분이 걸립니다. 먼저 지속적이고 안정적인 부하(게임, 렌더링 또는 스트레스 테스트)를 실행하고, 테스트 내내 그대로 유지하세요. 도중에 부하를 끄면 결과가 완전히 왜곡됩니다.",
+      "loadCheckTitle": "부하 확인",
+      "loadReady": "부하가 준비되었습니다. 시작할 수 있습니다.",
+      "loadWaiting": "현재 전력이 너무 낮습니다. 먼저 지속 부하(최소 {{min}}W)를 실행하세요. 그렇지 않으면 모든 회전 속도에서 온도가 같아 차이를 측정할 수 없습니다.",
+      "currentLoad": "현재 전력",
+      "loadLabelTitle": "부하 메모(선택)",
+      "loadLabelDescription": "무엇을 실행했는지 기록해 두면 나중에 비교하기 편합니다. 부하가 다른 결과는 직접 비교할 수 없습니다.",
+      "loadLabelPlaceholder": "예: 사이버펑크 2077 높음 프리셋",
+      "start": "테스트 시작",
+      "retest": "다시 테스트",
+      "stop": "테스트 중단",
+      "clear": "보고서 지우기",
+      "runningStep": "{{index}}/{{total}}단계 · {{rpm}} RPM",
+      "phaseSettling": "열 안정 대기 중",
+      "phaseSampling": "샘플링 중",
+      "settlingHint": "{{seconds}}초 대기함, 온도 변동 {{range}}°C. 열 관성 때문에 시간이 필요하며, 온도가 더 이상 변하지 않을 때 샘플링을 시작합니다.",
+      "samplingHint": "이 회전 속도에서의 정상 상태 온도와 전력을 수집하는 중입니다.",
+      "keepLoadHint": "부하를 그대로 유지하고, 게임을 닫거나 다른 프로그램으로 전환하지 마세요. 테스트가 끝나면 팬은 이전 제어 방식으로 자동 복원됩니다.",
+      "sweetSpotMark": "최적점",
+      "series": {
+        "temp": "온도",
+        "power": "총 전력",
+        "laptopFan": "노트북 팬",
+        "cpu": "CPU 온도",
+        "gpu": "GPU 온도"
+      },
+      "verdictTitle": "결론",
+      "regime": {
+        "thermal": "온도 제한",
+        "power": "전력 제한",
+        "mixed": "온도·성능 모두 개선",
+        "inconclusive": "뚜렷한 효과 없음"
+      },
+      "regimeHint": {
+        "thermal": "온도가 상한에 고정되어 있어, 쿨러가 높인 회전 속도는 더 높은 지속 전력으로 전환되었습니다. 효과는 더 낮은 온도가 아니라 성능으로 나타납니다.",
+        "power": "전력이 일정하게 유지되어, 쿨러가 높인 회전 속도는 모두 더 낮은 온도로 전환되었습니다. 효과는 온도와 부품 수명으로 나타납니다.",
+        "mixed": "온도가 내려가는 동시에 전력도 높아졌습니다. 이 부하에서 쿨러는 더 시원하고 더 빠르게 만들어 줍니다.",
+        "inconclusive": "온도와 전력 모두 뚜렷한 변화가 없습니다. 부하가 너무 가볍거나, 기기 자체에 냉각 병목이 없거나, 쿨러가 제대로 밀착되지 않았을 수 있습니다."
+      },
+      "underLoad": "테스트 부하: {{label}}",
+      "stats": {
+        "temp": "온도 변화",
+        "power": "전력 변화",
+        "laptopFan": "노트북 팬",
+        "sweetSpot": "소음 최적점",
+        "knee": "효과 변곡점"
+      },
+      "perKilo": "환산하면 1000 RPM 높일 때마다 온도 {{temp}}°C, 전력 {{power}}W입니다.",
+      "warningsTitle": "이 결과의 신뢰도에 문제가 있습니다",
+      "warnings": {
+        "loadUnstable": "단계 간 전력 차이가 너무 커서 테스트 중 부하가 바뀐 것으로 보입니다. 회전 속도 간 온도 차이에 부하 차이가 섞여 있어 쿨러의 효과로 볼 수 없습니다.",
+        "loadTooLight": "테스트 내내 부하가 너무 가벼워 차이를 측정할 수 없습니다. 지속적인 고부하에서 다시 테스트하세요.",
+        "notSettled": "일부 단계는 샘플링 시 온도가 아직 변하고 있어, 해당 단계의 측정값이 실제 정상 상태 값과 차이가 있습니다.",
+        "rpmUnreachable": "팬이 일부 목표 회전 속도에 도달하지 못해 고속 단계는 실제로 측정되지 않았습니다.",
+        "fewSteps": "유효한 단계가 너무 적어 추세를 확인할 수 없습니다."
+      },
+      "sensorsTitle": "부품별 온도 감소폭",
+      "sensorsDescription": "최저 단계에서 최고 단계까지의 변화입니다. 전체 평균을 내면 GPU 핫스팟 12°C 감소와 CPU 2°C 감소가 의미 없는 중간값으로 뭉개지므로 여기서는 하나씩 나열합니다. 아무 행이나 클릭하면 위 온도 차트에 추가하여 비교할 수 있습니다.",
+      "measuredAt": "{{date}} 측정",
+      "errors": {
+        "idle": "현재 전력이 {{watts}}W로 {{min}}W보다 낮습니다. 먼저 지속 부하를 실행한 후 테스트를 시작하세요.",
+        "noPower": "CPU/GPU 전력을 읽을 수 없어 냉각 효과 테스트를 진행할 수 없습니다.",
+        "failed": "테스트 실패: {{message}}",
+        "restore": "팬 제어 방식을 복원하지 못했습니다. 팬 설정을 직접 확인하세요.",
+        "disconnected": "장치가 연결되지 않아 테스트를 시작할 수 없습니다."
+      },
+      "sensorsCount": "센서 {{count}}개",
+      "chartTemp": "온도 — 회전 속도",
+      "chartPower": "총 전력 — 회전 속도",
+      "chartLaptopFan": "노트북 팬 — 회전 속도",
+      "sensorLimit": "최대 {{count}}개 센서까지 동시에 비교할 수 있습니다. 먼저 하나를 해제하세요",
+      "noSeriesSelected": "선택한 센서가 없습니다. 아래 목록에서 클릭하면 비교에 추가됩니다.",
+      "export": "txt 내보내기",
+      "exportDone": "{{path}}(으)로 내보냈습니다",
+      "exportFailed": "내보내기 실패: {{message}}",
+      "exportHint": "단계별 센서 원시 측정값과 판정 근거가 포함된 일반 텍스트로 내보냅니다. 파일을 그대로 AI에게 주고 이 기기의 회전 속도를 어떻게 설정해야 하는지, 더 높은 단계로 올릴 가치가 있는지 물어볼 수 있습니다.",
+      "phaseSpinning": "회전 속도 도달 대기 중",
+      "spinningHint": "쿨러가 목표 회전 속도에서 안정되기를 기다리는 중입니다(현재 {{rpm}} RPM). 팬이 가속하는 동안의 온도 하락은 이 단계의 정상 상태가 아니므로 먼저 목표 속도에 도달해야 합니다."
+    }
+  },
+  "controlPanel": {
+    "overview": {
+      "title": "실시간 개요",
+      "currentTemperature": "현재 온도",
+      "currentRpm": "실시간 회전 속도",
+      "currentGear": "현재 단계",
+      "targetRpm": "목표 회전 속도",
+      "cpuGpuTemperature": "CPU {{cpu}}°C · GPU {{gpu}}°C",
+      "gearValue": "단계 {{gear}}",
+      "workModes": {
+        "manual": "단계 작동 모드",
+        "auto": "자동 모드(실시간 회전 속도)"
+      }
+    },
+    "light": {
+      "sectionTitle": "조명 효과",
+      "effectMode": "효과 모드",
+      "animationSpeed": "애니메이션 속도",
+      "brightness": "밝기",
+      "smartTempWarning": "스마트 온도 조명은 펌웨어 내장 애니메이션을 사용하며, 컴퓨터의 최고 온도에 따라 전환됩니다. 온도 구간과 각 구간에 사용할 내장 애니메이션은 사용자 지정할 수 있지만, LED별 색상과 밝기는 펌웨어가 결정합니다.",
+      "colorLabel": "색상 {{index}}",
+      "applyHintConnected": "적용 즉시 반영됩니다",
+      "applyHintDisconnected": "다음 연결 시 자동으로 적용됩니다",
+      "smartTemp": {
+        "bandsTitle": "온도 구간",
+        "liveTemp": "현재 {{temp}}°C",
+        "noTemp": "온도 측정값 없음",
+        "fromZero": "시작",
+        "rangeUpTo": "– {{temp}}°C",
+        "rangeAndAbove": "이상",
+        "addBand": "구간 추가",
+        "removeBand": "이 구간 삭제",
+        "hysteresis": "전환 히스테리시스",
+        "presetHint": "내장 애니메이션은 흰색 하이라이트가 조명 띠를 따라 흐르는 효과이며, 온도가 높은 프리셋일수록 빠르게 흐릅니다. 전환은 실행 상태만 변경하며 장치 플래시 메모리에 기록하지 않습니다.",
+        "preset1": "내장 1 · 녹색 흐름(느림)",
+        "preset2": "내장 2 · 노란색 흐름(중간)",
+        "preset3": "내장 3 · 빨간색 흐름(빠름)",
+        "preset4": "내장 4 · 빨간색 고정",
+        "preset5": "내장 5 · 3프레임 흐름",
+        "dependsOnRuntimeProfile": "이 프리셋의 색상표는 장치의 실행 프로필 바이트(명령 0x09)에 따라 결정됩니다: 1이면 빨강→분홍, 그 외에는 파란 바탕에 흰빛이 흐릅니다"
+      },
+      "previewLabel": "조명 띠 미리 보기",
+      "previewHint": "펌웨어 보간 알고리즘으로 실시간 재현"
+    },
+    "fan": {
+      "sectionTitle": "팬 제어",
+      "autoControlTitle": "자동 온도 제어",
+      "autoControlDescription": "온도 곡선에 따라 팬 속도를 자동 조절합니다",
+      "sampleSmoothingTitle": "온도 평활화",
+      "sampleSmoothingDescription": "EMA 지수 가중: 값이 클수록 부드럽고(안정적), 작을수록 빠르게 반응합니다. 잘 모르겠으면 기본값을 유지하세요",
+      "temperatureBaselineTitle": "온도 기준",
+      "temperatureBaselineDescription": "온도 제어에 사용할 열원, 그래픽 장치 및 세부 센서를 선택합니다. 그래픽 카드가 여러 개인 노트북은 여기서 외장 GPU로 고정할 수 있습니다.",
+      "cpuBaseline": "CPU 기준",
+      "processorDevice": "프로세서 장치",
+      "processorDeviceHintDetected": "현재 식별된 프로세서이며, TempBridge 감지에 따라 자동으로 갱신됩니다.",
+      "processorDeviceHintWaiting": "아직 CPU 모델이 식별되지 않았습니다. TempBridge를 사용할 수 있게 되면 자동으로 표시됩니다.",
+      "waitingRecognition": "식별 대기 중...",
+      "temperatureSensor": "온도 센서",
+      "temperatureSensorMulti": "CPU 센서(평균)",
+      "temperatureSensorMultiHint": "하나 이상의 코어를 선택하면 평균 온도를 CPU 온도 제어 기준으로 사용합니다. 선택하지 않으면 자동으로 선택됩니다.",
+      "currentBaselineTemperature": "현재 기준 온도 {{temperature}}°C",
+      "noCpuTemperatureData": "현재 사용 가능한 CPU 온도 데이터가 없습니다",
+      "gpuBaseline": "GPU 기준",
+      "gpuMonitoringToggle": "모니터링",
+      "gpuMonitoringToggleAria": "GPU 온도 모니터링 켜기/끄기",
+      "gpuMonitoringDisabledToast": "GPU 온도 모니터링을 껐습니다",
+      "gpuMonitoringEnabledToast": "GPU 온도 모니터링을 다시 켰습니다",
+      "gpuMonitoringDisabledHint": "GPU 센서를 더 이상 폴링하지 않습니다(하이브리드 그래픽에서 외장 GPU가 계속 깨어 있는 것을 방지). 온도 제어 기준은 CPU 온도만 사용하며, 홈 화면에 GPU 카드가 표시되지 않습니다.",
+      "gpuDevice": "그래픽 장치",
+      "gpuDeviceHintDetected": "자동 모드에서 현재 선택된 장치: {{model}}",
+      "gpuDeviceHintAuto": "자동 모드는 가능하면 외장 GPU를 우선 사용합니다.",
+      "gpuDeviceHintLocked": "선택한 그래픽 장치로 고정되었습니다.",
+      "noGpuTemperatureData": "현재 사용 가능한 GPU 온도 데이터가 없습니다",
+      "currentControlSource": "현재 온도 제어는 {{source}} 기준을 사용하며, 제어 온도는 {{temperature}}°C입니다.",
+      "noControlTemperature": "아직 유효한 온도 제어 기준 온도를 얻지 못했습니다.",
+      "transientSpikeFilterTitle": "온도 스파이크 필터",
+      "transientSpikeFilterDescription": "일시적인 이상 온도 급등을 무시하여 단발성 튐 현상이 스마트 온도 제어의 샘플링과 반응을 방해하지 않도록 합니다.",
+      "transientSpikeFilterAria": "온도 스파이크 필터 전환",
+      "learningTitle": "적응형 학습",
+      "learningDescription": "장시간 실행하면 각 온도 지점의 목표 회전 속도를 자동으로 미세 조정하여 실제 온도가 곡선 설정값에 더 가까워지도록 합니다. 학습된 오프셋은 언제든지 한 번에 초기화할 수 있습니다.",
+      "learningAria": "적응형 학습 전환",
+      "temperatureHistoryTitle": "온도 기록",
+      "temperatureHistoryDescription": "켜면 코어 서비스가 최근 1시간의 CPU/GPU 온도 곡선을 보관합니다. 끄면 GUI가 열려 있는 동안에만 임시 곡선을 그립니다.",
+      "temperatureHistoryAria": "코어 온도 기록 전환",
+      "curveProfileTitle": "곡선 프로필",
+      "curveProfileDescription": "페이지를 오가지 않고 설정 페이지에서 바로 팬 온도 제어 곡선을 전환합니다.",
+      "customSpeedTitle": "사용자 지정 속도",
+      "customSpeedDescription": "특수한 상황을 위한 고정 회전 속도",
+      "customSpeedWarning": "⚠ 사용자 지정 속도를 사용하면 스마트 온도 제어가 비활성화됩니다",
+      "toasts": {
+        "profileSwitched": "온도 제어 곡선이 전환되었습니다",
+        "profileSwitchFailed": "곡선 전환 실패: {{error}}"
+      }
+    },
+    "device": {
+      "sectionTitle": "장치 설정",
+      "gearLightTitle": "단계 표시등",
+      "gearLightDescription": "장치의 단계 표시등을 제어합니다",
+      "powerOnStartTitle": "전원 연결 시 자동 시작",
+      "powerOnStartDescription": "장치에 전원이 공급되면 자동으로 작동합니다",
+      "smartStartStopTitle": "스마트 시작/정지",
+      "smartStartStopDescription": "시스템 종료 후 냉각을 언제 멈출지 선택합니다"
+    },
+    "legionFnQ": {
+      "sectionTitle": "Legion Fn+Q 연동",
+      "enableTitle": "플러그인 사용",
+      "enableDescription": "Fn+Q 및 Lenovo 소프트웨어 전환을 포함한 Legion 성능 모드 변경을 감지합니다.",
+      "takeOverTitle": "팬 속도 제어권 가져오기",
+      "takeOverDescription": "성능 모드 변경이 감지되면 쿨러를 아래에 매핑된 수동 단계로 전환합니다.",
+      "mappingTitle": "모드 매핑",
+      "mappingDescription": "오른쪽의 \"속도 레벨\"은 같은 팬 단계 내의 낮음/중간/높음 하위 단계이며 실제 RPM에 영향을 줍니다.",
+      "headers": {
+        "mode": "Legion 모드",
+        "gear": "팬 단계",
+        "level": "속도 레벨"
+      },
+      "toasts": {
+        "saveFailed": "Fn+Q 플러그인 설정 저장 실패: {{error}}"
+      }
+    },
+    "system": {
+      "sectionTitle": "시스템 설정",
+      "themeTitle": "테마",
+      "themeDescription": "기본적으로 시스템 설정을 따르며, 라이트/다크로 고정하거나 설치 폴더의 themes 폴더에서 사용자 지정 테마를 선택할 수 있습니다",
+      "themeOpenFolder": "테마 폴더 열기",
+      "languageTitle": "언어",
+      "languageDescription": "앱 표시 언어를 전환합니다. 즉시 적용되며 자동으로 기억됩니다.",
+      "hotkeys": {
+        "title": "전역 단축키",
+        "description": "오른쪽 입력란을 클릭한 후 조합 키를 누르세요. 포커스를 벗어나면 자동 저장됩니다. Backspace/Delete를 누르거나 지우기 버튼을 사용하면 비워 두어 해당 단축키를 사용하지 않습니다.",
+        "emptyPlaceholder": "비워 두면 사용 안 함",
+        "clearAria": "단축키 지우기",
+        "manual": {
+          "title": "수동 단계 전환",
+          "description": "저소음, 표준, 강력, 오버클럭 사이를 순환하며 각 단계의 하위 레벨 기억을 유지합니다."
+        },
+        "auto": {
+          "title": "스마트 제어 켜기/끄기",
+          "description": "스마트 온도 제어 상태를 빠르게 전환합니다. 게임과 정숙한 환경 사이를 오갈 때 유용합니다."
+        },
+        "curve": {
+          "title": "온도 제어 곡선 전환",
+          "description": "곡선 프로필을 빠르게 순환하여 업무/게임/야간 환경을 한 번에 전환합니다."
+        },
+        "toasts": {
+          "duplicate": "세 단축키에 같은 조합을 설정할 수 없습니다",
+          "saved": "단축키가 저장되었습니다",
+          "saveFailed": "단축키 저장 실패: {{error}}"
+        }
+      },
+      "autoStartTitle": "Windows 시작 시 실행",
+      "autoStartDescription": "Windows가 시작될 때 자동으로 실행합니다",
+      "autoStartTip": "관리자 권한으로 실행하면 매번 UAC 승인을 받지 않아도 됩니다",
+      "autoStartTitleLinux": "로그인 시 실행",
+      "autoStartDescriptionLinux": "데스크톱에 로그인하면 자동으로 실행합니다(XDG 자동 시작 항목)",
+      "trayTitle": "시스템 트레이 아이콘",
+      "trayDescription": "작업 표시줄 알림 영역에 트레이 아이콘을 표시합니다",
+      "trayTip": "끄더라도 온도 제어는 백그라운드에서 계속 실행되지만, 창을 다시 열려면 앱을 다시 실행해야 합니다",
+      "trayEnabledToast": "시스템 트레이 아이콘을 표시했습니다",
+      "trayDisabledToast": "시스템 트레이 아이콘을 숨겼습니다",
+      "trayDisabledHint": "온도 제어는 백그라운드에서 계속 실행됩니다. 창을 닫은 후 다시 열려면 앱을 다시 실행해야 합니다",
+      "trayToggleFailed": "시스템 트레이 전환 실패: {{error}}",
+      "quitAllAction": "완전히 종료",
+      "quitAllTitle": "THRM 완전히 종료",
+      "quitAllDescription": "창과 백그라운드 온도 제어 서비스를 함께 종료하며, 팬은 장치 기본 동작으로 돌아갑니다. 트레이 아이콘이 꺼져 있으면 이곳이 유일한 종료 방법입니다.",
+      "quitAllConfirm": "종료",
+      "quitAllFailed": "종료 실패: {{error}}",
+      "reconnectTitle": "재연결 시 설정 유지",
+      "reconnectDescription": "다시 연결된 후에도 앱 설정을 계속 사용합니다",
+      "reconnectTip": "연결이 끊긴 후 장치 기본 모드로 돌아가는 것을 막으려면 켜는 것을 권장합니다",
+      "suspendTurnOffTitle": "절전 시 출력 끄기",
+      "suspendTurnOffDescription": "시스템이 절전 모드에 들어가면 팬과 조명을 끄고, 깨어나면 자동으로 복원합니다",
+      "suspendTurnOffTip": "절전 중에도 블루투스가 유지되는 PC에 적합합니다. 절전 중에는 팬과 조명을 꺼 전력과 소음을 줄이고, 깨어나면 이전 상태로 복원합니다",
+      "suspendTurnOffNeedThrm": "THRM v1 이상의 사용자 지정 펌웨어가 필요합니다(정보 페이지에서 플래싱)",
+      "flydigi": {
+        "title": "Flydigi Space Station 호환",
+        "description": "Flydigi Space Station 백그라운드 서비스가 쿨러를 제어하지 못하도록 차단합니다",
+        "tip": "Flydigi Space Station 백그라운드 서비스는 SYSTEM 권한으로 상주하며 쿨러에 팬과 조명 명령을 계속 보내 THRM과 제어권을 다툽니다. 이 옵션을 켜면 THRM이 쿨러 장치에 현재 사용자만 허용하는 보안 설명자를 기록하여 해당 서비스를 차단합니다. Flydigi의 컨트롤러 매핑, 가상 키보드/마우스, 트리거 등의 기능에는 전혀 영향을 주지 않습니다. 관리자 권한이 필요하며, 끄면 모두 원래대로 복원됩니다.",
+        "statusServiceRunning": "Flydigi Space Station 서비스가 실행 중이며 THRM과 쿨러 제어권을 다툴 수 있습니다",
+        "statusServiceIdle": "Flydigi Space Station이 설치되어 있습니다. 이 옵션을 켜면 쿨러를 가져가지 못하게 할 수 있습니다",
+        "statusNoDevice": "켜짐 — 쿨러가 연결되면 자동으로 적용됩니다",
+        "statusNeedsReconnect": "기록됨 — 쿨러를 다시 연결하거나 Windows를 다시 시작하면 적용됩니다",
+        "statusActive": "적용됨 — Flydigi Space Station 서비스가 더 이상 쿨러를 제어할 수 없습니다",
+        "statusApplied": "장치 노드 {{applied}}/{{total}}개에 적용됨",
+        "statusError": "감지 실패: {{error}}",
+        "toastEnabled": "Flydigi Space Station 호환을 켰습니다",
+        "toastNeedsReconnect": "켜짐 — 쿨러를 다시 연결하거나 Windows를 다시 시작하면 적용됩니다",
+        "toastDisabled": "Flydigi Space Station 호환을 끄고 장치 권한을 복원했습니다",
+        "toastFailed": "Flydigi Space Station 호환 설정 실패: {{error}}"
+      },
+      "rtssTitle": "RTSS 화면 표시",
+      "rtssDescription": "켜면 RTSS 오버레이에 쿨러 회전 속도를 바로 표시하며, 기본적으로 기존 표시 항목 아래에 위치합니다.",
+      "rtssIntervalTitle": "RTSS 새로 고침 빈도",
+      "rtssIntervalDescription": "공유 메모리 쓰기 빈도를 제한하며, 쿨러 자체의 데이터 샘플링과 온도 제어 반응에는 영향을 주지 않습니다.",
+      "rtssPositionTitle": "회전 속도 표시 위치(선택)",
+      "rtssPositionDescription": {
+        "intro": "위치를 조정하려면 THRM에서 이동하거나 RTSS OverlayEditor로 배치할 수 있습니다. 두 방식은 언제든지 전환할 수 있습니다.",
+        "anchor": "기본 표시에는 위치 지정 레이어가 필요하지 않습니다. 구성하면 OverlayEditor에서 회전 속도 위치를 따로 드래그할 수 있습니다.",
+        "custom": "방향 버튼이나 키보드로 위치를 이동하며, RTSS 레이아웃을 수정할 필요가 없습니다."
+      },
+      "rtssPositionControls": "회전 속도 표시 위치 조정",
+      "rtssMoveUp": "위로 이동",
+      "rtssMoveDown": "아래로 이동",
+      "rtssMoveLeft": "왼쪽으로 이동",
+      "rtssMoveRight": "오른쪽으로 이동",
+      "rtssResetPosition": "기본 위치로 복원",
+      "rtssPositionValue": "현재 위치: X {{x}}, Y {{y}}",
+      "rtssPositionSaveFailed": "RTSS 표시 위치 저장 실패: {{error}}",
+      "rtssLayoutDetected": "현재 레이아웃: {{layout}}",
+      "rtssLayoutNotDetected": "현재 RTSS 레이아웃이 감지되지 않았습니다",
+      "rtssRefreshLayoutStatus": "RTSS 레이아웃 다시 감지",
+      "rtssAnchorReady": "위치 지정 레이어가 구성되었습니다. OverlayEditor에서 회전 속도 위치를 드래그할 수 있습니다",
+      "rtssAnchorNotConfigured": "위치 지정 레이어가 아직 구성되지 않았습니다. 기본 회전 속도 표시에는 영향을 주지 않습니다.",
+      "rtssCreateAnchor": "위치 지정 레이어 구성",
+      "rtssReviewAnchor": "위치 지정 레이어 확인",
+      "rtssAnchorDialogTitle": "RTSS 위치 지정 레이어 구성",
+      "rtssAnchorConfirm": "먼저 RTSS OverlayEditor를 닫으세요. THRM이 현재 레이아웃을 백업한 후, 1% 크기의 빈 텍스트 위치 지정 레이어를 만들거나 표시하거나 목록 끝으로 이동합니다.",
+      "rtssAnchorCurrentLayout": "현재 레이아웃: {{layout}}",
+      "rtssAnchorContinue": "계속",
+      "rtssAnchorSuccessTitle": "위치 지정 레이어 구성 완료",
+      "rtssAnchorSuccessDescription": "백업 파일이 저장되었습니다. 레이아웃을 복원해야 할 때 다음 파일을 사용하세요.",
+      "rtssAnchorBackupLabel": "레이아웃 백업 파일",
+      "rtssBackupUnknown": "백업 경로를 알 수 없음",
+      "blurTitle": "창 재질",
+      "blurDescription": "아크릴, Mica 또는 Mica Alt 재질을 선택합니다. 변경 사항은 앱을 다시 시작한 후 적용됩니다."
+    },
+    "offline": {
+      "message": "장치가 연결되지 않아 일부 기능을 사용할 수 없습니다"
+    },
+    "debug": {
+      "panelTitle": "디버그 패널",
+      "modeTitle": "디버그 모드",
+      "modeDescription": "상세 로그 사용",
+      "refresh": "디버그 정보 새로 고침",
+      "pawnTitle": "PawnIO 드라이버",
+      "pawnDescription": "온도 읽기에 문제가 있나요? PawnIO 드라이버를 다시 설치해 보세요.",
+      "reinstall": "PawnIO 재설치",
+      "toasts": {
+        "reinstallExecuted": "PawnIO 설치 프로그램이 실행되었습니다",
+        "uninstallWarning": "PawnIO 제거 단계에서 알림이 반환되었습니다: {{warning}}",
+        "bridgeWarning": "온도 모니터링 다시 초기화 실패: {{warning}}",
+        "reinstallFailed": "PawnIO 재설치 실패: {{error}}"
+      }
+    },
+    "diagnostics": {
+      "title": "진단 패키지 내보내기",
+      "description": "디버그 정보, 현재 설정, 최근 로그를 ZIP으로 묶어 문제 해결을 위한 피드백에 활용할 수 있습니다.",
+      "button": "내보내기",
+      "toasts": {
+        "exported": "진단 패키지를 내보냈습니다: {{path}}",
+        "cancelled": "내보내기가 취소되었습니다",
+        "failed": "진단 패키지 내보내기 실패: {{error}}"
+      }
+    },
+    "customSpeedDialog": {
+      "title": "위험 안내",
+      "enabledTitle": "사용 시:",
+      "bullets": {
+        "disableAutoControl": "• 스마트 온도 제어가 비활성화됩니다",
+        "fixedSpeed": "• 팬이 고정 회전 속도로 작동합니다",
+        "insufficientCooling": "• 냉각이 부족해질 수 있습니다"
+      },
+      "speedLabel": "회전 속도 설정",
+      "confirm": "확인"
+    },
+    "alerts": {
+      "autoStartFailed": "자동 시작 설정 실패: {{error}}",
+      "lightStripFailed": "조명 띠 설정 실패: {{error}}"
+    },
+    "options": {
+      "smartStartStop": {
+        "off": {
+          "label": "끄기",
+          "description": "스마트 시작/정지 기능 사용 안 함"
+        },
+        "immediate": {
+          "label": "즉시",
+          "description": "시스템 부하 변화에 즉시 반응"
+        },
+        "delayed": {
+          "label": "지연",
+          "description": "지연 반응으로 잦은 시작/정지 방지"
+        }
+      },
+      "sampleCount": {
+        "1": "1 · 즉시 반응",
+        "2": "2 · 약한 평활화",
+        "3": "3 · 기본값",
+        "5": "5 · 강한 평활화",
+        "10": "10 · 매우 강한 평활화(느린 반응)"
+      },
+      "tempSource": {
+        "max": "최고 온도",
+        "cpu": "CPU만",
+        "gpu": "GPU만"
+      },
+      "themeMode": {
+        "light": "라이트",
+        "dark": "다크",
+        "system": "시스템 설정"
+      },
+      "lightMode": {
+        "off": {
+          "label": "조명 끄기",
+          "description": "모든 RGB 조명 끄기"
+        },
+        "smart_temp": {
+          "label": "스마트 온도",
+          "description": "온도에 따라 조명 효과 자동 전환"
+        },
+        "static_single": {
+          "label": "단색 고정",
+          "description": "한 가지 색상으로 고정 표시"
+        },
+        "static_multi": {
+          "label": "다색 고정",
+          "description": "3색 정적 구역"
+        },
+        "rotation": {
+          "label": "다색 회전",
+          "description": "색상 순환 회전"
+        },
+        "flowing": {
+          "label": "흐름",
+          "description": "프리셋 흐름 효과"
+        },
+        "breathing": {
+          "label": "호흡",
+          "description": "다색 호흡 효과"
+        }
+      },
+      "lightSpeed": {
+        "fast": "빠름",
+        "medium": "보통",
+        "slow": "느림"
+      },
+      "lightPresets": {
+        "neon": "네온",
+        "forest": "숲",
+        "glacier": "빙하"
+      },
+      "legionPowerModes": {
+        "Quiet": "저소음 모드",
+        "Balance": "균형 모드",
+        "Performance": "성능 모드",
+        "Extreme": "익스트림 모드",
+        "GodMode": "사용자 지정 모드"
+      },
+      "gpuDevice": {
+        "autoPreferred": "자동 선택(외장 GPU 우선)",
+        "auto": "자동 선택"
+      },
+      "sensor": {
+        "autoRecommended": "자동 선택(권장)",
+        "auto": "자동 선택"
+      },
+      "windowBlur": {
+        "auto": "자동(시스템 따름)",
+        "acrylic": "아크릴",
+        "mica": "Mica",
+        "tabbed": "Mica Alt",
+        "off": "끄기"
+      },
+      "rtssInterval": {
+        "250": "250밀리초",
+        "500": "500밀리초",
+        "1000": "1초",
+        "2000": "2초"
+      },
+      "rtssPositionMode": {
+        "anchor": "RTSS에서 조정",
+        "custom": "THRM에서 조정"
+      }
+    }
+  }
+}

@@ -813,7 +813,7 @@ type AppConfig struct {
 	WindowsAutoStart                 bool                      `json:"windowsAutoStart"`                 // Windows开机自启动
 	DisableSystemTray                bool                      `json:"disableSystemTray"`                // 关闭系统托盘图标(取反语义：旧配置缺字段时默认显示托盘)
 	ThemeMode                        string                    `json:"themeMode"`                        // 主题模式: system/light/dark/thrm
-	UILanguage                       string                    `json:"uiLanguage"`                       // 界面语言(zh-CN/en-US/ja-JP)，供托盘与系统通知使用；空表示按系统语言推断。仅由 SetUILanguage 维护
+	UILanguage                       string                    `json:"uiLanguage"`                       // 界面语言(zh-CN/en-US/ja-JP/ko-KR)，供托盘与系统通知使用；空表示按系统语言推断。仅由 SetUILanguage 维护
 	SmartStartStop                   string                    `json:"smartStartStop"`                   // 智能启停
 	Brightness                       int                       `json:"brightness"`                       // 亮度
 	TempUpdateRate                   int                       `json:"tempUpdateRate"`                   // 温度更新频率(秒)

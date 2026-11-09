@@ -93,6 +93,8 @@ func TestNormalize(t *testing.T) {
 		{"zh-TW", ZhCN, true},
 		{"ZH-hans", ZhCN, true},
 		{"ja", JaJP, true},
+		{"ko-KR", KoKR, true},
+		{"ko", KoKR, true},
 		{"de-DE", "", false},
 		{"", "", false},
 	}
@@ -136,6 +138,14 @@ func TestSetLanguageAndLookup(t *testing.T) {
 	if got := T(TrayMenuQuit); got != "終了" {
 		t.Errorf("ja T = %q", got)
 	}
+
+	SetLanguage(KoKR)
+	if got := T(TrayMenuQuit); got != "종료" {
+		t.Errorf("ko T = %q", got)
+	}
+	if got := GearName("静音"); got != "저소음" {
+		t.Errorf("ko GearName = %q", got)
+	}
 }
 
 func TestLookupFallsBack(t *testing.T) {
@@ -168,6 +178,7 @@ func TestLanguageFromLocaleEnv(t *testing.T) {
 		{map[string]string{"LANG": "zh_CN.UTF-8"}, "zh-CN"},
 		{map[string]string{"LANG": "en_US.UTF-8", "LC_MESSAGES": "ja_JP.UTF-8"}, "ja-JP"},
 		{map[string]string{"LANG": "ja_JP.UTF-8", "LC_ALL": "en_GB.UTF-8"}, "en-GB"},
+		{map[string]string{"LANG": "ko_KR.UTF-8"}, "ko-KR"},
 		{map[string]string{"LANG": "de_DE@euro"}, "de-DE"},
 		{map[string]string{"LC_ALL": "C", "LANG": "zh_CN.UTF-8"}, ""},
 		{map[string]string{"LANG": "C.UTF-8"}, ""},

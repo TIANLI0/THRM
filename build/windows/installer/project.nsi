@@ -173,11 +173,13 @@ ManifestDPIAware true
 !insertmacro MUI_LANGUAGE "SimpChinese"
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Japanese"
+!insertmacro MUI_LANGUAGE "Korean"
 
 # 用户协议文本由 resources 下的 UTF-8（带 BOM）文件提供，按安装语言选择
 LicenseLangString THRM_LICENSE_FILE ${LANG_SIMPCHINESE} "resources\license_zh-CN.txt"
 LicenseLangString THRM_LICENSE_FILE ${LANG_ENGLISH} "resources\license_en-US.txt"
 LicenseLangString THRM_LICENSE_FILE ${LANG_JAPANESE} "resources\license_ja-JP.txt"
+LicenseLangString THRM_LICENSE_FILE ${LANG_KOREAN} "resources\license_ko-KR.txt"
 
 ## The following two statements can be used to sign the installer and the uninstaller. The path to the binaries are provided in %1
 #!uninstfinalize 'signtool --file "%1"'

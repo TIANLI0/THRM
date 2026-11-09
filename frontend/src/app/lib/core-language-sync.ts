@@ -12,7 +12,7 @@ import i18n from 'i18next';
 import { Events } from '@wailsio/runtime';
 import { App } from '@go/guiapp';
 
-const CORE_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP'];
+const CORE_LANGUAGES = ['zh-CN', 'en-US', 'ja-JP', 'ko-KR'];
 const SYNC_DEBOUNCE_MS = 400;
 
 function currentLanguage(): string | null {

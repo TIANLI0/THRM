@@ -4,10 +4,10 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import i18n, { type Resource } from "i18next";
 import { I18nextProvider, initReactI18next } from "react-i18next";
 // 只有默认语言（同时是 fallbackLng）随主包静态打包，其它语言按需加载，
-// 避免每次冷启动都解析三份完整词条。
+// 避免每次冷启动都解析全部语言的完整词条。
 import zhCN from "../locales/zh-CN/translation.json";
 
-export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "ja-JP"] as const;
+export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "ja-JP", "ko-KR"] as const;
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number];
 
 const DEFAULT_LOCALE: AppLocale = "zh-CN";
@@ -22,6 +22,7 @@ type LocaleBundle = Record<string, unknown>;
 const LOCALE_LOADERS: Partial<Record<AppLocale, () => Promise<{ default: LocaleBundle }>>> = {
   "en-US": () => import("../locales/en-US/translation.json"),
   "ja-JP": () => import("../locales/ja-JP/translation.json"),
+  "ko-KR": () => import("../locales/ko-KR/translation.json"),
 };
 
 const pendingLocaleLoads = new Map<AppLocale, Promise<void>>();
@@ -68,6 +69,9 @@ function normalizeLocale(value?: string | null): AppLocale {
   }
   if (lowered.startsWith("ja")) {
     return "ja-JP";
+  }
+  if (lowered.startsWith("ko")) {
+    return "ko-KR";
   }
   if (lowered.startsWith("en")) {
     return "en-US";

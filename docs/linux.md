@@ -183,7 +183,7 @@ THRM/
 │   └── src/
 │       ├── app/                     # UI 页面和组件
 │       ├── components/ui/           # shadcn/ui 组件
-│       ├── locales/                 # ✅ 国际化翻译（zh-CN, en-US, ja-JP）
+│       ├── locales/                 # ✅ 国际化翻译（zh-CN, en-US, ja-JP, ko-KR）
 │   └── bindings/                    # wails3 generate bindings 生成的强类型绑定
 │
 ├── bridge/TempBridge/Program.cs     # ❌ C# 温度桥接（需完全替代）

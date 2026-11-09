@@ -34,6 +34,7 @@ func TestLoadConfigNormalizesUILanguage(t *testing.T) {
 	cases := map[string]string{
 		`{"uiLanguage": "en-US"}`: "en-US",
 		`{"uiLanguage": "ja"}`:    "ja-JP",
+		`{"uiLanguage": "ko"}`:    "ko-KR",
 		`{"uiLanguage": ""}`:      "",
 		`{"uiLanguage": "xx-YY"}`: "",
 	}

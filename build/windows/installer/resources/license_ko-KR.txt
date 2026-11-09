@@ -1,0 +1,49 @@
+﻿THRM 사용자 계약
+
+최종 업데이트: 2026-10-20
+
+설치하기 전에 본 계약을 주의 깊게 읽어 주십시오. 확인란을 선택하고 설치를 계속하면 아래의 모든 조항을 읽고 이해했으며 이에 동의한 것으로 간주됩니다. 동의하지 않는 경우 설치를 취소하십시오.
+
+1. 면책 조항
+
+1.1 THRM은 커뮤니티에서 개발한 제3자 오픈 소스 소프트웨어이며, Flydigi와 제휴 관계가 없고 Flydigi의 승인이나 보증을 받지 않았습니다. "Flydigi" 및 BS 시리즈의 명칭과 상표는 각 소유자에게 귀속되며, 여기서는 장치 호환성을 설명하기 위한 목적으로만 사용됩니다.
+
+1.2 본 소프트웨어는 상품성, 특정 목적에의 적합성 및 비침해에 대한 보증을 포함하되 이에 국한되지 않는 명시적 또는 묵시적 보증 없이 "있는 그대로" 제공됩니다. 저작자는 소프트웨어에 결함이 없거나, 중단 없이 실행되거나, 사용자의 장치, 펌웨어 버전 또는 환경에 적합하다는 것을 보증하지 않습니다.
+
+1.3 본 소프트웨어는 쿨러의 팬 속도와 조명을 직접 제어하며 온도, 소비 전력 등의 하드웨어 정보를 읽습니다. 사용자 지정 팬 속도, 비공식 최저 속도, 펌웨어 유지 관리 명령(초기화, 공장 초기화 등) 및 실험적 기능으로 표시된 기능은 냉각 부족, 장치 오작동 또는 제조사 보증 상실을 초래할 수 있습니다. 장치의 한계를 고려하여 사용하시기 바라며, 이에 따른 위험은 사용자가 부담합니다.
+
+1.4 Windows에서 THRM은 LibreHardwareMonitor와 PawnIO 커널 드라이버를 통해 하드웨어 센서를 읽으며, 설치 프로그램은 PawnIO도 함께 설치합니다(이미 설치되어 있으면 건너뜁니다). PawnIO는 해당 개발자가 독립적으로 개발·배포하며 자체 라이선스 조건을 따릅니다.
+
+1.5 관련 법률이 허용하는 최대 범위 내에서, 저작자 및 기여자는 하드웨어 손상, 데이터 손실, 업무 중단을 포함하되 이에 국한되지 않는, 소프트웨어의 사용 또는 사용 불능으로 인해 발생하는 직접적, 간접적, 부수적, 특별 또는 결과적 손해에 대해 그러한 손해의 가능성을 사전에 고지받은 경우라도 책임을 지지 않습니다.
+
+1.6 개인정보: THRM은 어떠한 개인 데이터도 수집, 업로드 또는 판매하지 않습니다. 설정, 로그 및 온도 기록은 사용자의 컴퓨터에만 저장됩니다. 정보 페이지를 열면 앱이 새 버전 확인과 후원자 목록 로드를 위해 공식 웹사이트 thrm.tianli0.top에 접속하며(접속할 수 없으면 GitHub로 대체), 업데이트를 선택하면 동일한 출처에서 설치 프로그램을 다운로드합니다. 개인정보 처리방침: https://github.com/TIANLI0/THRM/blob/main/PRIVACY.md
+
+2. 오픈 소스 라이선스
+
+THRM은 MIT 라이선스로 배포됩니다. 소스 코드: https://github.com/TIANLI0/THRM
+
+MIT License
+
+Copyright (c) 2025 Tianli
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+3. 제3자 구성 요소
+
+THRM은 여러 오픈 소스 구성 요소를 사용하며, 각 구성 요소는 자체 라이선스(MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, OFL-1.1, MPL-2.0)를 따릅니다. LibreHardwareMonitorLib는 MPL-2.0 라이선스이며 수정되지 않은 바이너리 형태로 사용되고, 소스 코드는 https://github.com/LibreHardwareMonitor/LibreHardwareMonitor 에서 확인할 수 있습니다. 전체 구성 요소 목록과 라이선스는 앱 정보 페이지의 오픈 소스 고지에서 확인할 수 있습니다.

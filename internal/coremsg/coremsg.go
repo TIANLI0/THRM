@@ -1,7 +1,7 @@
 // Package coremsg 是核心进程（托盘、系统通知、快捷键提示）面向用户文案的消息目录。
 //
 // 核心进程常驻后台、开机即运行，往往早于 GUI 启动，因此不能依赖前端的 i18n。
-// 这里维护与前端 locales 同名的三种语言；zh-CN 的文案与本包引入之前的硬编码完全一致，
+// 这里维护与前端 locales 同名的各语言；zh-CN 的文案与本包引入之前的硬编码完全一致，
 // 中文用户看到的任何字符都不应因此改变。日志不经过本包，始终保持中文。
 //
 // 当前语言是进程级状态：GUI 通过 SetUILanguage 上报后由核心写入配置并调用 SetLanguage；
@@ -19,6 +19,7 @@ const (
 	ZhCN = "zh-CN"
 	EnUS = "en-US"
 	JaJP = "ja-JP"
+	KoKR = "ko-KR"
 
 	// Default 是无法识别语言时的回退：维持引入多语言之前的行为。
 	Default = ZhCN
@@ -26,11 +27,11 @@ const (
 
 // Supported 返回所有支持的语言标签。
 func Supported() []string {
-	return []string{ZhCN, EnUS, JaJP}
+	return []string{ZhCN, EnUS, JaJP, KoKR}
 }
 
 // Normalize 把任意语言标签规整为受支持的标签，规则与前端 normalizeLocale 相同：
-// 精确匹配优先，其次按 zh/ja/en 前缀归类（zh-TW、en_GB.UTF-8 之类也能落到对应语言）。
+// 精确匹配优先，其次按 zh/ja/ko/en 前缀归类（zh-TW、en_GB.UTF-8 之类也能落到对应语言）。
 // 无法识别时返回 ("", false)，由调用方决定回退策略。
 func Normalize(value string) (string, bool) {
 	value = strings.TrimSpace(value)
@@ -49,6 +50,8 @@ func Normalize(value string) (string, bool) {
 		return ZhCN, true
 	case strings.HasPrefix(lowered, "ja"):
 		return JaJP, true
+	case strings.HasPrefix(lowered, "ko"):
+		return KoKR, true
 	case strings.HasPrefix(lowered, "en"):
 		return EnUS, true
 	}
