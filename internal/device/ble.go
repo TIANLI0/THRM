@@ -17,8 +17,15 @@ import (
 
 // BLEManager BS1 蓝牙低功耗设备管理器
 type BLEManager struct {
-	adapter    bleAdapter
-	device     bluetooth.Device
+	adapter bleAdapter
+	device  bluetooth.Device
+	// deviceOpen 表示 device 持有的 WinRT 设备与 GattSession 还没释放。
+	//
+	// tinygo bluetooth 0.17 起，Windows 上链路断开时库不再替我们 Disconnect
+	// （0.16 及以前会，见 #43），释放完全由本类型负责，而且只能释放一次：
+	// 二次 Release 是 use-after-free，recover 拦不住。所有释放都经过
+	// takeBLEDeviceLocked，由它清掉这个标记。
+	deviceOpen bool
 	writeChar  bluetooth.DeviceCharacteristic
 	notifyChar bluetooth.DeviceCharacteristic
 
@@ -47,6 +54,10 @@ type BLEManager struct {
 	// writeFrame 下发一帧原始数据，nil 时走 GATT 写入特征值。
 	// 模式切换的正确性没有硬件就无法验证，测试注入替身来观察实际发出的命令序列。
 	writeFrame func(cmd []byte) error
+
+	// closeDevice 释放一个 BLE 设备，nil 时调用 bluetooth.Device.Disconnect。
+	// 释放次数没有硬件观察不到，测试注入替身来计数。
+	closeDevice func(dev bluetooth.Device) error
 
 	// hidTransport 非 nil 时表示当前连接走 USB HID 而不是 BLE。
 	//
@@ -228,11 +239,14 @@ func (b *BLEManager) Connect() (bool, map[string]string) {
 		return false, nil
 	}
 	b.device = device
+	b.deviceOpen = true
 	b.deviceAddress = targetAddress.String()
 
 	// 发现服务和特征值
 	if !b.discoverCharacteristics() {
-		device.Disconnect()
+		if dev, ok := b.takeBLEDeviceLocked(); ok {
+			b.releaseBLEDevice(dev)
+		}
 		return false, nil
 	}
 
@@ -740,9 +754,8 @@ func (b *BLEManager) Disconnect() {
 	}
 
 	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
 	if !b.isConnected {
+		b.mutex.Unlock()
 		return
 	}
 
@@ -756,15 +769,12 @@ func (b *BLEManager) Disconnect() {
 		close(b.stopChan)
 	}
 
-	// 唤醒后蓝牙句柄可能已失效，底层断开调用的异常不应导致进程崩溃。
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				b.logError("断开 BLE 设备时发生错误，已恢复: %v", r)
-			}
-		}()
-		b.device.Disconnect()
-	}()
+	dev, ok := b.takeBLEDeviceLocked()
+	b.mutex.Unlock()
+
+	if ok {
+		b.releaseBLEDevice(dev)
+	}
 	b.logInfo("BS1 BLE 连接已断开")
 }
 
@@ -772,7 +782,14 @@ func (b *BLEManager) Disconnect() {
 func (b *BLEManager) handleDisconnect() {
 	b.mutex.Lock()
 	wasConnected, transport := b.resetConnectionLocked()
+	dev, devOpen := b.takeBLEDeviceLocked()
 	b.mutex.Unlock()
+
+	// 链路已断但设备对象和 GattSession 仍开着（MaintainConnection 还是 true），
+	// 必须在这里释放，否则旧会话一直占着设备，下次 Connect 又新开一个。
+	if devOpen {
+		b.releaseBLEDevice(dev)
+	}
 
 	if transport != nil {
 		// 目前只有 BLE 心跳会走到这里，HID 传输不会出现；万一出现，读循环还在跑，
@@ -816,6 +833,35 @@ func (b *BLEManager) resetConnectionLocked() (wasConnected bool, transport *bs1H
 		close(b.stopChan)
 	}
 	return wasConnected, transport
+}
+
+// takeBLEDeviceLocked 摘下尚未释放的 BLE 设备，交给调用方在锁外释放。
+// 同一个设备只会被摘下一次，第二次调用返回 false。调用方必须持有 b.mutex 写锁。
+func (b *BLEManager) takeBLEDeviceLocked() (bluetooth.Device, bool) {
+	if !b.deviceOpen {
+		return bluetooth.Device{}, false
+	}
+	b.deviceOpen = false
+	dev := b.device
+	b.device = bluetooth.Device{}
+	return dev, true
+}
+
+// releaseBLEDevice 关闭并释放 BLE 设备对象与 GattSession。
+// 唤醒后蓝牙句柄可能已失效，底层断开调用的异常不应导致进程崩溃。
+func (b *BLEManager) releaseBLEDevice(dev bluetooth.Device) {
+	defer func() {
+		if r := recover(); r != nil {
+			b.logError("断开 BLE 设备时发生错误，已恢复: %v", r)
+		}
+	}()
+	closeDevice := b.closeDevice
+	if closeDevice == nil {
+		closeDevice = bluetooth.Device.Disconnect
+	}
+	if err := closeDevice(dev); err != nil {
+		b.logError("关闭 BLE 会话失败: %v", err)
+	}
 }
 
 // reportDisconnect 在锁外记录断开并通知上层。

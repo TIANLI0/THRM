@@ -154,7 +154,7 @@ gopkg.in/natefinch/lumberjack.v2 v2.2.1 h1:bBRl1b0OH9s/DuPhuXpNl+VtCaJXFZ5/uEFST
 gopkg.in/natefinch/lumberjack.v2 v2.2.1/go.mod h1:YD8tP3GAjkrDg1eZH7EGmyESg/lsYskCTPBJVb9jqSc=
 gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
-tinygo.org/x/bluetooth v0.16.0 h1:vadiRkyCWukpGkYL9xBwY7j/vslReiZZ3BAWdVE0G4E=
-tinygo.org/x/bluetooth v0.16.0/go.mod h1:MRj/k5a7rBNIRpC0bAX0VNuSilv+JD83thE4zjxs2EM=
-tinygo.org/x/espradio v0.4.0 h1:xq/DJKr0ibL0R6Q+zlS2Lpfin7aHdmoABd6qMVNg4zA=
-tinygo.org/x/espradio v0.4.0/go.mod h1:PI7GtwabAzn6R+JN6eIyHjYZpGf1/ABkh4OzpDFQJ3E=
+tinygo.org/x/bluetooth v0.17.0 h1:jB93QDKgjw7jLarR/3hrzm1aIgpyzqTQye7QuLJ4BSY=
+tinygo.org/x/bluetooth v0.17.0/go.mod h1:sKTLhHAyD9jKiE1EHLw0KJOdHaHkKIcLK0sqSNX+JQ0=
+tinygo.org/x/espradio v0.5.0 h1:K+Kq4LUW2lG5ck9o4tbCwhlKA1Dog4ODZjV/HhmBOVo=
+tinygo.org/x/espradio v0.5.0/go.mod h1:2SwdQCIZTp+TshZXtf89YHNbM7mMVtAGmg/v056XSx0=

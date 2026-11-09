@@ -15,7 +15,7 @@ require (
 	golang.design/x/hotkey v0.6.4
 	golang.org/x/sys v0.49.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-	tinygo.org/x/bluetooth v0.16.0
+	tinygo.org/x/bluetooth v0.17.0
 )
 
 require (
@@ -39,5 +39,5 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/term v0.46.0 // indirect
-	tinygo.org/x/espradio v0.4.0 // indirect
+	tinygo.org/x/espradio v0.5.0 // indirect
 )

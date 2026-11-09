@@ -9,6 +9,7 @@ import (
 
 	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
+	"tinygo.org/x/bluetooth"
 )
 
 // hresultError 复刻 go-ole 的 *OleError：把 HRESULT 包成 error 并用 Code() 暴露。
@@ -218,6 +219,31 @@ func TestBS1LinkLossClearsManagerConnection(t *testing.T) {
 	}
 	if *disconnects != 1 {
 		t.Fatalf("断连回调触发了 %d 次，期望 1 次", *disconnects)
+	}
+}
+
+// tinygo bluetooth 0.17 起链路断开时库不再替我们释放设备对象，handleDisconnect
+// 必须自己释放，否则 GattSession 一直开着。之后用户再点断开（或休眠前断开）
+// 时不能再释放一次——二次 Release 是 use-after-free，recover 拦不住。
+func TestBS1LinkLossReleasesDeviceExactlyOnce(t *testing.T) {
+	m, _ := newBLEConnectedManager(t)
+	releases := 0
+	m.bleManager.closeDevice = func(bluetooth.Device) error {
+		releases++
+		return nil
+	}
+	m.bleManager.deviceOpen = true
+
+	m.bleManager.handleDisconnect()
+	if releases != 1 {
+		t.Fatalf("链路丢失后释放了 %d 次设备，期望 1 次", releases)
+	}
+
+	m.bleManager.isConnected = true // 模拟断线回调与显式断开交错
+	m.bleManager.Disconnect()
+	m.bleManager.handleDisconnect()
+	if releases != 1 {
+		t.Fatalf("设备被重复释放：共 %d 次", releases)
 	}
 }
 
