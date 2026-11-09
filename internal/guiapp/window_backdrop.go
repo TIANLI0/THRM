@@ -14,7 +14,7 @@ var resolvedBlurEnabled bool
 
 // ApplyWindowBackdrop 根据用户配置(windowBlur)与系统版本决定窗口材质，写进主窗口的创建参数。
 //
-//   - auto：Win11 使用云母，Win10 关闭。
+//   - auto：Win11 且系统缩放 ≥ 150% 时使用云母，否则关闭（见 autoBackdropMinDPI）。
 //   - on：兼容旧配置，继续使用云母。
 //   - acrylic/mica/tabbed/off：使用对应材质。
 //
@@ -23,7 +23,7 @@ var resolvedBlurEnabled bool
 func ApplyWindowBackdrop(options *application.WebviewWindowOptions) {
 	backdrop := application.None
 	if goruntime.GOOS == "windows" {
-		backdrop = backdropTypeForMode(resolveWindowBlurMode(), isWindows11())
+		backdrop = backdropTypeForMode(resolveWindowBlurMode(), isWindows11(), systemDPI() >= autoBackdropMinDPI)
 	}
 	resolvedBlurEnabled = backdrop != application.None
 	options.Windows.BackdropType = backdrop
@@ -41,7 +41,14 @@ func (a *App) WindowBlurEnabled() bool {
 	return resolvedBlurEnabled
 }
 
-func backdropTypeForMode(mode string, windows11 bool) application.BackdropType {
+// autoBackdropMinDPI 是 auto 模式启用云母所需的最低系统 DPI（144 = 150% 缩放）。
+//
+// 材质要求 WebView2 背景透明，而 Chromium 在透明背景上画字只能用灰度抗锯齿，
+// 用不上 ClearType 子像素抗锯齿。高分屏上看不出差别，1080p 这类 100%/125% 缩放的
+// 屏幕上文字会明显发虚。所以 auto 只在高缩放下开材质；用户明确选了某种材质仍照办。
+const autoBackdropMinDPI = 144
+
+func backdropTypeForMode(mode string, windows11, highDPI bool) application.BackdropType {
 	switch types.NormalizeWindowBlur(mode) {
 	case types.WindowBlurAcrylic:
 		return application.Acrylic
@@ -54,7 +61,7 @@ func backdropTypeForMode(mode string, windows11 bool) application.BackdropType {
 	case types.WindowBlurOff:
 		return application.None
 	default:
-		if windows11 {
+		if windows11 && highDPI {
 			return application.Mica
 		}
 		return application.None

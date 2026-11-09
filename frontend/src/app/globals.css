@@ -355,6 +355,20 @@ body {
   user-select: none;
 }
 
+/* 低缩放屏幕（1080p@100%/125% 等）：内置的 HarmonyOS Sans SC 子集没有 hinting，
+   小字号在 96~120 DPI 下笔画落不到像素格上，显得发虚。这类屏幕上中文优先用带
+   ClearType hinting 的微软雅黑 UI；高分屏像素足够密，仍用内置字体。
+   韩文规则（下方）选择器更具体，不受影响。 */
+@media (max-resolution: 1.49dppx) {
+  body {
+    font-family: var(--font-sans), "Microsoft YaHei UI", "Microsoft YaHei",
+      "HarmonyOS Sans SC", "HarmonyOS Sans", "PingFang SC", "Hiragino Sans GB",
+      "Hiragino Sans", "Yu Gothic UI", "Source Han Sans SC", "Noto Sans CJK SC",
+      "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, Arial,
+      Helvetica, sans-serif;
+  }
+}
+
 /* 韩文：内置的 HarmonyOS Sans SC 子集与雅黑都不含谚文，直接把系统韩文字体排到中文字体之前，
    避免逐字回退造成字形混杂（data-locale 由 i18n.tsx 写入） */
 :root[data-locale="ko-KR"] body {
