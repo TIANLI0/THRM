@@ -2058,6 +2058,8 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, d
       colorClass: preset.colorClass,
       borderClass: preset.borderClass,
       bgClass: preset.bgClass,
+      dotActiveClass: preset.dotActiveClass,
+      dotPassedClass: preset.dotPassedClass,
     })));
   }, [manualGearPresets]);
 
@@ -2261,12 +2263,18 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, d
                         type="button"
                         onClick={() => isBs1 ? applyManualGearPreset(preset.gear, '中') : handleGearCardSelect(preset.gear)}
                         className={clsx(
-                          'cursor-pointer rounded-xl border px-3 py-2.5 text-left transition-colors',
-                          isActiveGear ? `${preset.borderClass} ${preset.bgClass}` : 'border-border/70 bg-background/40 hover:bg-muted/35',
+                          'relative cursor-pointer rounded-xl border px-3 py-2.5 text-left transition-all',
+                          isActiveGear ? preset.activeCardClass : 'border-border/70 bg-background/40 opacity-70 hover:bg-muted/35 hover:opacity-100',
                         )}
+                        aria-pressed={isActiveGear}
                       >
+                        {isActiveGear && (
+                          <span className={clsx('absolute right-2.5 top-2.5 flex h-4 w-4 items-center justify-center rounded-full text-white', preset.solidBgClass)}>
+                            <Check className="h-3 w-3" strokeWidth={3} />
+                          </span>
+                        )}
                         <div className={clsx('text-lg font-bold', isActiveGear ? preset.colorClass : 'text-foreground')}>{getManualGearLabel(preset.gear)}</div>
-                        {!isBs1 && <div className={clsx('mt-1 text-base font-semibold', preset.colorClass)}>{activeLevel.rpm}RPM</div>}
+                        {!isBs1 && <div className={clsx('mt-1 text-base font-semibold', isActiveGear ? preset.colorClass : 'text-muted-foreground')}>{activeLevel.rpm}RPM</div>}
                       </button>
                     );
                   })}
@@ -2289,9 +2297,12 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, d
                           >
                             <span
                               className={clsx(
-                                'block h-4 w-4 rounded-full border border-border/80 bg-card transition-transform duration-150',
-                                isActivePoint ? `scale-125 ${point.borderClass} ${point.bgClass}` : '',
-                                isPassed && !isActivePoint ? point.bgClass : '',
+                                'block h-4 w-4 rounded-full border-2 transition-all duration-150',
+                                isActivePoint
+                                  ? `scale-125 ${point.dotActiveClass}`
+                                  : isPassed
+                                    ? point.dotPassedClass
+                                    : 'border-border bg-card',
                               )}
                             />
                           </button>
@@ -2301,8 +2312,15 @@ const FanCurve = memo(function FanCurve({ config, onConfigChange, isConnected, d
                   </div>
 
                   <div className="flex items-start justify-between px-2 text-[11px]">
-                    {manualPoints.map((point) => (
-                      <span key={`${point.key}-label`} className={clsx('w-6 text-center truncate', point.colorClass)}>
+                    {manualPoints.map((point, index) => (
+                      <span
+                        key={`${point.key}-label`}
+                        className={clsx(
+                          'w-6 text-center truncate',
+                          point.colorClass,
+                          selectedManualPointIndex === index ? 'font-bold' : 'opacity-50',
+                        )}
+                      >
                         {/* BS1 的四个点就是固件的挡位 1..4，按子级别编号会全部显示成"1档" */}
                         {t('fanCurve.manualGear.pointIndex', { index: (isBs1 ? point.gearIndex : point.levelIndex) + 1 })}
                       </span>

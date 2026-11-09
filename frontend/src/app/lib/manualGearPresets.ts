@@ -10,6 +10,12 @@ export interface ManualGearPreset {
   colorClass: string;
   borderClass: string;
   bgClass: string;
+  solidBgClass: string;
+  // 选中卡片：实色边框 + 外圈 ring，避免与未选中卡片难以区分
+  activeCardClass: string;
+  // 滑杆圆点：选中为实心 + 光圈，已经过的为半透明实心
+  dotActiveClass: string;
+  dotPassedClass: string;
   levels: ManualGearPresetLevel[];
 }
 
@@ -32,6 +38,10 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-emerald-500',
     borderClass: 'border-emerald-500/50',
     bgClass: 'bg-emerald-500/12',
+    solidBgClass: 'bg-emerald-500',
+    activeCardClass: 'border-emerald-500 bg-emerald-500/15 ring-2 ring-emerald-500/30 shadow-sm',
+    dotActiveClass: 'border-emerald-500 bg-emerald-500 ring-4 ring-emerald-500/25',
+    dotPassedClass: 'border-emerald-500/70 bg-emerald-500/60',
     levels: [
       { level: '低', rpm: 1300 },
       { level: '中', rpm: 1700 },
@@ -43,6 +53,10 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-blue-500',
     borderClass: 'border-blue-500/50',
     bgClass: 'bg-blue-500/12',
+    solidBgClass: 'bg-blue-500',
+    activeCardClass: 'border-blue-500 bg-blue-500/15 ring-2 ring-blue-500/30 shadow-sm',
+    dotActiveClass: 'border-blue-500 bg-blue-500 ring-4 ring-blue-500/25',
+    dotPassedClass: 'border-blue-500/70 bg-blue-500/60',
     levels: [
       { level: '低', rpm: 2100 },
       { level: '中', rpm: 2400 },
@@ -54,6 +68,10 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-purple-500',
     borderClass: 'border-purple-500/50',
     bgClass: 'bg-purple-500/12',
+    solidBgClass: 'bg-purple-500',
+    activeCardClass: 'border-purple-500 bg-purple-500/15 ring-2 ring-purple-500/30 shadow-sm',
+    dotActiveClass: 'border-purple-500 bg-purple-500 ring-4 ring-purple-500/25',
+    dotPassedClass: 'border-purple-500/70 bg-purple-500/60',
     levels: [
       { level: '低', rpm: 2800 },
       { level: '中', rpm: 3000 },
@@ -65,6 +83,10 @@ export const MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-orange-500',
     borderClass: 'border-orange-500/50',
     bgClass: 'bg-orange-500/12',
+    solidBgClass: 'bg-orange-500',
+    activeCardClass: 'border-orange-500 bg-orange-500/15 ring-2 ring-orange-500/30 shadow-sm',
+    dotActiveClass: 'border-orange-500 bg-orange-500 ring-4 ring-orange-500/25',
+    dotPassedClass: 'border-orange-500/70 bg-orange-500/60',
     levels: [
       { level: '低', rpm: 3500 },
       { level: '中', rpm: 3700 },
@@ -80,6 +102,10 @@ export const BS1_MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-emerald-500',
     borderClass: 'border-emerald-500/50',
     bgClass: 'bg-emerald-500/12',
+    solidBgClass: 'bg-emerald-500',
+    activeCardClass: 'border-emerald-500 bg-emerald-500/15 ring-2 ring-emerald-500/30 shadow-sm',
+    dotActiveClass: 'border-emerald-500 bg-emerald-500 ring-4 ring-emerald-500/25',
+    dotPassedClass: 'border-emerald-500/70 bg-emerald-500/60',
     levels: [{ level: '中', rpm: 1300 }],
   },
   {
@@ -87,6 +113,10 @@ export const BS1_MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-blue-500',
     borderClass: 'border-blue-500/50',
     bgClass: 'bg-blue-500/12',
+    solidBgClass: 'bg-blue-500',
+    activeCardClass: 'border-blue-500 bg-blue-500/15 ring-2 ring-blue-500/30 shadow-sm',
+    dotActiveClass: 'border-blue-500 bg-blue-500 ring-4 ring-blue-500/25',
+    dotPassedClass: 'border-blue-500/70 bg-blue-500/60',
     levels: [{ level: '中', rpm: 2100 }],
   },
   {
@@ -94,6 +124,10 @@ export const BS1_MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-purple-500',
     borderClass: 'border-purple-500/50',
     bgClass: 'bg-purple-500/12',
+    solidBgClass: 'bg-purple-500',
+    activeCardClass: 'border-purple-500 bg-purple-500/15 ring-2 ring-purple-500/30 shadow-sm',
+    dotActiveClass: 'border-purple-500 bg-purple-500 ring-4 ring-purple-500/25',
+    dotPassedClass: 'border-purple-500/70 bg-purple-500/60',
     levels: [{ level: '中', rpm: 2800 }],
   },
   {
@@ -101,6 +135,10 @@ export const BS1_MANUAL_GEAR_PRESETS: ManualGearPreset[] = [
     colorClass: 'text-orange-500',
     borderClass: 'border-orange-500/50',
     bgClass: 'bg-orange-500/12',
+    solidBgClass: 'bg-orange-500',
+    activeCardClass: 'border-orange-500 bg-orange-500/15 ring-2 ring-orange-500/30 shadow-sm',
+    dotActiveClass: 'border-orange-500 bg-orange-500 ring-4 ring-orange-500/25',
+    dotPassedClass: 'border-orange-500/70 bg-orange-500/60',
     levels: [{ level: '中', rpm: 3500 }],
   },
 ];
