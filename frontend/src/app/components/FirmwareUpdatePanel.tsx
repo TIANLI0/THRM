@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { Cpu, Download, FileUp, HardDriveDownload, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -21,7 +22,7 @@ import {
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  t: TFunction;
 }
 
 export function FirmwareUpdatePanel({ open, onOpenChange, t }: Props) {

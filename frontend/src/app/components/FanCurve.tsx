@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
+import type { TFunction } from 'i18next';
 import { LineChart, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine, ReferenceArea } from 'recharts';
 // m + AppShell 里的 LazyMotion：动画特性异步加载，见 lib/motion-features.ts
 import { m as motion, AnimatePresence } from 'framer-motion';
@@ -472,7 +473,7 @@ function HistoryTrendTooltip(props: {
 function formatHistoryDuration(
   startTimestamp: number,
   endTimestamp: number,
-  t: (key: string, options?: Record<string, unknown>) => string,
+  t: TFunction,
 ) {
   const durationMs = Math.max(0, endTimestamp - startTimestamp);
   if (durationMs < 60_000) {

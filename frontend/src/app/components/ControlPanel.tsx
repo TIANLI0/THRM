@@ -1,6 +1,7 @@
 'use client';
 
 import React, { memo, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { TFunction } from 'i18next';
 // m + AppShell 里的 LazyMotion：动画特性异步加载，见 lib/motion-features.ts
 import { m as motion, AnimatePresence } from 'framer-motion';
 import {
@@ -349,7 +350,7 @@ function getErrorMessage(error: unknown) {
 
 function translateWorkMode(
   workMode: string | null | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string,
+  t: TFunction,
 ) {
   switch (workMode) {
     case '挡位工作模式':

@@ -254,7 +254,7 @@ jobs:
 
       - name: Install Wails CLI
         run: |
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Cache frontend dependencies
@@ -360,7 +360,7 @@ jobs:
       - name: Install Wails CLI and go-winres
         shell: pwsh
         run: |
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
           go install github.com/tc-hib/go-winres@v0.3.3
           Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:USERPROFILE 'go\bin')
 
@@ -695,7 +695,7 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libwebkitgtk-6.0-dev \
             libhidapi-dev libudev-dev
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Cache frontend dependencies
