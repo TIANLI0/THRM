@@ -751,6 +751,8 @@ const LiveSmartTempText = memo(function LiveSmartTempText() {
 
 /* ── Main ControlPanel ── */
 
+const NO_LIGHTING_MODELS = new Set(['BS1', 'BS2', 'BS3']);
+
 function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported, deviceModel, deviceSettings }: ControlPanelProps) {
   const { t } = useTranslation();
   const { locale, setLocale } = useLocale();
@@ -857,6 +859,9 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
   const activeCurveProfileId = ((config as any).activeFanCurveProfileId || '') as string;
   // 自适应学习 2.0 不查用户曲线，曲线方案切换在它开启期间是空操作。
   const isBs1 = deviceModel === 'BS1';
+  // 只有 Pro 型号带灯带与挡位灯；BS1、BS2、BS3 没有灯光硬件，不显示灯光相关选项。
+  // 未连接时 deviceModel 为空，按有灯处理，保持原来的显示。
+  const hasLighting = !NO_LIGHTING_MODELS.has(deviceModel ?? '');
   const currentTempSource = (((config as any).tempSource as string) || 'max') as 'max' | 'cpu' | 'gpu';
   const temperatureSignature = useAppStore(selectControlTemperatureSignature);
   const temperature = useMemo<ControlTemperatureMeta | null>(
@@ -2033,7 +2038,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
         <ControlOverview isBs1={isBs1} />
 
         {/* ═══════════ 1. 灯光效果 ═══════════ */}
-        {!isBs1 && (
+        {hasLighting && (
         <Section title={t('controlPanel.light.sectionTitle')} icon={Sparkles}>
           <div className="space-y-4 p-5">
             <div className="grid grid-cols-2 gap-3">
@@ -2508,7 +2513,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
 
         {/* ═══════════ 3. 设备设置 ═══════════ */}
         <Section title={t('controlPanel.device.sectionTitle')} icon={Zap}>
-          {!isBs1 && (
+          {hasLighting && (
           <SettingRow
             icon={<Lightbulb className={clsx('h-4 w-4', config.gearLight ? 'text-yellow-500' : '')} />}
             title={t('controlPanel.device.gearLightTitle')}
