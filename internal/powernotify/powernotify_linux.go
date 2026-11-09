@@ -12,12 +12,13 @@ import (
 type notifier struct {
 	conn      *dbus.Conn
 	onSuspend func()
-	onResume  func()
+	onResume  func(userPresent bool)
 	stopCh    chan struct{}
 	stopOnce  sync.Once
 }
 
-func RegisterSuspendResumeNotifications(onSuspend, onResume func()) (func(), error) {
+// logind 的 PrepareForSleep(false) 不区分是否有人值守，一律按用户在场处理。
+func RegisterSuspendResumeNotifications(onSuspend func(), onResume func(userPresent bool)) (func(), error) {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to D-Bus system bus: %w", err)
@@ -63,7 +64,7 @@ func (pn *notifier) listen() {
 						}
 					} else {
 						if pn.onResume != nil {
-							pn.onResume()
+							pn.onResume(true)
 						}
 					}
 				}

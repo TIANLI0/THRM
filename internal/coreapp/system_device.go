@@ -451,14 +451,49 @@ func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInter
 	if !shouldRecoverFromSystemResumeGap(gap, expectedInterval) {
 		return false
 	}
+	// 收到过挂起通知、还没等到用户在场的唤醒时，计时间隔变长不代表用户回来了：
+	// 现代待机与无人值守的自动唤醒期间进程也会被零星调度。此时按间隔"恢复"会重连
+	// 设备、启动智能控温，风扇就在睡眠中转起来。只有确认用户有过输入才恢复，
+	// 其余交给电源通知（或 waitForUserAfterAutomaticResume）处理。
+	if a.systemSuspended.Load() && !a.userInputSinceSuspend() {
+		a.logDebug("挂起期间检测到计时间隔 %s（来源=%s），用户尚未操作，继续等待唤醒通知", gap.Round(time.Second), source)
+		return true
+	}
 	a.triggerResumeRecovery(source, gap, false)
 	return true
 }
 
+// userInputSinceSuspend 判断收到挂起通知之后用户是否有过键盘/鼠标输入。
+// 拿不到输入时刻（非 Windows 或调用失败）时返回 false。
+func (a *CoreApp) userInputSinceSuspend() bool {
+	if !a.hasSuspendInputTick.Load() {
+		return false
+	}
+	last, ok := lastUserInputTick()
+	if !ok {
+		return false
+	}
+	return tickAfter(last, a.suspendInputTick.Load())
+}
+
+// tickAfter 判断 GetTickCount 时钟上 a 是否晚于 b，按差值的符号比较以容忍约 49.7 天的回绕。
+func tickAfter(a, b uint32) bool {
+	return int32(a-b) > 0
+}
+
 // onSystemSuspend 收到系统挂起（睡眠/休眠）通知时调用。
 func (a *CoreApp) onSystemSuspend() {
+	// 自动唤醒后系统又睡回去时 systemSuspended 仍为 true，下面的 CAS 会直接返回；
+	// 先让等待用户的观察协程失效，它不能在下一次睡眠里继续计时、到点恢复设备。
+	a.automaticResumeGeneration.Add(1)
 	if !a.systemSuspended.CompareAndSwap(false, true) {
 		return
+	}
+	if tick, ok := currentInputTick(); ok {
+		a.suspendInputTick.Store(tick)
+		a.hasSuspendInputTick.Store(true)
+	} else {
+		a.hasSuspendInputTick.Store(false)
 	}
 	generation := a.suspendGeneration.Add(1)
 	if a.rtssPublisher != nil {
@@ -572,13 +607,79 @@ func (a *CoreApp) powerOffDeviceOutputsForSuspend() {
 }
 
 // onSystemResume 收到系统唤醒通知时调用，触发设备与监控的恢复。
-func (a *CoreApp) onSystemResume() {
-	a.logInfo("收到系统唤醒通知")
-	a.triggerResumeRecovery("power-event", 0, true)
+//
+// userPresent=false 对应 PBT_APMRESUMEAUTOMATIC：计划任务、Windows 更新、网络唤醒
+// 定时器等无人值守的自动唤醒也会发它，系统做完事几分钟后又睡回去。这时若照常重连并
+// 启动智能控温，风扇会在"睡眠中"转起来，睡回去后还停在最后的转速。所以只有用户在场
+// （PBT_APMRESUMESUSPEND 或检测到输入），或者系统持续醒着超过 automaticResumeGrace，
+// 才恢复设备控制。
+func (a *CoreApp) onSystemResume(userPresent bool) {
+	if userPresent || !a.systemSuspended.Load() {
+		// 没收到过挂起通知时无从判断，保持原来的立即恢复。
+		a.automaticResumeGeneration.Add(1)
+		if userPresent {
+			a.logInfo("收到系统唤醒通知（用户在场）")
+		} else {
+			a.logInfo("收到系统唤醒通知")
+		}
+		a.triggerResumeRecovery("power-event", 0, true)
+		return
+	}
+	a.logInfo("收到系统自动唤醒通知：可能是无人值守的定时唤醒，暂不重连设备，等待用户操作（持续唤醒超过 %s 后再恢复）", automaticResumeGrace)
+	generation := a.automaticResumeGeneration.Add(1)
+	a.activeAutomaticWake.Store(generation)
+	a.safeGo("automatic-resume-wait", func() {
+		a.waitForUserAfterAutomaticResume(generation)
+	})
+}
+
+// waitForUserAfterAutomaticResume 在自动唤醒后等待用户出现。
+//
+// 正常情况下用户在场时 PBT_APMRESUMESUSPEND 紧随而来，会让本协程失效；这里的输入
+// 检测与超时只是兜底，防止某些机器（例如现代待机）不发该通知导致设备一直不恢复。
+func (a *CoreApp) waitForUserAfterAutomaticResume(generation uint64) {
+	start := time.Now()
+	ticker := time.NewTicker(automaticResumePollInterval)
+	defer ticker.Stop()
+	// 蓝牙可能在唤醒前就已重连（HID 到达通知不会再来），先主动压一次风扇；失败（设备
+	// 还没出现）就隔一段时间再试，直到成功一次为止。之后的断线重连由 HID 到达通知负责。
+	held := false
+	var nextHoldAt time.Time
+	for range ticker.C {
+		if a.stopping.Load() || a.automaticResumeGeneration.Load() != generation || !a.systemSuspended.Load() {
+			return
+		}
+		if !held && !time.Now().Before(nextHoldAt) {
+			held = a.holdFanQuietAfterAutomaticWake(generation, "automatic-resume")
+			nextHoldAt = time.Now().Add(quietHoldRetryInterval)
+		}
+		if a.userInputSinceSuspend() {
+			a.logInfo("自动唤醒后检测到用户操作，开始恢复设备")
+			a.triggerResumeRecovery("power-event-user-input", 0, true)
+			return
+		}
+		if time.Since(start) >= automaticResumeGrace {
+			a.logInfo("自动唤醒后系统已持续运行 %s，恢复设备控制", automaticResumeGrace)
+			a.triggerResumeRecovery("power-event-automatic", 0, true)
+			return
+		}
+	}
 }
 
 func (a *CoreApp) onSupportedHIDArrival(devicePath string) {
-	if a.stopping.Load() || a.systemSuspended.Load() || a.autoReconnectSuppressed.Load() {
+	if a.stopping.Load() {
+		return
+	}
+	if a.systemSuspended.Load() {
+		// 自动唤醒期间 Windows 会自己重连已配对的蓝牙散热器，固件一连上就会起转。
+		// 这里只把风扇压住，不做常规重连，常规恢复要等用户回来。
+		generation := a.automaticResumeGeneration.Load()
+		a.safeGo("automatic-wake-quiet-hold@hid-arrival", func() {
+			a.holdFanQuietAfterAutomaticWake(generation, "hid-arrival")
+		})
+		return
+	}
+	if a.autoReconnectSuppressed.Load() {
 		return
 	}
 	a.mutex.RLock()
@@ -678,6 +779,10 @@ func (a *CoreApp) handleSystemResume(source string, gap time.Duration, forceReco
 		return
 	}
 
+	// 自动唤醒期间的压风扇可能还在收尾：systemSuspended 已清，它很快会放弃并断开自己
+	// 打开的连接。等它结束再开始恢复，免得它的断开把下面新建的连接断掉。
+	a.quietHoldMutex.Lock()
+	a.quietHoldMutex.Unlock() //nolint:staticcheck // 仅作屏障
 	a.safeRun("resume-device-disconnect", func() {
 		a.deviceManager.DisconnectForRecovery()
 	})
@@ -750,7 +855,19 @@ func (a *CoreApp) connectDevice(manual bool) bool {
 	a.connectMutex.Lock()
 	if done := a.connectDone; done != nil {
 		a.connectMutex.Unlock()
-		<-done
+		if manual {
+			// 唤醒后设备不响应时，进行中的那次连接可能卡在系统 HID 调用里迟迟不返回。
+			// 原先手动连接会无限期排队等它：用户怎么点「重新连接」都没反应，只能重启软件。
+			// 现在最多等 manualConnectWaitTimeout，超时就如实报告失败。
+			select {
+			case <-done:
+			case <-time.After(manualConnectWaitTimeout):
+				a.logError("手动连接：上一次连接尝试已超过 %s 仍未返回（可能卡在系统 HID 调用），本次放弃等待", manualConnectWaitTimeout)
+				return false
+			}
+		} else {
+			<-done
+		}
 		a.connectMutex.Lock()
 		result := a.connectResult
 		a.connectMutex.Unlock()
@@ -762,7 +879,13 @@ func (a *CoreApp) connectDevice(manual bool) bool {
 	a.connectDone = done
 	a.connectMutex.Unlock()
 
+	// 连接尝试本身无法从外部打断（底层是 cgo/系统调用），至少在它迟迟不返回时留下日志，
+	// 唤醒后"怎么都连不上"的反馈才有据可查。
+	slowWarning := time.AfterFunc(slowConnectAttemptWarning, func() {
+		a.logError("设备连接尝试已持续 %s 仍未返回，可能卡在打开/读取 HID 设备的系统调用中", slowConnectAttemptWarning)
+	})
 	success := a.connectDeviceOnce(generation, manual)
+	slowWarning.Stop()
 
 	a.connectMutex.Lock()
 	a.connectResult = success
@@ -1242,6 +1365,63 @@ func (a *CoreApp) setAutomaticFanSpeed(rpm int) (ready, written bool) {
 // opened HID handle to the rest of Core. A valid status report is sufficient;
 // otherwise a successful settings query with usable data proves readiness.
 func (a *CoreApp) waitForDeviceReady(generation uint64) (*types.DeviceSettings, error) {
+	return a.waitForDeviceReadyWhile(func() bool { return a.isConnectionAttemptCurrent(generation) })
+}
+
+// automaticWakeQuietHoldWanted 判断自动唤醒期间是否还需要把风扇压住：仍处于这一轮
+// 等待用户的阶段、挂起前设备是连着的（用户没有手动断开），且上次走的是 HID——
+// 只有系统托管的蓝牙/USB HID 才会被 Windows 自己重连；BS1 的 BLE 由 THRM 主动扫描
+// 连接，自动唤醒时不会自己连上，也就无需去碰。
+func (a *CoreApp) automaticWakeQuietHoldWanted(generation uint64) bool {
+	return !a.stopping.Load() &&
+		a.systemSuspended.Load() &&
+		a.automaticResumeGeneration.Load() == generation &&
+		generation != 0 && a.activeAutomaticWake.Load() == generation &&
+		a.resumeReconnectWanted.Load() &&
+		a.configManager.Get().LastDeviceTransport == types.DeviceTypeHID
+}
+
+// holdFanQuietAfterAutomaticWake 在无人值守的自动唤醒期间把风扇压到 0。
+//
+// 固件在蓝牙一连上就会自己起转，而 Windows 在自动唤醒时会主动重连已配对的散热器，
+// 用户看到的就是"睡眠中风扇不定时转"。这里短暂打开 HID、等设备开始应答后下发 0 转，
+// 然后断开（断开不会向设备发任何命令，风扇保持 0；系统睡回去蓝牙一断，固件按智能
+// 启停自己停）。用户回来后常规的唤醒恢复会重连并按配置恢复控温。
+func (a *CoreApp) holdFanQuietAfterAutomaticWake(generation uint64, reason string) bool {
+	a.quietHoldMutex.Lock()
+	defer a.quietHoldMutex.Unlock()
+
+	if !a.automaticWakeQuietHoldWanted(generation) {
+		return false
+	}
+	ok, _ := a.deviceManager.Reconnect()
+	if !ok {
+		a.logDebug("自动唤醒期间未连上设备（来源=%s），稍后重试", reason)
+		return false
+	}
+	defer a.safeRun("automatic-wake-quiet-disconnect", a.deviceManager.DisconnectSilently)
+
+	stillWanted := func() bool { return a.automaticWakeQuietHoldWanted(generation) }
+	if _, err := a.waitForDeviceReadyWhile(stillWanted); err != nil {
+		a.logError("自动唤醒期间设备未就绪，未能压住风扇（来源=%s）: %v", reason, err)
+		return false
+	}
+	a.deviceControlMutex.Lock()
+	defer a.deviceControlMutex.Unlock()
+	if !stillWanted() {
+		return false
+	}
+	if !a.deviceManager.SetCustomFanSpeed(0) {
+		a.logError("自动唤醒期间下发 0 转失败（来源=%s）", reason)
+		return false
+	}
+	a.logInfo("系统自动唤醒并重连了散热器（来源=%s），已把风扇压到 0，等用户回来再恢复控温", reason)
+	return true
+}
+
+// waitForDeviceReadyWhile 等待刚打开的设备开始应答：收到状态帧，或设置查询返回有效数据。
+// current 返回 false 时视为取消。
+func (a *CoreApp) waitForDeviceReadyWhile(current func() bool) (*types.DeviceSettings, error) {
 	timeout := time.NewTimer(deviceReadyTimeout)
 	defer timeout.Stop()
 	ticker := time.NewTicker(deviceReadyPollInterval)
@@ -1250,7 +1430,7 @@ func (a *CoreApp) waitForDeviceReady(generation uint64) (*types.DeviceSettings, 
 	nextQueryAt := time.Now().Add(deviceReadyStatusGrace)
 	var lastErr error
 	for {
-		if !a.isConnectionAttemptCurrent(generation) || !a.deviceManager.IsConnected() {
+		if !current() || !a.deviceManager.IsConnected() {
 			return nil, fmt.Errorf("连接尝试已被取消")
 		}
 		if a.deviceManager.GetCurrentFanData() != nil {
@@ -1259,7 +1439,7 @@ func (a *CoreApp) waitForDeviceReady(generation uint64) (*types.DeviceSettings, 
 
 		if !time.Now().Before(nextQueryAt) {
 			a.deviceControlMutex.Lock()
-			if !a.isConnectionAttemptCurrent(generation) || !a.deviceManager.IsConnected() {
+			if !current() || !a.deviceManager.IsConnected() {
 				a.deviceControlMutex.Unlock()
 				return nil, fmt.Errorf("连接尝试已被取消")
 			}

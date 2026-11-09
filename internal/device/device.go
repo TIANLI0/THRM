@@ -38,6 +38,12 @@ const hidAbsentSummaryEvery = 20
 type hidCandidate struct {
 	productID uint16
 	path      string
+	// 枚举时系统已经读到的字符串。连接时直接用它们，不再调用 GetDeviceInfo：
+	// 那会向设备同步请求字符串描述符，蓝牙 HID 设备不响应时（典型是刚唤醒）可能长时间
+	// 阻塞，而 connect 全程持有 m.mutex。
+	manufacturer string
+	product      string
+	serial       string
 }
 
 // enumerateVendorHID 一次性枚举指定厂商的全部 HID 接口（保持系统枚举顺序）。
@@ -46,7 +52,13 @@ var enumerateVendorHID = func(vendorID uint16) []hidCandidate {
 	var found []hidCandidate
 	_ = hid.Enumerate(vendorID, 0, func(info *hid.DeviceInfo) error {
 		if info.VendorID == vendorID {
-			found = append(found, hidCandidate{productID: info.ProductID, path: info.Path})
+			found = append(found, hidCandidate{
+				productID:    info.ProductID,
+				path:         info.Path,
+				manufacturer: info.MfrStr,
+				product:      info.ProductStr,
+				serial:       info.SerialNbr,
+			})
 		}
 		return nil
 	})
@@ -55,6 +67,23 @@ var enumerateVendorHID = func(vendorID uint16) []hidCandidate {
 
 // pickHIDCandidates 按 priority 顺序为每个产品 ID 选出枚举顺序中的第一个接口，
 // 与逐个调用 hid.OpenFirst(vendorID, productID) 的选取结果一致。
+// hidConnectionInfo 用枚举时拿到的字符串组装连接信息，缺失的字段按原来的约定回退。
+func hidConnectionInfo(candidate hidCandidate, modelName string) map[string]string {
+	orDefault := func(value, fallback string) string {
+		if value == "" {
+			return fallback
+		}
+		return value
+	}
+	return map[string]string{
+		"manufacturer": orDefault(candidate.manufacturer, "Unknown"),
+		"product":      orDefault(candidate.product, modelName),
+		"serial":       orDefault(candidate.serial, "Unknown"),
+		"model":        modelName,
+		"productId":    fmt.Sprintf("0x%04X", candidate.productID),
+	}
+}
+
 func pickHIDCandidates(found []hidCandidate, priority []uint16) []hidCandidate {
 	picked := make([]hidCandidate, 0, len(priority))
 	for _, productID := range priority {
@@ -398,6 +427,7 @@ func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 	}
 
 	var connectedProductID uint16
+	var connectedCandidate hidCandidate
 	for _, candidate := range candidates {
 		productID := candidate.productID
 		m.logInfo("正在连接设备 - 厂商ID: 0x%04X, 产品ID: 0x%04X", VendorID, productID)
@@ -406,6 +436,7 @@ func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 		if err == nil {
 			m.logInfo("成功连接到产品ID: 0x%04X", productID)
 			connectedProductID = productID
+			connectedCandidate = candidate
 			break
 		} else {
 			device = nil
@@ -433,28 +464,8 @@ func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 
 		modelName := modelNameForProductID(connectedProductID)
 
-		// 获取设备信息
-		deviceInfo, infoErr := device.GetDeviceInfo()
-		var info map[string]string
-		if infoErr == nil {
-			m.logInfo("设备连接成功: %s %s (型号: %s)", deviceInfo.MfrStr, deviceInfo.ProductStr, modelName)
-			info = map[string]string{
-				"manufacturer": deviceInfo.MfrStr,
-				"product":      deviceInfo.ProductStr,
-				"serial":       deviceInfo.SerialNbr,
-				"model":        modelName,
-				"productId":    fmt.Sprintf("0x%04X", connectedProductID),
-			}
-		} else {
-			m.logError("设备连接成功,但获取设备信息失败: %v", infoErr)
-			info = map[string]string{
-				"manufacturer": "Unknown",
-				"product":      modelName,
-				"serial":       "Unknown",
-				"model":        modelName,
-				"productId":    fmt.Sprintf("0x%04X", connectedProductID),
-			}
-		}
+		info := hidConnectionInfo(connectedCandidate, modelName)
+		m.logInfo("设备连接成功: %s %s (型号: %s)", info["manufacturer"], info["product"], modelName)
 
 		// 开始监控设备数据（显式传入本次连接的句柄与信号，避免与后续重连串扰）
 		go m.monitorDeviceData(device, m.monitorStop, m.monitorDone)

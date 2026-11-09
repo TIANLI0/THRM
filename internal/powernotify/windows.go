@@ -38,12 +38,17 @@ type notifier struct {
 	params    deviceNotifySubscribeParameters
 	callback  uintptr
 	onSuspend func()
-	onResume  func()
+	onResume  func(userPresent bool)
 	stopOnce  sync.Once
 }
 
 // RegisterSuspendResumeNotifications 注册系统睡眠/唤醒通知。
-func RegisterSuspendResumeNotifications(onSuspend, onResume func()) (func(), error) {
+//
+// onResume 的 userPresent 区分两种唤醒：
+//   - PBT_APMRESUMEAUTOMATIC（false）：任何唤醒都会发，包括计划任务、Windows 更新、
+//     网络唤醒定时器这类无人值守的自动唤醒，系统做完事会再睡回去。
+//   - PBT_APMRESUMESUSPEND（true）：只在用户在场（按键、鼠标、电源键）时紧随其后发出。
+func RegisterSuspendResumeNotifications(onSuspend func(), onResume func(userPresent bool)) (func(), error) {
 	if err := procPowerRegisterSuspendResumeNotification.Find(); err != nil {
 		return nil, fmt.Errorf("当前系统不支持电源通知注册: %w", err)
 	}
@@ -64,9 +69,13 @@ func RegisterSuspendResumeNotifications(onSuspend, onResume func()) (func(), err
 			if pn.onSuspend != nil {
 				pn.onSuspend()
 			}
-		case pbtAPMResumeSuspend, pbtAPMResumeAutomatic:
+		case pbtAPMResumeSuspend:
 			if pn.onResume != nil {
-				pn.onResume()
+				pn.onResume(true)
+			}
+		case pbtAPMResumeAutomatic:
+			if pn.onResume != nil {
+				pn.onResume(false)
 			}
 		}
 		return 0

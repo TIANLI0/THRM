@@ -77,6 +77,19 @@ type CoreApp struct {
 	systemSuspended         atomic.Bool
 	resumeReconnectWanted   atomic.Bool
 	suspendGeneration       atomic.Uint64
+	// automaticResumeGeneration 让"自动唤醒后等待用户"的观察协程失效：再次挂起或
+	// 用户在场的唤醒通知到达时递增。
+	automaticResumeGeneration atomic.Uint64
+	// activeAutomaticWake 记录正处于"自动唤醒、等待用户"阶段的那一轮 generation。
+	// 普通睡眠期间它与 automaticResumeGeneration 不相等，压风扇的逻辑据此不动作。
+	activeAutomaticWake atomic.Uint64
+	// suspendInputTick 是收到挂起通知时的 GetTickCount，hasSuspendInputTick 表示它有效。
+	// 之后若 GetLastInputInfo 晚于它，说明用户回到了电脑前。
+	suspendInputTick    atomic.Uint32
+	hasSuspendInputTick atomic.Bool
+	// quietHoldMutex 串行化自动唤醒期间的"连上设备把风扇压到 0"，HID 到达通知与
+	// 等待协程可能同时触发。
+	quietHoldMutex sync.Mutex
 	connectGeneration       atomic.Uint64
 	stopping                atomic.Bool
 	lastResumeRecoveryUnix  int64
@@ -121,6 +134,11 @@ const (
 	systemResumeDetectionCeiling = 45 * time.Second                                             // 系统恢复检测阈值上限
 	systemResumeRecoveryCooldown = 5 * time.Second                                              // 系统恢复后自动重连的冷却时间
 	suspendCleanupGrace          = 2 * time.Second                                              // 挂起清理宽限时间
+	automaticResumeGrace         = 10 * time.Minute                                             // 自动唤醒后无人操作时，等这么久仍醒着才恢复设备控制
+	automaticResumePollInterval  = 2 * time.Second                                              // 自动唤醒后检查用户输入的间隔
+	quietHoldRetryInterval       = 10 * time.Second                                             // 自动唤醒期间压风扇失败后的重试间隔
+	manualConnectWaitTimeout     = 20 * time.Second                                             // 手动连接等待进行中连接尝试的上限
+	slowConnectAttemptWarning    = 20 * time.Second                                             // 单次连接尝试超过该时长仍未返回时记录告警
 	pawnIOInstallerTimeout       = 90 * time.Second                                             // PawnIO 安装程序超时时间
 	pawnIOAlreadyExistsExitCode  = 183                                                          // PawnIO 安装程序退出码，表示已存在安装
 	pawnIORegistryPath           = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO` // PawnIO 注册表路径
