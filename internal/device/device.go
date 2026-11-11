@@ -352,6 +352,7 @@ func (m *Manager) handleBLELinkLost() {
 	m.deviceType = ""
 	m.currentFanData.Store(nil)
 	m.resetRealtimeControlStateLocked()
+	m.resetLightStateCacheLocked()
 	onDisconnect := m.onDisconnect
 	m.mutex.Unlock()
 
@@ -488,6 +489,7 @@ func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 		m.productID = 0
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()
+		m.resetLightStateCacheLocked()
 		m.connectionGen.Add(1)
 		m.logInfo("BS1 USB HID 设备连接成功")
 		return true, bs1Info
@@ -535,6 +537,7 @@ func (m *Manager) connect(preferLastTransport bool) (bool, map[string]string) {
 		m.productID = 0
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()
+		m.resetLightStateCacheLocked()
 		m.connectionGen.Add(1)
 		m.logInfo("BS1 BLE 设备连接成功")
 		return true, bleInfo
@@ -577,6 +580,7 @@ func (m *Manager) disconnect(notify, detachOnTimeout bool) {
 		m.deviceType = ""
 		m.currentFanData.Store(nil)
 		m.resetRealtimeControlStateLocked()
+		m.resetLightStateCacheLocked()
 		onDisconnect := notify && m.onDisconnect != nil
 		m.mutex.Unlock()
 

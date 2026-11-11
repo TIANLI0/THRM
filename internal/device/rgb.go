@@ -238,7 +238,7 @@ const lightFrameRetries = 2
 //
 // 0x43 会让固件擦写数据闪存，应答明显慢于普通命令；默认的 900ms 实测经常不够，
 // 现象是"设置灯带失败: 等待命令 0x43 响应超时"，但灯效其实已经生效——属于假失败。
-// 提交内容幂等（同一份缓冲区），重发一次不会产生副作用。
+// 仅 BS1 使用该超时；丢失 ACK 不能证明没有落盘，因此不自动重发 0x43。
 const lightCommitTimeout = 2500 * time.Millisecond
 
 // sendLightCommandWithTimeoutLocked 按指定超时下发一条灯效命令。
@@ -275,7 +275,11 @@ func (m *Manager) sendLightCommandRetryLocked(retries int, timeout time.Duration
 }
 
 func (m *Manager) sendLightCommandLocked(command byte, payload ...byte) error {
-	return m.sendLightCommandWithTimeoutLocked(deviceResponseTimeout, command, payload...)
+	timeout := deviceResponseTimeout
+	if m.deviceType == types.DeviceTypeBLE && command == deviceproto.CmdRGBCommit {
+		timeout = lightCommitTimeout
+	}
+	return m.sendLightCommandWithTimeoutLocked(timeout, command, payload...)
 }
 
 func newLightProgram(lastKeyframe, speed, brightness byte) lightProgram {
@@ -315,7 +319,11 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 
 	for i := range program {
 		framePayload := append([]byte{byte(i)}, program[i][:]...)
-		if err := m.sendLightCommandRetryLocked(lightFrameRetries, deviceResponseTimeout,
+		retries := 0
+		if m.deviceType == types.DeviceTypeBLE {
+			retries = lightFrameRetries
+		}
+		if err := m.sendLightCommandRetryLocked(retries, deviceResponseTimeout,
 			deviceproto.CmdRGBFrameWrite, framePayload...); err != nil {
 			return err
 		}
@@ -329,7 +337,7 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 	// 它的落盘发生在 ACK 之后（TMOS 事件 0x20），所以既要与前一条落盘命令拉开，
 	// 也要记时，好让紧随其后的 0x0C/0x48 不会撞进这次异步擦写。
 	m.awaitFlashWriteWindowLocked()
-	err := m.sendLightCommandRetryLocked(1, lightCommitTimeout, deviceproto.CmdRGBCommit, 0x01)
+	err := m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 0x01)
 	m.noteFlashWriteLocked()
 	return err
 }

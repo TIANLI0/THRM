@@ -95,6 +95,7 @@ type CoreApp struct {
 	// shutdownInProgress 在系统广播"即将关机"后置位，用来拦住控温循环：
 	// 关机前已经下发目标 0，若循环随后又把曲线目标写回去，风扇就会一直转。
 	shutdownInProgress     atomic.Bool
+	shutdownGeneration     atomic.Uint64
 	lastResumeRecoveryUnix int64
 
 	powerNotifyStop      func()

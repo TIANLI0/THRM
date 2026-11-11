@@ -1,9 +1,11 @@
 package device
 
 import (
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -73,3 +75,44 @@ var errRGBOffReportedFailure = &lightTestError{}
 type lightTestError struct{}
 
 func (*lightTestError) Error() string { return "SetRGBOff 返回 false" }
+
+func TestBS1LostCommitAckDoesNotRepeatFlashWrite(t *testing.T) {
+	m := NewManager(nil)
+	m.isConnected, m.deviceType = true, types.DeviceTypeBLE
+	m.bleManager.isConnected = true
+	writes := 0
+	m.bleManager.writeFrame = func(raw []byte) error {
+		frame, ok := deviceproto.ParseFrame(raw)
+		if !ok || frame.Command != deviceproto.CmdRGBCommit {
+			t.Fatal("unexpected command")
+		}
+		writes++
+		// A transport failure is enough to exercise the ambiguous commit case:
+		// the host cannot tell whether firmware already applied the command.
+		return errors.New("lost connection after write")
+	}
+	if err := m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 1); err == nil {
+		t.Fatal("lost ACK was hidden")
+	}
+	if writes != 1 {
+		t.Fatalf("commit wrote flash %d times", writes)
+	}
+}
+
+func TestBS1DisconnectInvalidatesLightingState(t *testing.T) {
+	for _, unexpected := range []bool{false, true} {
+		m := NewManager(nil)
+		m.isConnected, m.deviceType = true, types.DeviceTypeBLE
+		m.hasRGBEnabled, m.rgbEnabled, m.hasLightConfig = true, true, true
+		// The underlying BLE/HID link is already gone. No native transport is
+		// needed to ensure a future connection cannot reuse this cached switch.
+		if unexpected {
+			m.handleBLELinkLost()
+		} else {
+			m.DisconnectSilently()
+		}
+		if m.hasRGBEnabled || m.hasLightConfig {
+			t.Fatalf("unexpected=%t: stale BS1 light cache survived disconnect", unexpected)
+		}
+	}
+}
