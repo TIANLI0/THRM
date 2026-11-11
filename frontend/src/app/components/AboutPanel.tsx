@@ -260,6 +260,7 @@ export default function AboutPanel() {
   const isDeviceConnected = useAppStore((state) => state.isConnected);
   const deviceModel = useAppStore((state) => state.deviceModel);
   const storeDeviceSettings = useAppStore((state) => state.deviceSettings);
+  const debugMode = useAppStore((state) => state.config?.debugMode === true);
   const [appVersion, setAppVersion] = useState('');
   const [queriedDeviceSettings, setQueriedDeviceSettings] = useState<DeviceSettings | null>(null);
   const [firmwareRefreshing, setFirmwareRefreshing] = useState(false);
@@ -276,6 +277,9 @@ export default function AboutPanel() {
   const [releaseError, setReleaseError] = useState('');
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [firmwareUpdateOpen, setFirmwareUpdateOpen] = useState(false);
+  useEffect(() => {
+    if (!debugMode) setFirmwareUpdateOpen(false);
+  }, [debugMode]);
   // 下载/安装状态放在全局 store：进度弹窗由 AppShell 常驻渲染，切页不中断。
   const installerUrl = useUpdateStore((state) => state.installerUrl);
   const updateStage = useUpdateStore((state) => state.stage);
@@ -1033,14 +1037,16 @@ export default function AboutPanel() {
                 {t('aboutPanel.version.openReleasePage')}
               </Button>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setFirmwareUpdateOpen(true)}
-                icon={<HardDriveDownload className="h-4 w-4" />}
-              >
-                {t('firmwareUpdate.rowTitle')}
-              </Button>
+              {debugMode && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFirmwareUpdateOpen(true)}
+                  icon={<HardDriveDownload className="h-4 w-4" />}
+                >
+                  {t('firmwareUpdate.rowTitle')}
+                </Button>
+              )}
             </div>
           </aside>
         </div>
@@ -1120,7 +1126,9 @@ export default function AboutPanel() {
         </DialogContent>
       </Dialog>
 
-      <FirmwareUpdatePanel open={firmwareUpdateOpen} onOpenChange={setFirmwareUpdateOpen} t={t} />
+      {debugMode && (
+        <FirmwareUpdatePanel open={firmwareUpdateOpen} onOpenChange={setFirmwareUpdateOpen} t={t} />
+      )}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0 space-y-5">

@@ -2,6 +2,7 @@ package coreapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -36,8 +37,22 @@ type firmwareFlashEvent struct {
 
 var flashMu sync.Mutex // 串行化刷写，避免并发
 
+var errFirmwareUpdateDebugOnly = errors.New("固件更新仅在调试模式下可用，请先开启调试模式")
+
+func (a *CoreApp) requireFirmwareUpdateDebugMode() error {
+	a.mutex.RLock()
+	defer a.mutex.RUnlock()
+	if !a.debugMode {
+		return errFirmwareUpdateDebugOnly
+	}
+	return nil
+}
+
 // GetFirmwareUpdateStatus 返回固件更新面板状态。
 func (a *CoreApp) GetFirmwareUpdateStatus() FirmwareUpdateStatus {
+	if a.requireFirmwareUpdateDebugMode() != nil {
+		return FirmwareUpdateStatus{}
+	}
 	st := FirmwareUpdateStatus{
 		Supported:       runtime.GOOS == "windows",
 		NormalConnected: a.deviceManager.IsConnected(),
@@ -107,6 +122,9 @@ func indexFold(s, sub string) int {
 // 当前跑 THRM 自定义固件（ThrmVersion>0）→ 优先查 GitHub 上的自定义固件；
 // 当前跑官方固件 → 优先查官方。两类都会附上以便切换，匹配的那类排在最前（默认选中）。
 func (a *CoreApp) ListFirmwareUpdates() ([]fwupdate.FirmwareInfo, error) {
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return nil, err
+	}
 	st := a.GetFirmwareUpdateStatus()
 	code := st.DeviceCode
 	if code == "" {
@@ -142,11 +160,17 @@ func (a *CoreApp) ListFirmwareUpdates() ([]fwupdate.FirmwareInfo, error) {
 
 // InstallFirmwareDriver 为处于下载模式的设备绑定 WinUSB 驱动（需管理员，Core 已提权）。
 func (a *CoreApp) InstallFirmwareDriver() error {
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return err
+	}
 	return fwflash.InstallDriver()
 }
 
 // UninstallFirmwareDriver 移除 THRM 装的 WinUSB 绑定。
 func (a *CoreApp) UninstallFirmwareDriver() error {
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return err
+	}
 	return fwflash.UninstallDriver()
 }
 
@@ -169,6 +193,9 @@ func (a *CoreApp) emitFlash(ev firmwareFlashEvent) {
 // FlashFirmware 异步执行刷写：加载固件→（必要时装驱动）→擦/写/校验/复位。
 // 立即返回；进度、日志、完成通过 EventFirmwareUpdate 下发。
 func (a *CoreApp) FlashFirmware(params ipc.FlashFirmwareParams) error {
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return err
+	}
 	if runtime.GOOS != "windows" {
 		return fmt.Errorf("固件刷写目前仅支持 Windows")
 	}
@@ -189,6 +216,9 @@ func (a *CoreApp) FlashFirmware(params ipc.FlashFirmwareParams) error {
 }
 
 func (a *CoreApp) runFlash(params ipc.FlashFirmwareParams) error {
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return err
+	}
 	log := flashLogger{a}
 
 	// 1) 准备固件字节
@@ -211,6 +241,12 @@ func (a *CoreApp) runFlash(params ipc.FlashFirmwareParams) error {
 		return err
 	}
 	log.Infof("固件大小: %d 字节", len(raw))
+	// Debug mode may have been disabled while downloading. Reject queued work
+	// before touching the driver/device. An already-started flash is allowed
+	// to finish; interrupting an erase/write would leave the device incomplete.
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return err
+	}
 
 	// 2) 确认设备在下载模式
 	drv := fwflash.QueryDriverStatus()
@@ -221,7 +257,7 @@ func (a *CoreApp) runFlash(params ipc.FlashFirmwareParams) error {
 	// 3) 必要时安装 WinUSB 驱动
 	if !drv.WinUSBBound {
 		log.Infof("安装 WinUSB 驱动……")
-		if err := fwflash.InstallDriver(); err != nil {
+		if err := a.InstallFirmwareDriver(); err != nil {
 			return err
 		}
 		// 驱动绑定后设备会重新枚举，稍等再打开
@@ -229,6 +265,9 @@ func (a *CoreApp) runFlash(params ipc.FlashFirmwareParams) error {
 	}
 
 	// 4) 打开并刷写
+	if err := a.requireFirmwareUpdateDebugMode(); err != nil {
+		return err
+	}
 	t, err := fwflash.OpenUSB()
 	if err != nil {
 		return err

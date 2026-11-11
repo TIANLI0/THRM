@@ -11,6 +11,9 @@ import (
 
 // SelectFirmwareFile 弹出原生文件对话框，让用户选本地 .hex/.bin 固件，返回路径。
 func (a *App) SelectFirmwareFile() (string, error) {
+	if a.GetDebugInfo()["debugMode"] != true {
+		return "", fmt.Errorf("固件更新仅在调试模式下可用，请先开启调试模式")
+	}
 	return a.promptOpenFile(application.OpenFileDialogOptions{
 		Title: "选择固件文件",
 		Filters: []application.FileFilter{
