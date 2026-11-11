@@ -5,7 +5,7 @@ export const SITE = {
   // 对外域名（反代后的国内域名），构建时写进 Open Graph 地址和页面里的命令示例兜底值。
   url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
   // 拉不到 Release（反代未配置、网络问题）时显示的版本号，发版时随 build/config.yml 一起更新。
-  fallbackVersion: "3.7.3",
+  fallbackVersion: "3.8.0",
   repoSlug: "TIANLI0/THRM",
   repo,
   issues: `${repo}/issues`,
