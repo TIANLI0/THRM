@@ -217,12 +217,17 @@ type Manager struct {
 	realtimeWakeGen     uint64
 	lightConfig         types.LightStripConfig
 	hasLightConfig      bool
+	lastLightProgram    lightProgram
+	hasLightProgram     bool
 	smartLightPreset    byte
 	hasSmartLightPreset bool
 	// smartLightBandIndex 是当前生效的温度区间下标，回差判定与界面展示都依赖它。
 	smartLightBandIndex int
 	// smartLightTemperature 是最近一次参与判定的温度，仅用于展示。
-	smartLightTemperature int
+	smartLightTemperature   int
+	smartLightPendingPreset byte
+	smartLightPendingSince  time.Time
+	smartLightLastAttempt   time.Time
 
 	// Firmware commands 0x46 (RGB enable) and 0x48 (gear light) erase and
 	// reprogram a 256-byte data-flash page on every call, and unlike 0x0C/0x0D
@@ -688,9 +693,13 @@ func (m *Manager) resetLightStateCacheLocked() {
 	m.hasRGBEnabled = false
 	m.hasGearLight = false
 	m.hasLightConfig = false
+	m.hasLightProgram = false
 	m.hasSmartLightPreset = false
 	m.smartLightBandIndex = -1
 	m.smartLightTemperature = 0
+	m.smartLightPendingPreset = 0
+	m.smartLightPendingSince = time.Time{}
+	m.smartLightLastAttempt = time.Time{}
 }
 
 // resetGearRPMCacheLocked 丢弃挡位转速缓存。断开连接、以及会重建固件挡位转速表的

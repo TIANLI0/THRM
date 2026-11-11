@@ -2,6 +2,8 @@ package device
 
 import (
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/TIANLI0/THRM/internal/types"
@@ -32,6 +34,12 @@ const (
 	// （0x20004AC8）。按 184 字节取整到帧边界只需 19 帧，既落在容量内，
 	// 又完整覆盖固件会读的每一个字节，还省掉 12 次命令往返。
 	lightUploadFrameCount = (lightProgramSize + lightUploadFrameSize - 1) / lightUploadFrameSize
+
+	// Native preset changes rebuild the firmware animation state. Temperature
+	// spikes should not rebuild it every monitor tick. These are host-side
+	// traffic limits, not measured firmware timing requirements.
+	smartLightConfirmDuration  = 3 * time.Second
+	smartLightMinWriteInterval = 5 * time.Second
 )
 
 // lightProgram mirrors the firmware upload buffer. Bytes 0..5 are the header:
@@ -79,9 +87,11 @@ func (m *Manager) setLightStripLocked(cfg types.LightStripConfig) error {
 
 	switch cfg.Mode {
 	case "off":
+		m.hasLightProgram = false
 		return m.setRGBOffLocked()
 	case "smart_temp":
-		return m.setLightSmartTempLocked()
+		m.hasLightProgram = false
+		return m.setLightSmartTempLocked(cfg)
 	case "static_single":
 		color := firstOrDefaultColor(cfg.Colors)
 		return m.setLightStaticSingleLocked(color, brightness)
@@ -241,8 +251,14 @@ func (p *lightProgram) setColor(led, keyframe int, color types.RGBColor) {
 }
 
 func (m *Manager) applyLightFramesLocked(program lightProgram) error {
+	if m.hasLightProgram && m.lastLightProgram == program && m.hasRGBEnabled && m.rgbEnabled {
+		return nil
+	}
+	// Once an upload starts, the old program is no longer known to be applied.
+	// A partial failure must retry the complete upload, not reuse this cache.
+	m.hasLightProgram = false
 	// Firmware flow: make sure the LED output is on, initialize the frame
-	// buffer, write frame 0..30, then commit. 0x45 is only a status query and
+	// buffer, write frame 0..18, then commit. 0x45 is only a status query and
 	// must not be mixed into this write transaction.
 	//
 	// The old sequence toggled 0x46 off then on before every upload. The
@@ -275,6 +291,10 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 	m.awaitFlashWriteWindowLocked()
 	err := m.sendLightCommandLocked(deviceproto.CmdRGBCommit, 0x01)
 	m.noteFlashWriteLocked()
+	if err == nil {
+		m.lastLightProgram = program
+		m.hasLightProgram = true
+	}
 	return err
 }
 
@@ -353,7 +373,22 @@ func (m *Manager) setLightBreathingLocked(colors []types.RGBColor, speed, bright
 	return m.applyLightFramesLocked(program)
 }
 
-func (m *Manager) setLightSmartTempLocked() error {
+func (m *Manager) setLightSmartTempLocked(cfg types.LightStripConfig) error {
+	// Reapplying an active smart configuration only changes host-side bands.
+	// Restarting the animation at preset 1 on every replay needlessly adds
+	// 0x44 00 / preset 1 / current preset transitions.
+	if m.hasLightConfig && m.lightConfig.Mode == "smart_temp" && m.hasSmartLightPreset {
+		if !slices.Equal(m.lightConfig.SmartTempBands, cfg.SmartTempBands) || m.lightConfig.SmartTempHysteresis != cfg.SmartTempHysteresis {
+			m.smartLightBandIndex = -1
+			m.smartLightPendingPreset = 0
+			m.smartLightPendingSince = time.Time{}
+			m.smartLightLastAttempt = time.Time{}
+		}
+		return nil
+	}
+	m.smartLightPendingPreset = 0
+	m.smartLightPendingSince = time.Time{}
+	m.smartLightLastAttempt = time.Time{}
 	// The computer selects a firmware preset as its temperature changes.
 	// A custom upload leaves its animation active. Tear that state down before
 	// selecting a native preset; 0x44 applies its generated table immediately,
@@ -361,7 +396,7 @@ func (m *Manager) setLightSmartTempLocked() error {
 	defer m.beginTransaction()()
 
 	preset := byte(types.SmartTempLightMinPreset)
-	if bands, _ := types.NormalizeSmartTempLightBands(m.lightConfig.SmartTempBands); len(bands) > 0 {
+	if bands, _ := types.NormalizeSmartTempLightBands(cfg.SmartTempBands); len(bands) > 0 {
 		preset = byte(bands[0].Preset)
 	}
 	for _, step := range smartLightActivationSequence(preset) {
@@ -384,7 +419,8 @@ func (m *Manager) setLightSmartTempLocked() error {
 // smartLightActivationSequence 是从自定义帧灯效切回原生预设的序列。
 //
 // 0x46 由 setRGBEnableLocked 消费，已经处于目标状态时会被跳过；0x44 只改运行期
-// 状态，不写闪存，可以放心每次都发。先发 0x44 00 是为了停掉上一套自定义动画。
+// 状态，不直接提交自定义灯效闪存，但仍会重建动画，不能当作无副作用的保活。
+// 先发 0x44 00 是为了停掉上一套自定义动画。
 func smartLightActivationSequence(preset byte) []lightCommand {
 	return []lightCommand{
 		{command: deviceproto.CmdRGBDynamicParam, payload: []byte{0x00}},
@@ -407,6 +443,14 @@ func (m *Manager) UpdateSmartTemperatureLight(temperature int) error {
 	if !m.isConnected || m.device == nil {
 		return fmt.Errorf("设备未连接")
 	}
+	return m.updateSmartTemperatureLightLocked(temperature, time.Now(), func(preset byte) error {
+		return m.sendLightCommandLocked(deviceproto.CmdRGBDynamicParam, preset)
+	})
+}
+
+// now and send make temporal filtering testable over long temperature traces
+// without sleeping or sending experimental sequences to a physical cooler.
+func (m *Manager) updateSmartTemperatureLightLocked(temperature int, now time.Time, send func(byte) error) error {
 	if !m.hasLightConfig || m.lightConfig.Mode != "smart_temp" {
 		return nil
 	}
@@ -426,12 +470,37 @@ func (m *Manager) UpdateSmartTemperatureLight(temperature int) error {
 	m.smartLightTemperature = temperature
 
 	next := byte(bands[index].Preset)
-	if m.hasSmartLightPreset && index == m.smartLightBandIndex && next == m.smartLightPreset {
+	if m.hasSmartLightPreset && next == m.smartLightPreset {
+		// Adjacent bands may deliberately share a preset. Update the UI band
+		// without asking the firmware to rebuild the identical animation.
+		m.smartLightBandIndex = index
+		m.smartLightPendingPreset = 0
+		m.smartLightPendingSince = time.Time{}
+		if m.smartLightLastAttempt.IsZero() {
+			m.smartLightLastAttempt = now
+		}
 		return nil
 	}
-	if err := m.sendLightCommandLocked(deviceproto.CmdRGBDynamicParam, next); err != nil {
+	if !m.smartLightLastAttempt.IsZero() {
+		if m.smartLightPendingPreset != next {
+			m.smartLightPendingPreset = next
+			m.smartLightPendingSince = now
+		}
+		if now.Sub(m.smartLightPendingSince) < smartLightConfirmDuration || now.Sub(m.smartLightLastAttempt) < smartLightMinWriteInterval {
+			return nil
+		}
+	}
+	// First temperature synchronization is immediate. Subsequent transitions
+	// must remain stable and are rate-limited even when the write fails.
+	m.smartLightLastAttempt = now
+	if err := send(next); err != nil {
+		// The device may have applied the preset before losing its ACK.
+		// Do not suppress a later repair merely because it equals our old cache.
+		m.hasSmartLightPreset = false
 		return err
 	}
+	m.smartLightPendingPreset = 0
+	m.smartLightPendingSince = time.Time{}
 	m.smartLightPreset = next
 	m.smartLightBandIndex = index
 	m.hasSmartLightPreset = true
