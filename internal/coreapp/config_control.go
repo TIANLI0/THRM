@@ -326,53 +326,8 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	if enabled && (rpm < 0 || rpm > 5000) {
 		return fmt.Errorf("自定义转速需在 0..5000 RPM 之间")
 	}
-	a.mutex.Lock()
-	cfg := a.configManager.Get()
-	connected := a.isConnected
-
-	if enabled {
-		if cfg.AutoControl {
-			cfg.AutoControl = false
-		}
-
-		cfg.CustomSpeedEnabled = true
-		cfg.CustomSpeedRPM = rpm
-
-	} else {
-		cfg.CustomSpeedEnabled = false
-	}
-	a.mutex.Unlock()
-
-	if connected {
-		if !a.lockDeviceControlIfReady() {
-			return fmt.Errorf("设备尚未就绪或正在挂起")
-		}
-		if enabled {
-			if !a.deviceManager.SetCustomFanSpeed(rpm) {
-				a.deviceControlMutex.Unlock()
-				return fmt.Errorf("固件拒绝了自定义转速设置")
-			}
-		} else {
-			// Leaving custom control must also leave firmware realtime mode and
-			// restore the selected fixed gear; changing only the config flag left
-			// the fan running indefinitely at the old custom target.
-			if !a.deviceManager.SetFanSpeed(0) {
-				a.deviceControlMutex.Unlock()
-				return fmt.Errorf("退出固件实时转速模式失败")
-			}
-			level := a.getRememberedManualLevel(cfg.ManualGear, cfg.ManualLevel)
-			manualRPM := cfg.ResolveGearRPM(cfg.ManualGear, level)
-			if !a.deviceManager.SetManualGearRPM(cfg.ManualGear, level, manualRPM) {
-				a.deviceControlMutex.Unlock()
-				return fmt.Errorf("恢复手动挡位失败")
-			}
-		}
-		// 仍持有设备控制锁时就提交内存配置：等在这把锁上的控温周期拿到锁后会复查
-		// AutoControl，配置若还没改，它会用实时转速把刚设置的自定义转速覆盖掉。
-		a.commitCustomSpeedConfig(enabled, rpm)
-		a.deviceControlMutex.Unlock()
-	} else {
-		a.commitCustomSpeedConfig(enabled, rpm)
+	if err := a.applyCustomSpeedChange(enabled, rpm); err != nil {
+		return err
 	}
 
 	a.mutex.Lock()
@@ -385,6 +340,59 @@ func (a *CoreApp) SetCustomSpeed(enabled bool, rpm int) error {
 	}
 
 	return err
+}
+
+func (a *CoreApp) applyCustomSpeedChange(enabled bool, rpm int) error {
+	// Read the current mode and gear after acquiring the control barrier, so
+	// queued enable/disable requests cannot use an obsolete configuration.
+	a.deviceControlMutex.Lock()
+	defer a.deviceControlMutex.Unlock()
+	cfg := a.configManager.Get()
+	a.mutex.RLock()
+	connected := a.isConnected
+	a.mutex.RUnlock()
+	if connected {
+		if !a.isDeviceControlReady() {
+			if enabled {
+				return fmt.Errorf("设备尚未就绪或正在挂起")
+			}
+			// Disabling is also a persistent user intent while disconnected or
+			// suspended; it must not be replayed as custom speed on reconnect.
+		} else {
+			level := a.getRememberedManualLevel(cfg.ManualGear, cfg.ManualLevel)
+			if err := applyCustomSpeedMode(a.deviceManager, cfg, enabled, rpm, level); err != nil {
+				return err
+			}
+		}
+	}
+	// Publish before releasing the control barrier, preventing the automatic
+	// loop or reconnect replay from restoring the old realtime target.
+	a.commitCustomSpeedConfig(enabled, rpm)
+	return nil
+}
+
+type customSpeedController interface {
+	SetCustomFanSpeed(int) bool
+	SetManualGearRPM(string, string, int) bool
+}
+
+func applyCustomSpeedMode(controller customSpeedController, cfg types.AppConfig, enabled bool, rpm int, level string) error {
+	if enabled {
+		if !controller.SetCustomFanSpeed(rpm) {
+			return fmt.Errorf("固件拒绝了自定义转速设置")
+		}
+		return nil
+	}
+	if !cfg.CustomSpeedEnabled && cfg.AutoControl {
+		return nil // idempotent disable must not interrupt an active automatic curve
+	}
+	// 0x08/0x26 already leave realtime mode and select a gear (BS1: 0x08).
+	// A preceding SetFanSpeed(0) only writes another realtime target. Requiring
+	// its ACK could prevent the actual mode exit, and briefly stops the fan.
+	if !controller.SetManualGearRPM(cfg.ManualGear, level, cfg.ResolveGearRPM(cfg.ManualGear, level)) {
+		return fmt.Errorf("恢复手动挡位失败")
+	}
+	return nil
 }
 
 // commitCustomSpeedConfig 只改写自定义转速相关字段（不落盘）。

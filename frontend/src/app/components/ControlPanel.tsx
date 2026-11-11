@@ -1022,14 +1022,11 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
     setLoading('customSpeed', true);
     try {
       await apiService.setCustomSpeed(enabled, rpm);
-      onConfigChange(types.AppConfig.createFrom({
-        ...config,
-        customSpeedEnabled: enabled,
-        customSpeedRPM: rpm,
-        autoControl: enabled ? false : config.autoControl,
-      }));
-    } catch { /* noop */ } finally { setLoading('customSpeed', false); }
-  }, [config, onConfigChange]);
+      onConfigChange(await apiService.getConfig());
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally { setLoading('customSpeed', false); }
+  }, [onConfigChange]);
 
   const handleCustomSpeedToggle = useCallback((enabled: boolean) => {
     if (enabled) setShowCustomSpeedWarning(true);
@@ -2475,7 +2472,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
               <ToggleSwitch
                 enabled={(config as any).customSpeedEnabled || false}
                 onChange={handleCustomSpeedToggle}
-                disabled={!isConnected}
+                disabled={!isConnected && !config.customSpeedEnabled}
                 loading={loadingStates.customSpeed}
                 size="sm"
                 color="orange"
@@ -2498,7 +2495,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
                       className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:ring-2 focus:ring-amber-500/50 focus:border-transparent"
                       min={0} max={5000} step={50}
                     />
-                    <Button variant="primary" size="sm" onClick={() => handleCustomSpeedApply(true, customSpeedInput)} className="bg-amber-600 hover:bg-amber-700 text-white">
+                    <Button variant="primary" size="sm" disabled={!isConnected || loadingStates.customSpeed} onClick={() => handleCustomSpeedApply(true, customSpeedInput)} className="bg-amber-600 hover:bg-amber-700 text-white">
                       {t('common.actions.apply')}
                     </Button>
                   </div>
