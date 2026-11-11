@@ -984,9 +984,13 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
     ],
     [locale, t],
   );
+  // BS1 不支持「智能温控灯效」：那条路靠 cmd 68 选固件原生预设，而 BS1 固件里
+  // 没有这些预设。其余模式都是 0x47 上传关键帧，已在真机上验证有效。
   const lightModeOptions = useMemo(
-    () => LIGHT_MODE_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
-    [locale, t],
+    () => LIGHT_MODE_OPTIONS
+      .filter((item) => !(isBs1 && item.value === 'smart_temp'))
+      .map((item) => ({ value: item.value, label: t(item.labelKey), description: t(item.descriptionKey) })),
+    [locale, t, isBs1],
   );
   const lightSpeedOptions = useMemo(
     () => LIGHT_SPEED_OPTIONS.map((item) => ({ value: item.value, label: t(item.labelKey) })),
@@ -1758,6 +1762,15 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
   // 依赖整个 config 会把用户还没点"应用"的灯效改动冲掉。
   const lightStripConfigKey = useMemo(() => JSON.stringify((config as any).lightStrip ?? null), [config]);
   useEffect(() => { setLightStripConfig(normalizeLightStripConfig(config)); }, [lightStripConfigKey]);
+  // BS1 不支持「智能温控灯效」（固件没有 cmd 68 的原生预设）。配置里若残留该模式，
+  // 界面上按单色处理，避免用户改颜色时下发一条设备不认的命令。
+  useEffect(() => {
+    if (isBs1) {
+      setLightStripConfig((prev) => (prev.mode === 'smart_temp'
+        ? types.LightStripConfig.createFrom({ ...prev, mode: 'static_single' })
+        : prev));
+    }
+  }, [isBs1, lightStripConfigKey]);
   useEffect(() => {
     setManualHotkeyInput(normalizeHotkeyForDisplay((config as any).manualGearToggleHotkey));
     setAutoHotkeyInput(normalizeHotkeyForDisplay((config as any).autoControlToggleHotkey));
@@ -2038,7 +2051,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
         <ControlOverview isBs1={isBs1} />
 
         {/* ═══════════ 1. 灯光效果 ═══════════ */}
-        {hasLightStrip && (
+        {(hasLightStrip || isBs1) && (
         <Section title={t('controlPanel.light.sectionTitle')} icon={Sparkles}>
           <div className="space-y-4 p-5">
             <div className="grid grid-cols-2 gap-3">

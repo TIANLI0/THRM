@@ -187,6 +187,11 @@ func (a *CoreApp) Start() error {
 		a.logInfo("已注册飞智 HID 设备接口到达通知")
 	}
 
+	// 注册关机/注销通知。设备不会因为主机停止发命令而停转（实测），
+	// 所以必须在系统断电前主动下发一次 0 转速。
+	startSessionEndWatcher(a.handleSystemShutdown, a.handleShutdownCancelled)
+	a.logInfo("已注册系统关机通知")
+
 	// 启动健康监控。
 	//
 	// 这里不再受 cfg.GuiMonitoring 开关控制：该开关名义上只关"GUI 监控"，
@@ -329,10 +334,17 @@ func (a *CoreApp) initSystemTray() {
 			return options, cfg.ActiveFanCurveProfileID
 		},
 		func() tray.Status {
+			// 先取设备侧数据，再拿 a.mutex。
+			//
+			// GetCurrentFanData 内部要设备层的 m.mutex，而灯效下发会持有那把锁
+			// 长达数秒（19 帧逐条往返）。如果在 a.mutex 里取，就构成
+			// a.mutex → m.mutex 的反向顺序，与灯效路径（m.mutex → 末尾的 a.mutex）
+			// 互锁：设备读循环拿不到 a.mutex → ACK 读不出来 → 灯效命令全部超时。
+			fanData := a.deviceManager.GetCurrentFanData()
+
 			a.mutex.RLock()
 			defer a.mutex.RUnlock()
 			cfg := a.trayConfigView()
-			fanData := a.deviceManager.GetCurrentFanData()
 			var currentRPM uint16
 			if fanData != nil {
 				currentRPM = fanData.CurrentRPM
