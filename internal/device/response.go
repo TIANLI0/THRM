@@ -104,9 +104,14 @@ func (m *Manager) sendHIDCommandAndWaitLocked(command byte, payload []byte, repo
 	waiter := m.responses.register(command)
 	if err := m.writeHIDFrameLocked(command, payload, reportLen); err != nil {
 		m.responses.cancel(waiter)
+		m.logLinkHealth(fmt.Sprintf("写入命令 0x%02X 失败: %v", command, err))
 		return deviceproto.Frame{}, err
 	}
-	return waitForResponse(m.responses, waiter, timeout)
+	frame, err := waitForResponse(m.responses, waiter, timeout)
+	if err != nil {
+		m.logLinkHealth(fmt.Sprintf("等待命令 0x%02X 超时", command))
+	}
+	return frame, err
 }
 
 func validateACK(frame deviceproto.Frame, accepted ...byte) error {

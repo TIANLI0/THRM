@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/TIANLI0/THRM/internal/deviceproto"
 	"github.com/sstallion/go-hid"
@@ -85,10 +86,32 @@ func isInterruptedHIDRead(err error) bool {
 }
 
 func (m *Manager) writeHIDReportLocked(frame []byte, reportLen int) ([]byte, error) {
+	if m.hidWritePoisoned != nil {
+		return nil, fmt.Errorf("HID 上一次写入仍可能挂起，等待更换句柄: %w", m.hidWritePoisoned)
+	}
 	report, err := m.hidReportFormat.build(frame, reportLen)
 	if err != nil {
 		return nil, err
 	}
 	m.recordDebugFrame("tx", "hid", report)
-	return report, writeHIDReport(m.device, report)
+	m.linkHealth.record(m.connectionGen.Load(), true, report, time.Now())
+	err = writeHIDReport(m.device, report)
+	if isPendingHIDWriteFailure(err) {
+		m.hidWritePoisoned = err
+		if m.pendingHIDWrites == nil {
+			m.pendingHIDWrites = make(map[*hid.Device][]byte)
+		}
+		m.pendingHIDWrites[m.device] = report
+		m.realtimeWriteRecoveryScheduled = true
+		generation := m.connectionGen.Load()
+		m.logError("Windows HID 写入等待失败，停止复用挂起的 I/O 状态并恢复句柄: %v", err)
+		go m.disconnectGeneration(true, false, generation)
+	}
+	return report, err
+}
+
+func isPendingHIDWriteFailure(err error) bool {
+	// hidapi 0.15 returns here without cancelling or reaping write_ol. The
+	// displayed errno may be stale ERROR_IO_PENDING (0x3E5), not WAIT_TIMEOUT.
+	return err != nil && strings.Contains(err.Error(), "hid_write/WaitForSingleObject")
 }

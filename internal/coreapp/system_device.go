@@ -83,7 +83,12 @@ func (a *CoreApp) onFanDataUpdate(fanData *types.FanData) {
 	// A newly opened HID handle can deliver the device's default gear-mode
 	// report before the connection has passed its readiness gate. Do not treat
 	// that bootstrap report as a user-requested mode transition.
-	a.mutex.RLock()
+	if !a.mutex.TryRLock() {
+		// The device layer already cached this sample. Never stall the only
+		// HID reader behind config persistence or another Core operation: the
+		// next report may be the ACK that an active control command needs.
+		return
+	}
 	coreConnected := a.isConnected
 	a.mutex.RUnlock()
 	controlReady := automaticControlAllowed(a.stopping.Load(), a.systemSuspended.Load(), coreConnected, true)
@@ -458,6 +463,13 @@ func (a *CoreApp) maybeRecoverFromSystemResume(source string, gap, expectedInter
 	if a.systemSuspended.Load() && !a.userInputSinceSuspend() {
 		a.logDebug("挂起期间检测到计时间隔 %s（来源=%s），用户尚未操作，继续等待唤醒通知", gap.Round(time.Second), source)
 		return true
+	}
+	// A delayed Go timer is not proof that the OS slept. In particular CPU
+	// contention/debugger pauses may coexist with a healthy HID reader. Do not
+	// close that live handle or restart the bridge on a timing heuristic alone.
+	if !a.systemSuspended.Load() && a.deviceManager != nil && a.deviceManager.HasRecentHIDResponse() {
+		a.logInfo("检测到计时延迟 %s（来源=%s），设备仍有有效应答，跳过推测性唤醒断开", gap.Round(time.Second), source)
+		return false
 	}
 	a.triggerResumeRecovery(source, gap, false)
 	return true
