@@ -381,12 +381,25 @@ func applyCurrentStatus(settings *types.DeviceSettings, fanData *types.FanData) 
 	settings.LiveModeName = deviceproto.ModeName(fanData.CurrentMode)
 	realtime := fanData.CurrentMode&0x01 == 1
 	settings.RealtimeActive = &realtime
-	settings.SelectedGear = deviceproto.DecodeSelectedGear(fanData.GearSettings)
+	// 优先用解析层归一化好的挡位：BS1 走 USB HID 时 0xEF 首字节是 ASCII 挡位码，
+	// 按 BLE 的位域解会得到 0（"未知"）。
+	selectedGear := fanData.SelectedGear
+	if selectedGear == 0 {
+		selectedGear = deviceproto.DecodeSelectedGear(fanData.GearSettings)
+	}
+	settings.SelectedGear = selectedGear
 	settings.ActiveGear = settings.SelectedGear
 	if realtime {
 		settings.ActiveGear = 0
 	}
 	maxGear, selected := deviceproto.DecodeGearSetting(fanData.GearSettings)
+	if name := deviceproto.GearCodeName(fanData.SelectedGear); name != "" {
+		selected = name
+		// HID 的挡位字节不带最大挡位信息（解析层留空），别把原始字节硬解成 "unknown(0x3)"。
+		if fanData.MaxGear == "" {
+			maxGear = ""
+		}
+	}
 	smartCode, smartName := deviceproto.DecodeSmartStartStop(fanData.CurrentMode)
 	settings.Status = &types.DeviceStatusRead{
 		GearSetting:        fmt.Sprintf("0x%02X", fanData.GearSettings),

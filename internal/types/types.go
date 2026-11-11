@@ -257,6 +257,11 @@ type FanData struct {
 	TargetRPM    uint16 `json:"targetRpm"`
 	MaxGear      string `json:"maxGear"`
 	SetGear      string `json:"setGear"`
+	// SelectedGear 是归一化后的当前挡位：1=静音 2=标准 3=强劲 4=超频，0 表示未知。
+	//
+	// 0xEF 首字节在两条传输上编码不同（BLE 是位域，USB HID 是 0x30+2×(挡位-1)），
+	// 由解析层统一换算后填这里，下游（唤醒序列、设备状态）不必各自判断传输类型。
+	SelectedGear int    `json:"selectedGear"`
 	WorkMode     string `json:"workMode"`
 }
 

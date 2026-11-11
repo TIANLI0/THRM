@@ -266,6 +266,10 @@ const maxRequestFrameSize = 4 << 20
 
 var ErrRequestTimeout = errors.New("等待 IPC 响应超时")
 
+// slowRequestWarnInterval 是慢请求看门狗的告警间隔。客户端 12 秒就会放弃，
+// 所以第一次告警必须明显早于它，否则日志还没写出来客户端就已经报超时了。
+const slowRequestWarnInterval = 5 * time.Second
+
 // ErrConnectionClosed 表示请求所在的连接在收到响应前已断开，响应不可能再到达。
 var ErrConnectionClosed = errors.New("IPC 连接已断开")
 
@@ -579,6 +583,26 @@ func (s *Server) invokeHandler(req Request) (resp Response) {
 				Success:   false,
 				ErrorCode: "internal_panic",
 				Error:     fmt.Sprintf("核心服务内部错误: %v", recovered),
+			}
+		}
+	}()
+
+	// 慢请求看门狗。客户端等 12 秒就会放弃，但服务端仍卡在原处继续持有锁——
+	// 这种情况下客户端只会显示"等待 IPC 响应超时"，核心日志里一个字都没有，
+	// 事后完全无法定位。这里每 5 秒记一条，直到 handler 返回为止。
+	started := time.Now()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(slowRequestWarnInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				s.logError("IPC 请求[%s] type=%s 已运行 %v 仍未返回（疑似卡死）",
+					req.RequestID, req.Type, time.Since(started).Round(time.Second))
 			}
 		}
 	}()

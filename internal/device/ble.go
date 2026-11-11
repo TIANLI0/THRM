@@ -367,7 +367,7 @@ func (b *BLEManager) handleHIDFrame(raw []byte) {
 		b.responses.deliver(frame)
 	}
 
-	fanData := b.parseBS1Notification(raw)
+	fanData := b.parseBS1Notification(raw, bs1GearEncodingHIDASCII)
 	if fanData == nil {
 		return
 	}
@@ -557,7 +557,7 @@ func (b *BLEManager) enableNotifications() {
 		if frame, ok := deviceproto.ParseFrame(buf); ok && frame.ChecksumOK {
 			b.responses.deliver(frame)
 		}
-		fanData := b.parseBS1Notification(buf)
+		fanData := b.parseBS1Notification(buf, bs1GearEncodingBitfield)
 		if fanData != nil {
 			b.mutex.Lock()
 			b.currentFanData = fanData
@@ -576,10 +576,28 @@ func (b *BLEManager) enableNotifications() {
 	}
 }
 
-// parseBS1Notification 解析 BS1 蓝牙通知数据
+// bs1GearEncoding 描述 0xEF 首字节（挡位字节）的编码方式。
+//
+// 同一个字节在两条传输上语义完全不同，实测数据：
+//
+//	BLE: 0x6A → 高 4 位 = 最大挡位、低 4 位 = 当前挡位（8/A/C/E = 静音…超频）
+//	HID: 0x30/0x32/0x34 → '0'/'2'/'4'，值 = 0x30 + 2×(挡位-1)（真机抓包 1/2/3 挡）
+//
+// 必须由调用方按传输显式传入，不能靠 b.hidTransport 反推：断开竞态下它可能已被
+// 清空，而这时仍可能有帧正在解析。
+type bs1GearEncoding uint8
+
+const (
+	bs1GearEncodingBitfield bs1GearEncoding = iota // BLE：位域
+	bs1GearEncodingHIDASCII                        // USB HID：ASCII 挡位码
+)
+
+// parseBS1Notification 解析 BS1 状态通知数据
 // BS1 格式: [5A A5] [EF] [0B] [gearSettings] [mode] [reserved] [currentRPM_LE] [targetRPM_LE] ...
 // 与 BS2/BS2PRO 类似，但没有 ReportID 前缀
-func (b *BLEManager) parseBS1Notification(data []byte) *types.FanData {
+//
+// 挡位字节的编码随传输不同，由 enc 指定（见 bs1GearEncoding）。
+func (b *BLEManager) parseBS1Notification(data []byte, enc bs1GearEncoding) *types.FanData {
 	frame, ok := deviceproto.ParseFrame(data)
 	if !ok || !frame.ChecksumOK || frame.Command != deviceproto.CmdStatusNotify || len(frame.Payload) < 7 {
 		return nil
@@ -597,13 +615,62 @@ func (b *BLEManager) parseBS1Notification(data []byte) *types.FanData {
 		TargetRPM:    binary.LittleEndian.Uint16(payload[5:7]),
 	}
 
-	// 解析挡位设置（与 BS2/BS2PRO 相同的编码）
-	maxGear, setGear := parseBS1GearSettings(fanData.GearSettings)
-	fanData.MaxGear = maxGear
-	fanData.SetGear = setGear
+	switch enc {
+	case bs1GearEncodingHIDASCII:
+		// HID 的单字节只带当前挡位，没有最大挡位信息，MaxGear 留空表示未知。
+		fanData.SetGear = bs1HIDGearName(fanData.GearSettings)
+	default:
+		// 解析挡位设置（与 BS2/BS2PRO 相同的编码）
+		maxGear, setGear := parseBS1GearSettings(fanData.GearSettings)
+		fanData.MaxGear = maxGear
+		fanData.SetGear = setGear
+	}
+	fanData.SelectedGear = decodeBS1SelectedGear(fanData.GearSettings, enc)
 	fanData.WorkMode = parseBS1WorkMode(fanData.CurrentMode)
 
 	return fanData
+}
+
+// bs1HIDGearName 把 HID 的挡位字节换成挡位名。
+//
+// 真机实测（2026-11-05）：静音 0x30、标准 0x32、强劲 0x34；超频 0x36 是同一公式
+// 0x30+2×(挡位-1) 的延伸，未实测（设超频要 PD 供电，否则设备静默降级回强劲）。
+// 无法识别的值返回空串——界面显示 "--"，而不是过去那种"未知(0x0)"。
+func bs1HIDGearName(gearByte uint8) string {
+	switch gearByte {
+	case 0x30:
+		return "静音"
+	case 0x32:
+		return "标准"
+	case 0x34:
+		return "强劲"
+	case 0x36:
+		return "超频"
+	default:
+		return ""
+	}
+}
+
+// decodeBS1SelectedGear 把挡位字节换算成 1..4，无法识别返回 0。
+func decodeBS1SelectedGear(gearByte uint8, enc bs1GearEncoding) int {
+	if enc == bs1GearEncodingHIDASCII {
+		if gearByte < 0x30 || gearByte > 0x36 || gearByte%2 != 0 {
+			return 0
+		}
+		return int((gearByte-0x30)/2) + 1
+	}
+	switch gearByte & 0x0F {
+	case 0x8:
+		return 1
+	case 0xA:
+		return 2
+	case 0xC:
+		return 3
+	case 0xE:
+		return 4
+	default:
+		return 0
+	}
 }
 
 // parseBS1GearSettings 解析 BS1 挡位设置

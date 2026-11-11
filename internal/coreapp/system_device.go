@@ -220,6 +220,9 @@ func (a *CoreApp) requestReconnect(reason string, retryDelays []time.Duration) {
 // 例行的进度/失败日志降到 Debug。用于设备长期不在时健康检查的反复重试，
 // 避免每 30 秒写一组相同的错误日志。
 func (a *CoreApp) requestReconnectWithLogging(reason string, retryDelays []time.Duration, quiet bool) {
+	if a.shutdownInProgress.Load() {
+		return
+	}
 	if a.autoReconnectSuppressed.Load() {
 		if quiet {
 			a.logDebug("自动重连已被手动断开抑制，忽略请求: %s", reason)
@@ -860,6 +863,9 @@ func (a *CoreApp) ConnectDevice() bool {
 // increments connectGeneration; an older attempt then discards its result rather
 // than resurrecting a connection the caller explicitly cancelled.
 func (a *CoreApp) connectDevice(manual bool) bool {
+	if a.shutdownInProgress.Load() {
+		return false
+	}
 	if manual {
 		a.autoReconnectSuppressed.Store(false)
 	}
@@ -952,8 +958,27 @@ func (a *CoreApp) connectDeviceOnce(generation uint64, manual bool) bool {
 		}
 		a.mutex.Unlock()
 		a.deviceControlMutex.Unlock()
+
+		// 只记当前转速：0xEF 里的"目标转速"是会话级回显，新会话恒为 0，
+		// 拿它判断"上次关机停没停"会得出错误结论。转速是物理量，可信。
+		if fanData := a.deviceManager.GetCurrentFanData(); fanData != nil {
+			a.logInfo("连接时设备转速：%d RPM", fanData.CurrentRPM)
+		}
+
 		if !a.isConnectionAttemptCurrent(generation) {
 			return false
+		}
+
+		// BS1 的灯光输出在关机时被关掉了，这里只重新打开输出开关，
+		// 沿用设备 flash 里已经存好的灯效程序——不重传那 19 帧，也就不会多写一次闪存。
+		// BS2/BS3 由下面的 applyConfiguredLightStrip 完整重放，不需要这一步。
+		if a.deviceManager.IsBS1() && a.configManager.Get().LightStrip.Mode != "off" && a.lockDeviceControlIfReady() {
+			if a.deviceManager.SetRGBOn() {
+				a.logInfo("已恢复灯光输出")
+			} else {
+				a.logError("恢复灯光输出失败")
+			}
+			a.deviceControlMutex.Unlock()
 		}
 
 		a.persistLastDeviceTransport(a.deviceManager.GetDeviceType())
@@ -1304,7 +1329,7 @@ func isConnectionAttemptCurrent(stopping, suspended, autoReconnectSuppressed boo
 }
 
 func (a *CoreApp) isConnectionAttemptCurrent(generation uint64) bool {
-	return isConnectionAttemptCurrent(
+	return !a.shutdownInProgress.Load() && isConnectionAttemptCurrent(
 		a.stopping.Load(),
 		a.systemSuspended.Load(),
 		a.autoReconnectSuppressed.Load(),
@@ -1330,7 +1355,7 @@ func (a *CoreApp) isDeviceControlReady() bool {
 		a.systemSuspended.Load(),
 		coreConnected,
 		a.deviceManager.IsConnected(),
-	)
+	) && !a.shutdownInProgress.Load()
 }
 
 // lockDeviceControlIfReady serializes all automatic/recovery writes with the

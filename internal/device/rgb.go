@@ -54,14 +54,13 @@ type lightCommand struct {
 
 // SetLightStrip 设置灯带模式
 func (m *Manager) SetLightStrip(cfg types.LightStripConfig) error {
-	if m.IsBS1() {
-		return fmt.Errorf("BS1 不支持灯带设置")
-	}
-
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected || m.device == nil {
+	// BS1 的连接由 bleManager 持有句柄，m.device 始终为 nil，不能用它判连接。
+	// 注意这里读 deviceType 而不是调 IsBS1()：后者会拿 m.mutex.RLock，
+	// 而本函数已持有写锁，RWMutex 不可重入，调用会直接自死锁。
+	if !m.isConnected || (m.device == nil && m.deviceType != types.DeviceTypeBLE) {
 		return fmt.Errorf("设备未连接")
 	}
 	if err := m.setLightStripLocked(cfg); err != nil {
@@ -111,16 +110,28 @@ func (m *Manager) setLightStripLocked(cfg types.LightStripConfig) error {
 	}
 }
 
-// SetRGBOff 关闭RGB灯光
-func (m *Manager) SetRGBOff() bool {
-	if m.IsBS1() {
-		return false
-	}
-
+// SetRGBOn 打开灯光输出，沿用设备里已经存好的灯效程序。
+//
+// 与 SetRGBOff 对称：只切 0x46 的开关，不上传程序、不重写那 19 帧。
+// 关机时关掉输出、开机时再打开，用户看到的灯效因此能跨关机保留，
+// 而代价只有一条命令（不额外消耗闪存擦写）。
+func (m *Manager) SetRGBOn() bool {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	if !m.isConnected || m.device == nil {
+	if !m.isConnected || (m.device == nil && m.deviceType != types.DeviceTypeBLE) {
+		return false
+	}
+
+	return m.setRGBEnableLocked(true) == nil
+}
+
+// SetRGBOff 关闭RGB灯光
+func (m *Manager) SetRGBOff() bool {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if !m.isConnected || (m.device == nil && m.deviceType != types.DeviceTypeBLE) {
 		return false
 	}
 
@@ -225,12 +236,59 @@ func ensureMinColors(colors []types.RGBColor, min int) []types.RGBColor {
 // sendLightCommandLocked sends one RGB write and waits for its firmware ACK.
 // BuildFrame derives LEN from payload, so callers cannot accidentally repeat
 // the old captures' invalid/redundant length variants.
-func (m *Manager) sendLightCommandLocked(command byte, payload ...byte) error {
-	frame, err := m.sendHIDCommandAndWaitLocked(command, payload, hidLightReportLen, deviceResponseTimeout)
+// lightFrameRetries 是单条灯效命令的重发次数。
+//
+// 实测（BS1，2026-11-06）：连续上传时约每两三次就会漏掉某一帧 0x47 的 ACK，
+// 单帧超时会让整次上传失败，用户看到的是"设置灯带失败: 等待命令 0x47 响应超时"。
+// 帧载荷带序号且内容幂等，重发不会污染缓冲区。
+const lightFrameRetries = 2
+
+// lightCommitTimeout 是提交命令 0x43 的专用等待时间。
+//
+// 0x43 会让固件擦写数据闪存，应答明显慢于普通命令；默认的 900ms 实测经常不够，
+// 现象是"设置灯带失败: 等待命令 0x43 响应超时"，但灯效其实已经生效——属于假失败。
+// 仅 BS1 使用该超时；丢失 ACK 不能证明没有落盘，因此不自动重发 0x43。
+const lightCommitTimeout = 2500 * time.Millisecond
+
+// sendLightCommandWithTimeoutLocked 按指定超时下发一条灯效命令。
+func (m *Manager) sendLightCommandWithTimeoutLocked(timeout time.Duration, command byte, payload ...byte) error {
+	// BS1 的 HID 句柄由 bleManager 的传输层持有，命令必须走那条通道。
+	// 直接读 deviceType 而不是调 IsBS1()：调用方已持有 m.mutex 写锁。
+	if m.deviceType == types.DeviceTypeBLE {
+		frame, err := m.bleManager.sendBLECommandAndWait(command, payload, timeout)
+		if err != nil {
+			return err
+		}
+		return validateACK(frame, 1)
+	}
+	frame, err := m.sendHIDCommandAndWaitLocked(command, payload, hidLightReportLen, timeout)
 	if err != nil {
 		return err
 	}
 	return validateACK(frame, 1)
+}
+
+// sendLightCommandRetryLocked 下发一条灯效命令，失败时按指定超时重发。
+func (m *Manager) sendLightCommandRetryLocked(retries int, timeout time.Duration, command byte, payload ...byte) error {
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		err = m.sendLightCommandWithTimeoutLocked(timeout, command, payload...)
+		if err == nil {
+			return nil
+		}
+		if attempt < retries {
+			m.logDebug("灯效命令 0x%02X 第 %d 次下发失败，重发: %v", command, attempt+1, err)
+		}
+	}
+	return err
+}
+
+func (m *Manager) sendLightCommandLocked(command byte, payload ...byte) error {
+	timeout := deviceResponseTimeout
+	if m.deviceType == types.DeviceTypeBLE && command == deviceproto.CmdRGBCommit {
+		timeout = lightCommitTimeout
+	}
+	return m.sendLightCommandWithTimeoutLocked(timeout, command, payload...)
 }
 
 func newLightProgram(lastKeyframe, speed, brightness byte) lightProgram {
@@ -276,7 +334,12 @@ func (m *Manager) applyLightFramesLocked(program lightProgram) error {
 
 	for i := range program {
 		framePayload := append([]byte{byte(i)}, program[i][:]...)
-		if err := m.sendLightCommandLocked(deviceproto.CmdRGBFrameWrite, framePayload...); err != nil {
+		retries := 0
+		if m.deviceType == types.DeviceTypeBLE {
+			retries = lightFrameRetries
+		}
+		if err := m.sendLightCommandRetryLocked(retries, deviceResponseTimeout,
+			deviceproto.CmdRGBFrameWrite, framePayload...); err != nil {
 			return err
 		}
 	}

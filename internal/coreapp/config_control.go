@@ -477,18 +477,30 @@ func (a *CoreApp) SetBrightness(percentage int) bool {
 func (a *CoreApp) SetLightStrip(lightCfg types.LightStripConfig) error {
 	lightCfg, _ = normalizeLightStripConfig(lightCfg)
 
+	// 灯效下发是少数会连续写十几帧的操作，失败或卡住时界面只会显示一句
+	// "设置灯带失败"。这里把模式与耗时记下来，事后才查得动。
+	started := time.Now()
+	a.logInfo("应用灯效: mode=%s 亮度=%d", lightCfg.Mode, lightCfg.Brightness)
+
 	a.mutex.RLock()
 	connected := a.isConnected
 	a.mutex.RUnlock()
 	if connected {
 		if !a.lockDeviceControlIfReady() {
+			a.logError("应用灯效失败: 设备尚未就绪或正在挂起")
 			return fmt.Errorf("设备尚未就绪或正在挂起")
 		}
 		err := a.applyLightStripToDevice(lightCfg)
 		a.deviceControlMutex.Unlock()
 		if err != nil {
+			a.logError("应用灯效失败: mode=%s 耗时 %v: %v",
+				lightCfg.Mode, time.Since(started).Round(time.Millisecond), err)
 			return err
 		}
+		a.logInfo("灯效已下发: mode=%s 耗时 %v",
+			lightCfg.Mode, time.Since(started).Round(time.Millisecond))
+	} else {
+		a.logInfo("应用灯效: 设备未连接，仅保存配置")
 	}
 
 	// Persist only after a connected device has acknowledged the complete RGB
