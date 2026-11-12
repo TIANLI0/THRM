@@ -17,6 +17,8 @@ with `wails3 task <name>` — see [`Taskfile.yml`](../Taskfile.yml).
   omits (Windows then shows no version details at all).
 * `wails.exe.manifest` - Application manifest. Maintained by hand because THRM requires
   administrator rights; it is not regenerated from `config.yml`.
-* `installer/*` - NSIS installer. `wails_tools.nsh` is re-rendered from `config.yml` on every build
-  (`wails3 task assets`) and is not tracked by git; run a build (or `wails3 task assets`) before calling
-  `makensis` by hand. `project.nsi` and the other files are maintained by hand.
+* `installer/*` - The installer, built with [FluentSetup](https://github.com/TIANLI0/FluentSetup):
+  `fluentsetup.json` (install folder, PawnIO, autostart, upgrades from NSIS installs, uninstall cleanup),
+  `locales/*.json` (option texts and license per language) and `resources/license_*.txt`. `wails3 task package`
+  generates the WebView2 bootstrapper here and runs
+  `fluentsetup build fluentsetup.json -D Version=<config.yml version> -D PawnIOVersion=<pawnio.env> -o ../../bin`.

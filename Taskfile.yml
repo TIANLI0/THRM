@@ -2,12 +2,12 @@
 # 版本号由 build.bat / build.sh 从 build/config.yml 解析后通过 VERSION= 传入。
 #
 #   wails3 task build            构建 GUI（build/bin/THRM[.exe]）
-#   wails3 task package          Windows：构建并打 NSIS 安装包
+#   wails3 task package          Windows：构建并用 FluentSetup 打安装包
 #   wails3 task bindings         只重新生成前端绑定
 #   wails3 dev                   开发模式（见 dev 任务）
 version: '3'
 
-# 内置 PawnIO 安装器的固定版本与 SHA-256（build_bridge.bat 下载校验、package 任务传给 makensis 共用）。
+# 内置 PawnIO 安装器的固定版本与 SHA-256（build_bridge.bat 下载校验、package 任务传给 FluentSetup 共用）。
 dotenv: ['build/windows/pawnio.env']
 
 vars:
@@ -61,7 +61,6 @@ tasks:
     summary: 按 build/config.yml 渲染构建资源，只取需要的文件（manifest 用仓库里要求管理员权限的那份）
     cmds:
       - wails3 update build-assets -config build/config.yml -dir {{.ASSETS_DIR}} -name {{.APP_NAME}} -binaryname {{.APP_NAME}} -productversion {{.PRODUCT_VERSION}} -silent
-      - wails3 tool cp {{.ASSETS_DIR}}/windows/nsis/wails_tools.nsh build/windows/installer/wails_tools.nsh
       # Wails 自带的 info.json 模板缺 FileVersion 字符串与固定 product_version，资源管理器和
       # FileVersionInfo 会读不到任何版本信息，所以用仓库里完整的那份替换版本号后覆盖它。
       # WriteAllText 默认写无 BOM 的 UTF-8，Go 的 JSON 解析不认 BOM。
@@ -94,13 +93,14 @@ tasks:
       CGO_ENABLED: 1
 
   package:
-    summary: Windows：构建 GUI 并打 NSIS 安装包（THRM Core.exe 需事先构建好）
+    summary: Windows：构建 GUI 并用 FluentSetup 打安装包 build/bin/THRM-amd64-installer.exe（THRM Core.exe 需事先构建好）
     deps: [build]
     dir: build/windows/installer
     cmds:
       - wails3 generate webview2bootstrapper -dir .
-      # 单引号保住反斜杠：Task 用内置的 sh 解释器执行命令。
-      - makensis '-DARG_WAILS_AMD64_BINARY=..\..\bin\{{.APP_NAME}}.exe' '-DPAWNIO_BUNDLED_VERSION={{.PAWNIO_FILE_VERSION}}' project.nsi
+      # fluentsetup 来自 PATH（或环境变量 FLUENTSETUP），见 https://github.com/TIANLI0/FluentSetup/releases；
+      # 安装包定义在 fluentsetup.json，版本号与内置 PawnIO 版本通过 -D 传入。
+      - '"${FLUENTSETUP:-fluentsetup}" build fluentsetup.json -D "Version={{.PRODUCT_VERSION}}" -D "PawnIOVersion={{.PAWNIO_FILE_VERSION}}" -o ../../bin'
 
   run:
     cmds:

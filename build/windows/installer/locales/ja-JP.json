@@ -1,0 +1,11 @@
+{
+  "options": {
+    "pawnio": "PawnIO をインストール (必須)",
+    "autostart": "Windows 起動時に開始"
+  },
+  "actions": {
+    "pawnio": "PawnIO ドライバーのインストール",
+    "autostart": "Windows 起動時の自動実行を登録"
+  },
+  "license": "../resources/license_ja-JP.txt"
+}

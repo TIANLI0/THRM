@@ -1,0 +1,11 @@
+{
+  "options": {
+    "pawnio": "Install PawnIO (required)",
+    "autostart": "Start with Windows"
+  },
+  "actions": {
+    "pawnio": "PawnIO driver installation",
+    "autostart": "Registering THRM to start with Windows"
+  },
+  "license": "../resources/license_en-US.txt"
+}

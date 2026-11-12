@@ -483,7 +483,7 @@ THRM/
 ├── frontend/                       # Next.js 前端
 ├── scripts/                        # 安装、验证和设备脚本
 ├── build/
-│   └── windows/installer/          # NSIS 安装程序
+│   └── windows/installer/          # 安装程序（FluentSetup 的 fluentsetup.json）
 └── .github/workflows/              # CI、构建与发布
 ```
 
@@ -506,7 +506,7 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0
 
 * .NET SDK 8.0+
 * go-winres
-* NSIS 3.x，可选，用于生成安装程序
+* [FluentSetup](https://github.com/TIANLI0/FluentSetup/releases) 的 `fluentsetup` 命令行（在 PATH 中，或用环境变量 `FLUENTSETUP` 指向它），用于生成安装程序
 
 ```bash
 go install github.com/tc-hib/go-winres@v0.3.3

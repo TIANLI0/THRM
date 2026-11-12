@@ -364,6 +364,117 @@ jobs:
           go install github.com/tc-hib/go-winres@v0.3.3
           Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:USERPROFILE 'go\bin')
 
+      # fluentsetup CLI + installer runtime (verified download of the pinned release), on PATH for the
+      # Taskfile package task and the re-packaging after signing.
+      - uses: TIANLI0/FluentSetup@v1.0.0
+
+      - name: Cache frontend dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            frontend/node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('frontend/package.json', 'frontend/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
+      # main.go embeds all:frontend/dist, so the Go packages only type-check when the
+      # directory has a file in it. vet/test/bindings do not need the real UI build.
+      - name: Stub frontend/dist for go:embed
+        run: |
+          mkdir -p frontend/dist
+          [ -n "$(ls -A frontend/dist)" ] || echo 'ci placeholder' > frontend/dist/.ci-placeholder
+
+      - name: gofmt
+        run: |
+          # internal/bridge is excluded for now: its files predate gofmt and have
+          # uncommitted local work on them. Drop the filter once that lands gofmt-clean.
+          # .gitattributes checks *.go out with LF everywhere, so this is OS-independent.
+          unformatted=$(git ls-files -z '*.go' | grep -zv '^internal/bridge/' | xargs -0 gofmt -l)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt-formatted (run gofmt -w):"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        # -short skips the hardware tests (real BLE/HID devices) that cannot run on CI.
+        run: go test -short ./...
+
+      - name: Wails bindings are up to date
+        run: |
+          wails3 generate bindings -clean=true -d frontend/bindings -silent . ./internal/guiapp
+          # status (not diff) also catches newly generated and deleted files.
+          if [ -n "$(git status --porcelain -- frontend/bindings)" ]; then
+            echo "::error::frontend/bindings is stale. Run 'wails3 task bindings' and commit the result."
+            git status --porcelain -- frontend/bindings
+            git diff -- frontend/bindings | head -n 200
+            exit 1
+          fi
+
+      - name: TypeScript typecheck
+        working-directory: frontend
+        run: bun run typecheck
+
+  build-windows:
+    needs: prepare-release
+    if: needs.prepare-release.outputs.should_build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    env:
+      # The organization ID is a public SignPath identifier. Keep the API token
+      # in the repository secret SIGNPATH_API_TOKEN; never put it in this file.
+      # THRM [OSS] organization (not the separate Tianli trial organization).
+      SIGNPATH_ORGANIZATION_ID: edf9fbb2-1f9a-4920-84d0-3b3322208d7f
+      SIGNPATH_PROJECT_SLUG: thrm
+      # The OSS organization currently has the self-signed test certificate.
+      # Switch this to release-signing after SignPath imports the production CA
+      # certificate and the corresponding policy is enabled.
+      SIGNPATH_SIGNING_POLICY_SLUG: test-signing
+      # The signing master switch (SIGNPATH_ENABLED) lives on prepare-release, which
+      # exposes the combined decision as needs.prepare-release.outputs.should_sign.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The build reads the version from build/config.yml / THRM_BUILD_VERSION and
+          # builds Go with -buildvcs=false, so no history or tags are needed here.
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install Wails CLI and go-winres
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+          go install github.com/tc-hib/go-winres@v0.3.3
+          Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $env:USERPROFILE 'go\bin')
+
       - name: Ensure NSIS
         shell: pwsh
         run: |
@@ -552,25 +663,23 @@ jobs:
           if (-not $signed) { throw 'SignPath did not return THRM TempBridge.exe' }
           Copy-Item $signed.FullName 'build/bin/bridge/THRM TempBridge.exe' -Force
 
-      - name: Rebuild the NSIS installer from signed binaries
+      - name: Rebuild the installer from signed binaries
         if: needs.prepare-release.outputs.should_sign == 'true'
         shell: pwsh
         run: |
-          # Same PawnIO version the Taskfile package task passes (build/windows/pawnio.env).
+          # Same values the Taskfile package task passes: build/config.yml version, build/windows/pawnio.env.
           $pawnioVersion = (Get-Content build/windows/pawnio.env |
             Where-Object { $_ -match '^PAWNIO_FILE_VERSION=' } |
             Select-Object -First 1) -replace '^PAWNIO_FILE_VERSION=', ''
           if (-not $pawnioVersion) { throw 'PAWNIO_FILE_VERSION missing from build/windows/pawnio.env' }
-          # wails_tools.nsh is not tracked; the Build THRM step rendered it in this job.
-          if (-not (Test-Path build/windows/installer/wails_tools.nsh)) { throw 'wails_tools.nsh was not rendered by the build' }
+          $productVersion = (Select-String -Path build/config.yml -Pattern '^\s+version:\s*"?([^"#\s]+)"?' | Select-Object -First 1).Matches[0].Groups[1].Value
+          if (-not $productVersion) { throw 'version missing from build/config.yml' }
+          # MicrosoftEdgeWebview2Setup.exe is not tracked; the Build THRM step generated it in this job.
+          if (-not (Test-Path build/windows/installer/MicrosoftEdgeWebview2Setup.exe)) { throw 'The WebView2 bootstrapper was not generated by the build' }
           Push-Location build/windows/installer
           try {
-            & makensis `
-              '-DARG_WAILS_AMD64_BINARY=..\..\bin\THRM.exe' `
-              '-DCORE_EXECUTABLE_SOURCE=..\..\bin\THRM Core.exe' `
-              "-DPAWNIO_BUNDLED_VERSION=$($pawnioVersion.Trim())" `
-              'project.nsi'
-            if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+            fluentsetup build fluentsetup.json -D "Version=$productVersion" -D "PawnIOVersion=$($pawnioVersion.Trim())" -o ../../bin
+            if ($LASTEXITCODE -ne 0) { throw "fluentsetup failed with exit code $LASTEXITCODE" }
           } finally {
             Pop-Location
           }

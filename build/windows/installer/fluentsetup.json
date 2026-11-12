@@ -1,0 +1,143 @@
+{
+  "$schema": "https://raw.githubusercontent.com/TIANLI0/FluentSetup/v1.0.0/shared/schemas/fluentsetup.project.schema.json",
+  "schemaVersion": 1,
+  // THRM installer, built with FluentSetup by the Taskfile "package" task (and by CI after signing):
+  //   fluentsetup build fluentsetup.json -D Version=<build/config.yml version> -D PawnIOVersion=<pawnio.env> -o ../../bin
+  //
+  // Per-machine install into Program Files\THRM (UAC), registered as "THRM" like the NSIS installer of 3.8.0 and
+  // earlier, whose installation is adopted in place; installs made under the BS2PRO-Controller names are adopted too
+  // and their uninstall entries removed.
+  // In-app update: THRM (elevated) waits for itself to exit, runs THRM-amd64-installer.exe /S and starts THRM again
+  // once that process is gone, so the asset name and the single-process quiet install must stay as they are.
+  // PawnIO is installed when missing or older than the bundled one (a failure only warns) and kept on uninstall.
+  "variables": { "Version": "0.0.0", "PawnIOVersion": "2.2.0.0" },
+  "app": {
+    "id": "THRM",
+    "name": "THRM",
+    "publisher": "TIANLI0",
+    "version": "$(Version)",
+    "description": "THRM 桌面控制中心",
+    "website": "https://github.com/TIANLI0/THRM",
+    "icon": "../icon.ico",
+    "mainExecutable": "THRM.exe"
+  },
+  "files": {
+    "source": "../../bin",
+    "include": ["./THRM.exe", "./THRM Core.exe", "bridge/**"],
+    "exclude": ["**/*.pdb", "**/*.xml", "bridge/logs/"],
+    "extra": [
+      { "source": "../../bin/PawnIO_setup.exe", "target": "drivers/PawnIO" },
+      { "source": "MicrosoftEdgeWebview2Setup.exe", "target": "redist" }
+    ]
+  },
+  "install": {
+    "scope": "machine",
+    "machineDir": "{ProgramFiles}\\{AppName}",
+    "allowCustomDir": true,
+    "desktopShortcut": "optionalOn",
+    "startMenuShortcut": "on",
+    "launchAfterInstall": "optionalOn",
+    "allowDowngrade": true,
+    "minWindowsBuild": 17763,
+    "closeProcesses": [
+      "THRM.exe", "THRM Core.exe", "THRM TempBridge.exe", "TempBridge.exe", "SpaceStationService.exe",
+      "BS2PRO-Controller.exe", "BS2PRO-controller.exe", "BS2PRO.exe", "BS2PRO-Core.exe"
+    ],
+    "adoptExistingInstall": true,
+    "legacyUninstallKeys": [
+      "BS2PRO-Controller", "BS2PRO-controllerBS2PRO-controller", "BS2PRO-ControllerBS2PRO-Controller",
+      "TIANLI0BS2PRO-Controller", "TIANLI0BS2PRO"
+    ],
+    "ngen": ["bridge/THRM TempBridge.exe"],
+    "cleanup": {
+      "removeScheduledTasks": ["THRM", "BS2PRO-Controller", "BS2PRO-Core"],
+      "removeRunValues": ["BS2PRO-Controller", "BS2PRO-Core"],
+      "removeShortcuts": [
+        "BS2PRO-Controller.lnk", "BS2PRO-controller.lnk", "BS2PRO.lnk", "BS2Pro Controller.lnk", "BS2PRO Core.lnk", "BS2PRO-Core.lnk"
+      ]
+    }
+  },
+  "requirements": {
+    "netFramework": "4.7.2",
+    "netFrameworkSetup": {
+      "helpUrl": "https://dotnet.microsoft.com/download/dotnet-framework/net472"
+    },
+    "webView2": {
+      "required": true,
+      "installer": "redist/MicrosoftEdgeWebview2Setup.exe",
+      "arguments": ["/silent", "/install"],
+      "onFailure": "warn",
+      "helpUrl": "https://developer.microsoft.com/microsoft-edge/webview2/"
+    }
+  },
+  "options": [
+    { "id": "pawnio", "label": { "en-US": "Install PawnIO (required)" }, "required": true },
+    {
+      "id": "autostart",
+      "label": { "en-US": "Start with Windows" },
+      "default": true,
+      // On updates: keep autostart as the user set it in THRM (scheduled task, or the Run value fallback).
+      "detect": { "scheduledTask": "THRM", "runValue": "THRM" }
+    }
+  ],
+  "actions": [
+    {
+      "id": "pawnio",
+      "when": "afterInstall",
+      "run": "drivers/PawnIO/PawnIO_setup.exe",
+      "arguments": ["-install", "-silent"],
+      "timeoutSeconds": 60,
+      "successExitCodes": [0, 183],
+      "onFailure": "warn",
+      "ifOption": "pawnio",
+      "skipIfInstalled": {
+        "hive": "HKLM",
+        "key": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PawnIO",
+        "value": "DisplayVersion",
+        "version": "$(PawnIOVersion)"
+      },
+      "fallbackArguments": ["-install"],
+      "name": { "en-US": "PawnIO driver installation" }
+    },
+    {
+      "id": "autostart",
+      "when": "afterInstall",
+      "run": "THRM Core.exe",
+      "arguments": ["--install-autostart"],
+      "timeoutSeconds": 60,
+      "onFailure": "warn",
+      "ifOption": "autostart",
+      "fallbackRunValue": { "name": "THRM", "arguments": ["--autostart"] },
+      "name": { "en-US": "Registering THRM to start with Windows" }
+    }
+  ],
+  "uninstall": {
+    "removeData": [
+      "{AppData}\\THRM.exe", "{AppData}\\THRM", "{LocalAppData}\\THRM", "{CommonAppData}\\THRM.exe", "{CommonAppData}\\THRM",
+      "{InstallDir}\\logs", "{InstallDir}\\telemetry", "{InstallDir}\\records", "{InstallDir}\\bridge\\logs"
+    ],
+    "removeScheduledTasks": ["THRM", "BS2PRO-Controller", "BS2PRO-Core"],
+    "removeRunValues": ["THRM", "BS2PRO-Controller", "BS2PRO-Core"],
+    "removeShortcuts": [
+      "THRM.lnk", "BS2PRO-Core.lnk", "BS2PRO-Controller.lnk", "BS2PRO.lnk", "BS2Pro Controller.lnk", "BS2PRO Core.lnk"
+    ],
+    // The NSIS uninstaller asked before deleting settings; themes and the fallback config live in the install folder.
+    "userData": {
+      "paths": ["{InstallDir}\\config", "{InstallDir}\\themes", "{CommonAppData}\\BS2PRO"],
+      "default": false
+    }
+  },
+  "ui": {
+    "license": "resources/license_en-US.txt",
+    "licenseMode": "always",
+    "localization": "locales",
+    "defaultLanguage": "auto"
+  },
+  "output": {
+    "directory": "../../bin",
+    "fileName": "THRM-amd64-installer.exe",
+    "architecture": "x64",
+    "compression": "max",
+    "includeWinUI": true
+  }
+}

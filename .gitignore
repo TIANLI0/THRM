@@ -26,7 +26,6 @@ ota/
 build/.wails
 .task
 build/windows/installer/MicrosoftEdgeWebview2Setup.exe
-# 由 Taskfile 的 assets 任务每次构建从 build/config.yml 渲染（带版本号），不再跟踪；
-# 手动跑 makensis 前先执行一次 wails3 task assets（或 build/package）生成它。
+# NSIS 时代由 Taskfile 渲染的文件，安装程序改用 FluentSetup 后已不再生成。
 build/windows/installer/wails_tools.nsh
 # frontend/bindings 是 wails3 generate bindings 的产物，但刻意提交到仓库（CI 校验其为最新），不要忽略。

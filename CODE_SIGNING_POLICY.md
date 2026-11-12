@@ -11,7 +11,7 @@ signing policy are configured. The dedicated `CI builds` user submits the signin
 
 The validation tag `v0.0.0-signpath-test.2` completed successfully and published a GitHub
 test pre-release. It verified Windows builds, automatic signing of `THRM.exe`, `THRM Core.exe`,
-`THRM TempBridge.exe`, and the NSIS installer, plus the signed portable archive.
+`THRM TempBridge.exe`, and the installer (NSIS at the time), plus the signed portable archive.
 
 **Signing is currently switched off in the release workflow.** SignPath has not yet authorized
 a production signing policy for this project, so the `SIGNPATH_ENABLED` flag in
@@ -81,7 +81,8 @@ Release-shaped Windows runs perform four SignPath requests in sequence:
 1. Sign `THRM.exe`.
 2. Sign `THRM Core.exe`.
 3. Sign `THRM TempBridge.exe`.
-4. Rebuild the NSIS installer from those signed binaries, then sign
+4. Rebuild the installer (FluentSetup, `build/windows/installer/fluentsetup.json`) from those signed
+   binaries, then sign
    `THRM-amd64-installer.exe`.
 
 The workflow uploads each executable as a non-archived GitHub Actions artifact, waits for the
@@ -98,7 +99,7 @@ All signed artifacts carry product name and version metadata, generated from
 
 | Artifact | Description |
 | --- | --- |
-| `THRM-amd64-installer.exe` | NSIS installer (recommended) |
+| `THRM-amd64-installer.exe` | Installer (recommended), built with FluentSetup |
 | `THRM.exe` | Main application (GUI) |
 | `THRM Core.exe` | Background core service |
 | `bridge/THRM TempBridge.exe` | Windows temperature bridge |

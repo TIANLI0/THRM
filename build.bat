@@ -49,7 +49,7 @@ if not exist "build\windows\icon.ico" (
     echo WARNING: build\windows\icon.ico not found, executable/installer icon may be incorrect
 )
 
-REM Build the GUI and the NSIS installer with the Wails v3 Taskfile
+REM Build the GUI and the installer (FluentSetup) with the Wails v3 Taskfile
 echo Building main application...
 wails3 task package VERSION=!VERSION! PRODUCT_VERSION=!PRODUCT_VERSION!
 if errorlevel 1 (
@@ -65,7 +65,7 @@ if exist "build\bin\THRM Core.exe" (
     exit /b 1
 )
 
-REM Keep build/bin focused on the current build. Old versioned executables are not used by NSIS
+REM Keep build/bin focused on the current build. Old versioned executables are not used by the installer
 REM and make the build output look much larger than the actual distributable payload.
 echo Cleaning stale release artifacts...
 for %%F in (

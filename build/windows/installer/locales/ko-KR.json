@@ -1,0 +1,11 @@
+{
+  "options": {
+    "pawnio": "PawnIO 설치 (필수)",
+    "autostart": "Windows 시작 시 자동 실행"
+  },
+  "actions": {
+    "pawnio": "PawnIO 드라이버 설치",
+    "autostart": "Windows 시작 시 자동 실행 등록"
+  },
+  "license": "../resources/license_ko-KR.txt"
+}
