@@ -9,7 +9,7 @@ info:
   description: "THRM 桌面控制中心"
   copyright: "Copyright © 2026 TIANLI0"
   comments: "THRM 桌面控制中心"
-  version: "3.8.0"
+  version: "3.8.1"
 
 # wails3 dev：Go 侧改动自动重编译重启，前端走 Next 开发服务器热更新。
 dev_mode:
