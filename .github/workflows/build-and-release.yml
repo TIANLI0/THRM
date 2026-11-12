@@ -366,7 +366,7 @@ jobs:
 
       # fluentsetup CLI + installer runtime (verified download of the pinned release), on PATH for the
       # Taskfile package task and the re-packaging after signing.
-      - uses: TIANLI0/FluentSetup@v1.0.0
+      - uses: TIANLI0/FluentSetup@v1.0.1
 
       - name: Cache frontend dependencies
         uses: actions/cache@v6
