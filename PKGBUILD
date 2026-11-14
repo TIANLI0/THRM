@@ -32,16 +32,18 @@ options=('!strip' '!debug')
 source=(
   "thrm::file://${startdir}/build/thrm"
   "thrm-core::file://${startdir}/build/thrm-core"
+  "thrm-rapl-helper::file://${startdir}/build/thrm-rapl-helper"
   "99-flydigi-fan.rules::file://${startdir}/scripts/99-flydigi-fan.rules"
   "thrm.desktop::file://${startdir}/packaging/linux/thrm.desktop"
   "thrm.png::file://${startdir}/build/appicon.png"
   'LICENSE'
 )
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
   install -Dm755 "${srcdir}/thrm" "${pkgdir}/usr/bin/thrm"
   install -Dm755 "${srcdir}/thrm-core" "${pkgdir}/usr/bin/thrm-core"
+  install -Dm755 "${srcdir}/thrm-rapl-helper" "${pkgdir}/usr/bin/thrm-rapl-helper"
   install -Dm644 "${srcdir}/99-flydigi-fan.rules" \
     "${pkgdir}/usr/lib/udev/rules.d/99-flydigi-fan.rules"
   install -Dm644 "${srcdir}/thrm.desktop" \

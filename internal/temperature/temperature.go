@@ -2,8 +2,6 @@
 package temperature
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,15 +9,9 @@ import (
 
 	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/types"
-	"github.com/shirou/gopsutil/v4/sensors"
 )
 
-const (
-	helperCommandTimeout = 1200 * time.Millisecond
-	gpuVendorCacheTTL    = 30 * time.Second
-	// 同一条桥接告警的最短重复间隔。
-	bridgeWarnInterval = time.Minute
-)
+const bridgeWarnInterval = time.Minute
 
 // pawnIoRemediationHint 与桥接侧 bridge/TempBridge/Program.cs 的 PawnIoRemediationHint
 // 保持一致。CPU 温度只能由 PawnIO 读取，没有可信的替代来源，因此唯一有意义的指引
@@ -42,7 +34,7 @@ type Reader struct {
 	cachedVendorAt  time.Time
 
 	// 桥接不可用时的降级读取节流状态，见 fallback.go。
-	fallback fallbackState
+	externalThrottle externalThrottleState
 
 	// 桥接告警限频：桥接长期不可用时每个采样周期都会走到告警，不限频的话
 	// 一天要同步写几万行一模一样的日志。Read 也会被 IPC 的测试读取并发调用，需加锁。
@@ -188,10 +180,8 @@ func (r *Reader) read(selection types.TemperatureSelection) (types.TemperatureDa
 				temp.BridgeMsg = "桥接程序未返回有效温度（CPU/GPU 均为 0）；" + pawnIoRemediationHint
 				r.warnBridge("桥接程序返回空温度数据，使用备用方法")
 
-				fallback := r.readFallback(selection.DisableGpu)
-				temp.CPUTemp = fallback.cpuTemp
-				temp.GPUTemp = fallback.gpuTemp
-				temp.GPUPower = fallback.gpuPower
+				fallback := r.readNativeTelemetry(selection.DisableGpu)
+				applyTelemetryMetadata(&temp, fallback)
 				temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 				temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 				return temp, outcome
@@ -217,18 +207,50 @@ func (r *Reader) read(selection types.TemperatureSelection) (types.TemperatureDa
 	// 桥接程序为 Windows 专用（LibreHardwareMonitor/PawnIO）。在不支持的平台（如 Linux）
 	// 上，内置传感器读取才是正常路径，不应作为错误提示，因此保持 BridgeOk 默认的 true。
 
-	// 读取内置传感器（停用 GPU 监测时完全跳过 GPU，避免 nvidia-smi 等轮询唤醒独显）。
-	// readFallback 内部带刷新节流与失败退避，桥接长期不可用时不会每个采样周期都起进程。
-	fallback := r.readFallback(selection.DisableGpu)
-	temp.CPUTemp = fallback.cpuTemp
-	temp.GPUTemp = fallback.gpuTemp
-	temp.GPUPower = fallback.gpuPower
+	// 读取内置传感器（停用 GPU 监测时完全跳过 GPU，避免轮询驱动唤醒独显）。
+	// 需要外部命令的平台由 readNativeTelemetry 内部节流；Linux 原生 provider 为进程内读取。
+	fallback := r.readNativeTelemetry(selection.DisableGpu)
+	applyTelemetryMetadata(&temp, fallback)
 
 	// 计算最高温度
 	temp.MaxTemp = max(temp.CPUTemp, temp.GPUTemp)
 	temp.ControlTemp = resolveControlTemp(temp.CPUTemp, temp.GPUTemp, selection.TempSource)
 
 	return temp, outcome
+}
+
+// applyTelemetryMetadata 把平台原生 provider 的标量与上报元数据写入结果。
+// 该函数只负责上报字段，不改变控温基准解析规则。
+func applyTelemetryMetadata(temp *types.TemperatureData, fallback telemetryReading) {
+	temp.CPUTemp = fallback.cpuTemp
+	temp.GPUTemp = fallback.gpuTemp
+	temp.GPUPower = fallback.gpuPower
+	// 元数据只在原生 provider 确实提供了新值时覆盖，避免桥接失败回退时
+	// 把桥接已经识别出的型号/传感器意外清空。
+	if fallback.cpuModel != "" {
+		temp.CpuModel = fallback.cpuModel
+	}
+	if fallback.cpuPower > 0 {
+		temp.CPUPower = fallback.cpuPower
+	}
+	if len(fallback.cpuSensors) > 0 {
+		temp.CpuSensors = fallback.cpuSensors
+	}
+	if fallback.gpuModel != "" {
+		temp.GpuModel = fallback.gpuModel
+	}
+	if len(fallback.gpuSensors) > 0 {
+		temp.GpuSensors = fallback.gpuSensors
+	}
+	if len(fallback.gpuPowerSensors) > 0 {
+		temp.GpuPowerSensors = fallback.gpuPowerSensors
+	}
+	if len(fallback.gpuDevices) > 0 {
+		temp.GpuDevices = fallback.gpuDevices
+	}
+	if fallback.selectedGpuDevice != "" {
+		temp.SelectedGpuDevice = fallback.selectedGpuDevice
+	}
 }
 
 // stripGpuReadings 清空 GPU 相关读数与元数据。停用 GPU 监测时即便桥接程序
@@ -333,52 +355,6 @@ func resolveControlTemp(cpuTemp, gpuTemp int, source string) int {
 	default:
 		return max(cpuTemp, gpuTemp)
 	}
-}
-
-// readSensorCPUTemp 通过 gopsutil 读取 CPU 温度。纯进程内操作，开销可忽略，
-// 因此不参与降级路径的节流缓存。读不到返回 0。
-func (r *Reader) readSensorCPUTemp() int {
-	sensorTemps, err := sensors.SensorsTemperatures()
-	if err != nil {
-		return 0
-	}
-	for _, sensor := range sensorTemps {
-		// 查找ACPI ThermalZone TZ00_0或类似的CPU温度传感器
-		if strings.Contains(strings.ToLower(sensor.SensorKey), "tz00") ||
-			strings.Contains(strings.ToLower(sensor.SensorKey), "cpu") ||
-			strings.Contains(strings.ToLower(sensor.SensorKey), "core") {
-			return int(sensor.Temperature)
-		}
-	}
-	return 0
-}
-
-// detectGPUVendor 检测GPU厂商
-func (r *Reader) detectGPUVendor() string {
-	now := readTimeNow()
-	r.cacheMutex.RLock()
-	if cached := r.cachedGPUVendor; cached != "" && now.Sub(r.cachedVendorAt) < gpuVendorCacheTTL {
-		r.cacheMutex.RUnlock()
-		return cached
-	}
-	r.cacheMutex.RUnlock()
-
-	vendor := "unknown"
-	// 尝试NVIDIA
-	if _, err := execHelperCommand(helperCommandTimeout, "nvidia-smi", "--version"); err == nil {
-		vendor = "nvidia"
-	} else if !errors.Is(err, context.DeadlineExceeded) {
-		r.logger.Debug("检测GPU厂商失败: %v", err)
-	} else {
-		r.logger.Debug("检测GPU厂商超时: %v", err)
-	}
-
-	r.cacheMutex.Lock()
-	r.cachedGPUVendor = vendor
-	r.cachedVendorAt = now
-	r.cacheMutex.Unlock()
-
-	return vendor
 }
 
 // CalculateTargetRPM 根据温度计算目标转速

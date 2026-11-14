@@ -164,7 +164,15 @@ THRM 的 Windows 发布包由 [SignPath.io](https://signpath.io/) 免费提供�
 
 Linux 版本目前主要面向 x86_64 桌面发行版，推荐使用 Debian、Ubuntu 或其衍生发行版。
 
-Linux 版本不使用 Windows 专用的 PawnIO 和 TempBridge，而是通过系统传感器接口与 `nvidia-smi` 等原生方式读取温度。
+Linux 版本不使用 Windows 专用的 PawnIO 和 TempBridge，而是通过系统传感器接口和 NVML 等原生方式读取温度与功耗。
+
+CPU package 功耗在 Intel 平台通过 RAPL 读取。部分内核/发行版限制 `energy_uj` 的读取权限；这种情况下可以按需给独立的 `thrm-rapl-helper` 设置最小文件 capability：
+
+```bash
+sudo setcap cap_dac_read_search+ep "$(command -v thrm-rapl-helper)"
+```
+
+未设置 capability 或非 Intel RAPL 平台下，CPU 功耗不可用，不影响温度和风扇控制。
 
 #### Debian 安装包
 
