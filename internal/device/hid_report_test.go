@@ -124,6 +124,13 @@ func TestWriteHIDReportRejectsShortWrite(t *testing.T) {
 	if err := writeHIDReport(hidReportWriterStub{n: 32}, report); err != nil {
 		t.Fatal(err)
 	}
+	// Windows hidapi returns the padded OutputReportByteLength (e.g. 65)
+	// rather than the length supplied by the caller. This is a successful write.
+	for _, size := range []int{25, 32} {
+		if err := writeHIDReport(hidReportWriterStub{n: 65}, make([]byte, size)); err != nil {
+			t.Fatalf("padded Windows HID write (%d -> 65): %v", size, err)
+		}
+	}
 	if err := writeHIDReport(hidReportWriterStub{err: io.EOF}, report); !errors.Is(err, io.EOF) {
 		t.Fatalf("write error lost: %v", err)
 	}

@@ -62,7 +62,7 @@ func (a *CoreApp) handleSystemShutdown() {
 		if !a.deviceManager.IsConnected() {
 			return
 		}
-		a.logInfo("系统即将关机：停转并关闭灯光输出")
+		a.logInfo("系统即将关机：停转并关闭 RGB 灯光，保留挡位灯设置")
 		if !a.deviceManager.SetCustomFanSpeed(0) {
 			a.logError("系统即将关机：下发 0 转速失败")
 		}
@@ -72,12 +72,8 @@ func (a *CoreApp) handleSystemShutdown() {
 		if a.configManager.Get().LightStrip.Mode != "off" && !a.deviceManager.SetRGBOff() {
 			a.logError("系统即将关机：关闭灯光输出失败")
 		}
-		if !current() {
-			return
-		}
-		if !a.deviceManager.IsBS1() && !a.deviceManager.SetGearLight(false) {
-			a.logError("系统即将关机：关闭挡位灯失败")
-		}
+		// 0x48 persists to device flash. Leave the user's gear indicator setting
+		// intact so physical gear buttons still have feedback after PC shutdown.
 	})
 }
 

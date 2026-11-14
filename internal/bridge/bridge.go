@@ -46,6 +46,8 @@ type Manager struct {
 	starting  atomic.Bool
 	startMu   sync.Mutex
 	startDone chan struct{}
+	// Optional instance-local launcher for deterministic lifecycle tests.
+	startProcess func() error
 
 	// 启动失败后的退避状态，受 startMu 保护。失败后若仍按"正在启动"上报，上层会一直
 	// 当作过渡态：既不走内置传感器降级，也不计入温度失效，风扇安全兜底永远不会触发，
@@ -292,7 +294,11 @@ func (m *Manager) beginStartAsync() <-chan struct{} {
 			close(done)
 		}()
 
-		if startErr = m.startStdio(); startErr != nil {
+		start := m.startProcess
+		if start == nil {
+			start = m.startStdio
+		}
+		if startErr = start(); startErr != nil {
 			m.logger.Error("桥接程序后台启动失败: %v", startErr)
 		}
 	}()

@@ -74,7 +74,10 @@ func (f hidReportFormat) build(frame []byte, reportLen int) ([]byte, error) {
 
 func writeHIDReport(writer interface{ Write([]byte) (int, error) }, report []byte) error {
 	n, err := writer.Write(report)
-	if err == nil && n != len(report) {
+	// Windows hidapi pads short reports to OutputReportByteLength and returns
+	// that padded count, including for Bluetooth HID. Only a smaller count
+	// means our report was not fully written.
+	if err == nil && n < len(report) {
 		return fmt.Errorf("HID 写入 %d/%d 字节: %w", n, len(report), io.ErrShortWrite)
 	}
 	return err

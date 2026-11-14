@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -77,6 +78,17 @@ func TestGetStatusSendsNoCommand(t *testing.T) {
 // TestConcurrentEnsureRunningStartsOnce 验证并发调用只触发一次启动。
 func TestConcurrentEnsureRunningStartsOnce(t *testing.T) {
 	m := NewManager(testLogger{})
+	var starts atomic.Int32
+	release := make(chan struct{})
+	m.startProcess = func() error {
+		starts.Add(1)
+		<-release
+		return errors.New("test launch failed")
+	}
+	defer func() {
+		close(release)
+		waitStartFinished(t, m)
+	}()
 
 	done := make(chan error, 16)
 	for range 16 {
@@ -87,6 +99,20 @@ func TestConcurrentEnsureRunningStartsOnce(t *testing.T) {
 		if err := <-done; !errors.Is(err, ErrStarting) {
 			t.Fatalf("并发 EnsureRunning() 返回了非 ErrStarting: %v", err)
 		}
+	}
+	// All callers have returned while the injected launch remains pending.
+	// The real executable may fail before other goroutines even run on CI.
+	deadline := time.After(time.Second)
+	for starts.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("background launch did not start")
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if got := starts.Load(); got != 1 {
+		t.Fatalf("started %d processes, want 1", got)
 	}
 }
 

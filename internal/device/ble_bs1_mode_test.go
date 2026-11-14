@@ -2,6 +2,7 @@ package device
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"testing"
@@ -159,6 +160,65 @@ func TestBS1SetFanSpeedEntersRealtimeOnce(t *testing.T) {
 	}
 	if got := commandBytes(t, *sent); len(got) != 1 || got[0] != deviceproto.CmdSetRealtimeRPM {
 		t.Fatalf("后续设置转速的命令序列 = %#x，期望只有一条 0x21", got)
+	}
+}
+
+func TestBS1RestartsAfterZeroWithoutReconnect(t *testing.T) {
+	manager, sent := newFakeBS1(t)
+	for _, target := range []int{1000, 2500} {
+		if err := manager.SetFanSpeed(0); err != nil {
+			t.Fatal(err)
+		}
+		*sent = nil
+		if err := manager.SetFanSpeed(target); err != nil {
+			t.Fatal(err)
+		}
+		want := []byte{deviceproto.CmdEnterRealtimeRPM, deviceproto.CmdSetRealtimeRPM, deviceproto.CmdSetRealtimeRPM}
+		if got := commandBytes(t, *sent); !bytes.Equal(got, want) {
+			t.Fatalf("zero -> %d commands = %x, want %x", target, got, want)
+		}
+		for i, rpm := range []int{max(target, realtimeWakeKickRPM), target} {
+			frame, _ := deviceproto.ParseFrame((*sent)[i+1])
+			if got := int(binary.LittleEndian.Uint16(frame.Payload)); got != rpm {
+				t.Fatalf("wake target = %d, want %d", got, rpm)
+			}
+		}
+		*sent = nil
+		if err := manager.SetFanSpeed(target + 100); err != nil {
+			t.Fatal(err)
+		}
+		if got := commandBytes(t, *sent); !bytes.Equal(got, []byte{deviceproto.CmdSetRealtimeRPM}) {
+			t.Fatalf("running fan unnecessarily restarted: %x", got)
+		}
+	}
+}
+
+func TestBS1FailedWakeCanRetry(t *testing.T) {
+	manager, sent := newFakeBS1(t)
+	if err := manager.SetFanSpeed(0); err != nil {
+		t.Fatal(err)
+	}
+	write := manager.writeFrame
+	manager.writeFrame = func(cmd []byte) error {
+		frame, _ := deviceproto.ParseFrame(cmd)
+		if frame.Command == deviceproto.CmdSetRealtimeRPM {
+			return errors.New("failed wake pulse")
+		}
+		return write(cmd)
+	}
+	if err := manager.SetFanSpeed(1000); err == nil {
+		t.Fatal("failed wake was reported as success")
+	}
+	if !manager.realtimeStopped || manager.realtimeMode {
+		t.Fatal("failed wake lost retry state")
+	}
+	manager.writeFrame = write
+	*sent = nil
+	if err := manager.SetFanSpeed(1000); err != nil {
+		t.Fatal(err)
+	}
+	if got := commandBytes(t, *sent); len(got) != 3 || got[0] != deviceproto.CmdEnterRealtimeRPM {
+		t.Fatalf("retry skipped wake handshake: %x", got)
 	}
 }
 

@@ -50,6 +50,9 @@ type BLEManager struct {
 	// realtimeMode 记录固件当前是否处于实时转速模式（0x23）。保活包要据此决定
 	// 能不能发 0x23——挡位模式下发它会把设备踢回实时模式，见 heartbeatLoop。
 	realtimeMode bool
+	// Serialize mode entry, wake pulses and heartbeats as complete sequences.
+	controlMutex    sync.Mutex
+	realtimeStopped bool
 
 	// writeFrame 下发一帧原始数据，nil 时走 GATT 写入特征值。
 	// 模式切换的正确性没有硬件就无法验证，测试注入替身来观察实际发出的命令序列。
@@ -741,19 +744,23 @@ func (b *BLEManager) heartbeatLoop() {
 		case <-b.stopChan:
 			return
 		case <-ticker.C:
+			b.controlMutex.Lock()
 			b.mutex.RLock()
 			connected := b.isConnected
 			realtime := b.realtimeMode
 			b.mutex.RUnlock()
 
 			if !connected {
+				b.controlMutex.Unlock()
 				return
 			}
 
 			cmd := bs1KeepAliveCommand(realtime, heartbeatIndex)
 			heartbeatIndex++
 
-			if err := b.WriteCommand(cmd); err != nil {
+			err := b.WriteCommand(cmd)
+			b.controlMutex.Unlock()
+			if err != nil {
 				b.logError("发送保活包失败: %v", err)
 				b.handleDisconnect()
 				return
@@ -975,6 +982,8 @@ func (b *BLEManager) GetCurrentFanData() *types.FanData {
 // 前置命令是 0x23（进入实时转速模式）。此前这里发的是 0x46 0x01——那是 RGB 使能，
 // 与转速无关；真正的 0x23 反倒被当成保活包周期性发送，两者位置刚好写反了。
 func (b *BLEManager) SetFanSpeed(rpm int) error {
+	b.controlMutex.Lock()
+	defer b.controlMutex.Unlock()
 	// BS1 走的是与 HID 相同的 uint16 协议字段，App 只开放 0..5000 RPM。
 	// Manager.SetFanSpeed 的范围校验写在 BS1 分支之后，BS1 得自己拦一道。
 	if rpm < 0 || rpm > types.RealtimeRPMMax {
@@ -983,9 +992,10 @@ func (b *BLEManager) SetFanSpeed(rpm int) error {
 
 	b.mutex.RLock()
 	inRealtime := b.realtimeMode
+	waking := b.realtimeStopped && rpm > 0
 	b.mutex.RUnlock()
 
-	if !inRealtime {
+	if !inRealtime || waking {
 		if err := b.WriteCommand(types.BS1CmdEnterRealtime); err != nil {
 			return fmt.Errorf("进入实时转速模式失败: %v", err)
 		}
@@ -995,6 +1005,19 @@ func (b *BLEManager) SetFanSpeed(rpm int) error {
 		b.mutex.Unlock()
 	}
 
+	// A zero target may leave BS1's motor/session stopped even though the
+	// transport remains connected. Re-enter realtime mode and start the rotor
+	// before settling at a low curve target. Never rewrite gear slots or RGB.
+	if waking {
+		if err := b.WriteCommand(types.BuildBS1RPMCommand(max(rpm, realtimeWakeKickRPM))); err != nil {
+			b.mutex.Lock()
+			b.realtimeMode = false
+			b.mutex.Unlock()
+			return fmt.Errorf("唤醒 BS1 风扇失败: %v", err)
+		}
+		time.Sleep(realtimeWakeKickDuration)
+	}
+
 	if err := b.WriteCommand(types.BuildBS1RPMCommand(rpm)); err != nil {
 		// 目标写入失败后固件模式未知，下次重新走一遍模式握手而不是假定 0x23 已生效。
 		b.mutex.Lock()
@@ -1002,6 +1025,9 @@ func (b *BLEManager) SetFanSpeed(rpm int) error {
 		b.mutex.Unlock()
 		return fmt.Errorf("设置转速失败: %v", err)
 	}
+	b.mutex.Lock()
+	b.realtimeStopped = rpm == 0
+	b.mutex.Unlock()
 
 	// 自动调速每隔几秒就写一次，Info 级会把唤醒/重连这些真正有用的事件淹掉。
 	b.logDebug("BS1 已设置转速: %d RPM", rpm)
@@ -1010,6 +1036,8 @@ func (b *BLEManager) SetFanSpeed(rpm int) error {
 
 // EnterRealtimeMode 让 BS1 进入实时转速控制模式。
 func (b *BLEManager) EnterRealtimeMode() error {
+	b.controlMutex.Lock()
+	defer b.controlMutex.Unlock()
 	if err := b.WriteCommand(types.BS1CmdEnterRealtime); err != nil {
 		return err
 	}
@@ -1021,6 +1049,8 @@ func (b *BLEManager) EnterRealtimeMode() error {
 
 // SetManualGear 设置 BS1 手动挡位（无子级别）
 func (b *BLEManager) SetManualGear(gear string) error {
+	b.controlMutex.Lock()
+	defer b.controlMutex.Unlock()
 	cmd, ok := types.BS1GearCommands[gear]
 	if !ok {
 		return fmt.Errorf("未知挡位: %s", gear)
@@ -1033,6 +1063,7 @@ func (b *BLEManager) SetManualGear(gear string) error {
 	// 固件已回到挡位模式，保活包必须随之停发 0x23，否则几秒后就被踢回实时模式。
 	b.mutex.Lock()
 	b.realtimeMode = false
+	b.realtimeStopped = false
 	b.mutex.Unlock()
 
 	b.logInfo("BS1 设置挡位成功: %s (目标转速: %d RPM)", gear, cmd.RPM)
