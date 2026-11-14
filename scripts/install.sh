@@ -17,6 +17,7 @@ echo "--- Installing binaries to $INSTALL_DIR ---"
 mkdir -p "$INSTALL_DIR"
 install -Dm755 "$PROJECT_ROOT/build/thrm" "$INSTALL_DIR/thrm"
 install -Dm755 "$PROJECT_ROOT/build/thrm-core" "$INSTALL_DIR/thrm-core"
+install -Dm755 "$PROJECT_ROOT/build/thrm-rapl-helper" "$INSTALL_DIR/thrm-rapl-helper"
 
 # 2. Install application icon
 ICON_SRC="$PROJECT_ROOT/build/appicon.png"

@@ -16,6 +16,7 @@ echo "=== THRM — Install ==="
 echo "--- Installing binaries to $INSTALL_DIR ---"
 install -Dm755 "$HERE/thrm" "$INSTALL_DIR/thrm"
 install -Dm755 "$HERE/thrm-core" "$INSTALL_DIR/thrm-core"
+install -Dm755 "$HERE/thrm-rapl-helper" "$INSTALL_DIR/thrm-rapl-helper"
 
 # 2. Install application icon
 if [ -f "$HERE/appicon.png" ]; then

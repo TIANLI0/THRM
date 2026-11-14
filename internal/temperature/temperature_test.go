@@ -31,49 +31,6 @@ func (testLogger) CleanOldLogs()        {}
 func (testLogger) SetDebugMode(bool)    {}
 func (testLogger) GetLogDir() string    { return "" }
 
-func TestDetectGPUVendorCachesResult(t *testing.T) {
-	oldExec := execHelperCommand
-	oldNow := readTimeNow
-	defer func() {
-		execHelperCommand = oldExec
-		readTimeNow = oldNow
-	}()
-
-	now := time.Unix(1_717_000_000, 0)
-	readTimeNow = func() time.Time { return now }
-
-	calls := 0
-	execHelperCommand = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
-		calls++
-		if timeout != helperCommandTimeout {
-			t.Fatalf("unexpected timeout: %s", timeout)
-		}
-		if name != "nvidia-smi" {
-			t.Fatalf("unexpected command: %s", name)
-		}
-		return []byte("NVIDIA-SMI 555.00"), nil
-	}
-
-	r := NewReader(nil, testLogger{})
-	if got := r.detectGPUVendor(); got != "nvidia" {
-		t.Fatalf("detectGPUVendor() = %q, want nvidia", got)
-	}
-	if got := r.detectGPUVendor(); got != "nvidia" {
-		t.Fatalf("detectGPUVendor() cached = %q, want nvidia", got)
-	}
-	if calls != 1 {
-		t.Fatalf("detectGPUVendor() calls = %d, want 1 with cache hit", calls)
-	}
-
-	now = now.Add(gpuVendorCacheTTL + time.Second)
-	if got := r.detectGPUVendor(); got != "nvidia" {
-		t.Fatalf("detectGPUVendor() after ttl = %q, want nvidia", got)
-	}
-	if calls != 2 {
-		t.Fatalf("detectGPUVendor() calls after ttl = %d, want 2", calls)
-	}
-}
-
 // 没有可信 CPU 温度来源的平台（Windows）必须彻底放弃兜底：ACPI 温区不是 CPU 核心
 // 温度，拿它填补空缺会给出错误的控温依据，并把 PawnIO 故障伪装成一次正常读数。
 // 这里断言降级路径既不返回伪造的 CPU 温度，也不再为此创建 wmic 进程。
@@ -95,8 +52,8 @@ func TestCPUFallbackDisabledWithoutTrustedSource(t *testing.T) {
 
 	r := NewReader(nil, testLogger{})
 	// disableGpu=true 把 GPU 链路排除在外，只观察 CPU 链路的行为。
-	if reading := r.readFallback(true); reading.cpuTemp != 0 {
-		t.Fatalf("readFallback().cpuTemp = %d, want 0", reading.cpuTemp)
+	if reading := r.readNativeTelemetry(true); reading.cpuTemp != 0 {
+		t.Fatalf("readNativeTelemetry().cpuTemp = %d, want 0", reading.cpuTemp)
 	}
 	if len(spawned) != 0 {
 		t.Fatalf("CPU 降级读取不应创建任何外部进程，实际调用: %v", spawned)

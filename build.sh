@@ -29,11 +29,19 @@ CGO_ENABLED=1 go build \
     -o "$BUILD_DIR/thrm-core" \
     ./cmd/core/
 
-# 2. Build GUI: bindings -> frontend -> Go (requires CGO for Wails/GTK4/WebKitGTK 6.0)
+# 2. Build RAPL helper (optional, only needs file capability at runtime)
+echo "--- Building RAPL helper ---"
+CGO_ENABLED=0 go build \
+    -trimpath \
+    -ldflags="$LDFLAGS" \
+    -o "$BUILD_DIR/thrm-rapl-helper" \
+    ./cmd/rapl-helper/
+
+# 3. Build GUI (requires CGO for Wails/WebKit2GTK)
 echo "--- Building GUI ---"
 cd "$PROJECT_ROOT"
 wails3 task build VERSION="$VERSION" BIN_DIR=build
 
 echo "=== Build complete ==="
 echo "Binaries:"
-ls -lh "$BUILD_DIR/thrm" "$BUILD_DIR/thrm-core"
+ls -lh "$BUILD_DIR/thrm" "$BUILD_DIR/thrm-core" "$BUILD_DIR/thrm-rapl-helper"
