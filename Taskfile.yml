@@ -97,9 +97,9 @@ tasks:
     deps: [build]
     dir: build/windows/installer
     cmds:
-      - wails3 generate webview2bootstrapper -dir .
       # fluentsetup 来自 PATH（或环境变量 FLUENTSETUP），见 https://github.com/TIANLI0/FluentSetup/releases；
       # 安装包定义在 fluentsetup.json，版本号与内置 PawnIO 版本通过 -D 传入。
+      # WebView2 引导程序由 fluentsetup 构建时从微软官方下载（"auto": "bundle"，校验签名，缓存一天）。
       - '"${FLUENTSETUP:-fluentsetup}" build fluentsetup.json -D "Version={{.PRODUCT_VERSION}}" -D "PawnIOVersion={{.PAWNIO_FILE_VERSION}}" -o ../../bin'
 
   run:

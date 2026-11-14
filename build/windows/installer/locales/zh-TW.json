@@ -1,0 +1,11 @@
+{
+  "options": {
+    "pawnio": "安裝 PawnIO（必要）",
+    "autostart": "開機時自動啟動"
+  },
+  "actions": {
+    "pawnio": "PawnIO 驅動程式安裝",
+    "autostart": "註冊開機自動啟動"
+  },
+  "license": "../resources/license_zh-CN.txt"
+}

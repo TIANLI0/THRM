@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/TIANLI0/FluentSetup/v1.0.0/shared/schemas/fluentsetup.project.schema.json",
+  "$schema": "https://raw.githubusercontent.com/TIANLI0/FluentSetup/v1.2.0/shared/schemas/fluentsetup.project.schema.json",
   "schemaVersion": 1,
   // THRM installer, built with FluentSetup by the Taskfile "package" task (and by CI after signing):
   //   fluentsetup build fluentsetup.json -D Version=<build/config.yml version> -D PawnIOVersion=<pawnio.env> -o ../../bin
@@ -25,10 +25,7 @@
     "source": "../../bin",
     "include": ["./THRM.exe", "./THRM Core.exe", "bridge/**"],
     "exclude": ["**/*.pdb", "**/*.xml", "bridge/logs/"],
-    "extra": [
-      { "source": "../../bin/PawnIO_setup.exe", "target": "drivers/PawnIO" },
-      { "source": "MicrosoftEdgeWebview2Setup.exe", "target": "redist" }
-    ]
+    "extra": [{ "source": "../../bin/PawnIO_setup.exe", "target": "drivers/PawnIO" }]
   },
   "install": {
     "scope": "machine",
@@ -62,10 +59,11 @@
     "netFrameworkSetup": {
       "helpUrl": "https://dotnet.microsoft.com/download/dotnet-framework/net472"
     },
+    // Microsoft's Evergreen bootstrapper, fetched by fluentsetup at build time (signature checked) and stored in
+    // Setup.exe; it is only extracted when the runtime is missing and is not installed into the app folder.
     "webView2": {
       "required": true,
-      "installer": "redist/MicrosoftEdgeWebview2Setup.exe",
-      "arguments": ["/silent", "/install"],
+      "auto": "bundle",
       "onFailure": "warn",
       "helpUrl": "https://developer.microsoft.com/microsoft-edge/webview2/"
     }

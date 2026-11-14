@@ -20,5 +20,5 @@ with `wails3 task <name>` — see [`Taskfile.yml`](../Taskfile.yml).
 * `installer/*` - The installer, built with [FluentSetup](https://github.com/TIANLI0/FluentSetup):
   `fluentsetup.json` (install folder, PawnIO, autostart, upgrades from NSIS installs, uninstall cleanup),
   `locales/*.json` (option texts and license per language) and `resources/license_*.txt`. `wails3 task package`
-  generates the WebView2 bootstrapper here and runs
-  `fluentsetup build fluentsetup.json -D Version=<config.yml version> -D PawnIOVersion=<pawnio.env> -o ../../bin`.
+  runs `fluentsetup build fluentsetup.json -D Version=<config.yml version> -D PawnIOVersion=<pawnio.env> -o ../../bin`;
+  FluentSetup downloads Microsoft's WebView2 bootstrapper itself (`"auto": "bundle"`).
