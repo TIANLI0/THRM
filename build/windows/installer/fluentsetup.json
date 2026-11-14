@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/TIANLI0/FluentSetup/v1.2.0/shared/schemas/fluentsetup.project.schema.json",
+  "$schema": "https://raw.githubusercontent.com/TIANLI0/FluentSetup/latest/shared/schemas/fluentsetup.project.schema.json",
   "schemaVersion": 1,
   // THRM installer, built with FluentSetup by the Taskfile "package" task (and by CI after signing):
   //   fluentsetup build fluentsetup.json -D Version=<build/config.yml version> -D PawnIOVersion=<pawnio.env> -o ../../bin
