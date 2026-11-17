@@ -188,7 +188,7 @@ export const en: Dict = {
     ],
     linuxDeps: "Requires GTK 3, WebKit2GTK 4.1, hidapi and udev. BS1 also needs a running BlueZ service.",
     signing:
-      "Free code signing for Windows releases is provided by SignPath.io, with a certificate from SignPath Foundation, showing each package was built by GitHub Actions from the public source. Only download from GitHub Releases.",
+      "Windows releases are code-signed with a Certum certificate by GitHub Actions, right after they are built from the public source. Only download from GitHub Releases.",
     releases: "All releases",
     changelog: "Changelog",
     copy: "Copy command",

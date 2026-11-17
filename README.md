@@ -150,15 +150,11 @@ Windows 温度监控使用 LibreHardwareMonitor 和 PawnIO。安装程序会处�
 
 ### 代码签名
 
-THRM 的 Windows 发布包由 [SignPath.io](https://signpath.io/) 免费提供代码签名，证书由 [SignPath Foundation](https://signpath.org/) 签发。
+THRM 的 Windows 发布包（安装包、卸载程序、`THRM.exe`、`THRM Core.exe`、`THRM TempBridge.exe`）使用 Certum 签发的代码签名证书签名，并带有 RFC 3161 时间戳。签名由 GitHub Actions 从本仓库公开源码构建后自动完成，私钥保存在 Certum 云端 HSM 中。构建流程与签名范围详见 **[代码签名策略](CODE_SIGNING_POLICY.md)**。
 
-> Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+请只从 [GitHub Releases](https://github.com/TIANLI0/THRM/releases) 下载；Pull Request、普通分支构建和 CI 临时构建不签名，带标签的正式发布和通过 workflow_dispatch 生成的预发布会自动签名。
 
-签名证书以 SignPath Foundation 的名义签发，用于证明发布包由 GitHub Actions 从本仓库的公开源码自动构建。构建流程、签名范围和团队角色详见 **[代码签名策略](CODE_SIGNING_POLICY.md)**。
-
-请只从 [GitHub Releases](https://github.com/TIANLI0/THRM/releases) 下载；Pull Request、普通分支构建和 CI 临时构建不签名。带标签的正式发布和通过 workflow_dispatch 生成的预发布会自动提交到 SignPath 签名。
-
-用于验证自动签名链路的标签（例如 `v0.0.0-signpath-test.1`）会创建 GitHub 预发布，更新日志会明确标注“测试签名”；这类版本仅供验证，不代表生产发布。
+以 `-test` 结尾的标签（例如 `v0.0.0-test.1`）会创建 GitHub 预发布，更新日志会明确标注为测试版本，不代表正式发布。
 
 ### Linux
 
@@ -610,7 +606,7 @@ bun run build
 
 Pull Request 和推送到主要分支时，GitHub Actions 会分别构建 Windows 与 Linux 版本。
 
-推送 `v*` 或 `V*` 标签后，发布流程会自动生成；标签包含 `signpath-test` 或以 `-test` 结尾时会标记为测试预发布：
+推送 `v*` 或 `V*` 标签后，发布流程会自动生成；标签包含 `-test` 时会标记为测试预发布：
 
 ```text
 THRM-amd64-installer.exe
@@ -666,7 +662,6 @@ refactor: simplify ...
 * [Next.js](https://nextjs.org/)
 * [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)
 * [PawnIO](https://pawnio.eu/)
-* [SignPath.io](https://signpath.io/) 与 [SignPath Foundation](https://signpath.org/) —— 为开源项目免费提供代码签名
 * [项目贡献者](https://github.com/TIANLI0/THRM/graphs/contributors)
 * 飞智 BS 系列设备用户与测试者
 
