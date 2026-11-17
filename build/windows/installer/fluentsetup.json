@@ -10,7 +10,9 @@
   // In-app update: THRM (elevated) waits for itself to exit, runs THRM-amd64-installer.exe /S and starts THRM again
   // once that process is gone, so the asset name and the single-process quiet install must stay as they are.
   // PawnIO is installed when missing or older than the bundled one (a failure only warns) and kept on uninstall.
-  "variables": { "Version": "0.0.0", "PawnIOVersion": "2.2.0.0" },
+  // Code signing: the release workflow rebuilds with --sign -D CodesignThumbprint=<Certum certificate> after signing
+  // THRM.exe, THRM Core.exe and THRM TempBridge.exe; FluentSetup then signs the installer and its uninstall.exe.
+  "variables": { "Version": "0.0.0", "PawnIOVersion": "2.2.0.0", "CodesignThumbprint": "" },
   "app": {
     "id": "THRM",
     "name": "THRM",
@@ -130,6 +132,12 @@
     "licenseMode": "always",
     "localization": "locales",
     "defaultLanguage": "auto"
+  },
+  "signing": {
+    "enabled": false,
+    "provider": "signtool",
+    "certificateThumbprint": "$(CodesignThumbprint)",
+    "timestampUrl": "http://time.certum.pl"
   },
   "output": {
     "directory": "../../bin",

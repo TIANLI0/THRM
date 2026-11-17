@@ -49,13 +49,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    env:
-      # Master switch for the whole SignPath signing chain. SignPath has not authorized
-      # the signing policy for this project yet, so every signing step is skipped and
-      # releases ship unsigned binaries, exactly as they did before the SignPath
-      # integration landed. Flip this to 'true' once the signing policy is approved.
-      # The plan step turns it into the should_sign output that build-windows reads.
-      SIGNPATH_ENABLED: 'false'
     outputs:
       should_build: ${{ steps.plan.outputs.should_build }}
       should_publish_release: ${{ steps.plan.outputs.should_publish_release }}
@@ -157,19 +150,18 @@ jobs:
             normalized_tag="${normalized_tag#V}"
             normalized_tag_lc="${normalized_tag,,}"
 
-            # A SignPath test tag must never look like a stable release. It
-            # creates a GitHub pre-release and the final notes add an
-            # explicit self-signed-certificate test notice.
-            if [[ "$normalized_tag_lc" == *signpath-test* || "$normalized_tag_lc" == *-test* ]]; then
+            # A test tag must never look like a stable release. It creates a GitHub
+            # pre-release and the final notes add an explicit test notice.
+            if [[ "$normalized_tag_lc" == *-test* ]]; then
               {
                 echo "should_build=true"
                 echo "should_publish_release=true"
                 echo "release_type=prerelease"
                 echo "is_prerelease=true"
                 echo "release_tag=${GITHUB_REF_NAME}"
-                echo "release_name=SignPath test pre-release ${GITHUB_REF_NAME}"
-                echo "release_label=SignPath test pre-release"
-                echo "release_guidance=This is a SignPath integration-test pre-release. State clearly that it uses a self-signed test certificate, is not a production release, and may trigger Windows warnings. Do not describe it as stable or trusted."
+                echo "release_name=Test pre-release ${GITHUB_REF_NAME}"
+                echo "release_label=Test pre-release"
+                echo "release_guidance=This is a test pre-release for validating the release pipeline. State clearly that it is not a production release. Do not describe it as stable."
                 echo "build_version=$normalized_tag"
               } >> "$GITHUB_OUTPUT"
             else
@@ -204,9 +196,10 @@ jobs:
             echo "should_build=true" >> "$GITHUB_OUTPUT"
           fi
 
-          # Sign exactly what gets published (tag releases and manual preview releases);
-          # PR and branch artifacts stay unsigned development builds.
-          if [[ "${SIGNPATH_ENABLED}" == "true" && "$should_publish" == "true" ]]; then
+          # Sign exactly what gets published (tag releases and manual preview releases) with
+          # the Certum certificate (TIANLI0/codesign); PR and branch artifacts stay unsigned
+          # development builds.
+          if [[ "$should_publish" == "true" ]]; then
             echo "should_sign=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -320,18 +313,10 @@ jobs:
     permissions:
       actions: read
       contents: read
-    env:
-      # The organization ID is a public SignPath identifier. Keep the API token
-      # in the repository secret SIGNPATH_API_TOKEN; never put it in this file.
-      # THRM [OSS] organization (not the separate Tianli trial organization).
-      SIGNPATH_ORGANIZATION_ID: edf9fbb2-1f9a-4920-84d0-3b3322208d7f
-      SIGNPATH_PROJECT_SLUG: thrm
-      # The OSS organization currently has the self-signed test certificate.
-      # Switch this to release-signing after SignPath imports the production CA
-      # certificate and the corresponding policy is enabled.
-      SIGNPATH_SIGNING_POLICY_SLUG: test-signing
-      # The signing master switch (SIGNPATH_ENABLED) lives on prepare-release, which
-      # exposes the combined decision as needs.prepare-release.outputs.should_sign.
+    # Signing runs (should_sign) use the "codesign" environment: it holds the Certum credentials
+    # (secrets CERTUM_EMAIL, CERTUM_OTPAUTH, variable CERTUM_THUMBPRINT) and admits only main and
+    # v*/V* tags. Other runs use no environment and never see the credentials.
+    environment: ${{ needs.prepare-release.outputs.should_sign == 'true' && 'codesign' || '' }}
 
     steps:
       - name: Checkout
@@ -399,133 +384,33 @@ jobs:
           THRM_BUILD_VERSION: ${{ needs.prepare-release.outputs.build_version }}
         run: build.bat
 
-      # Sign only release-shaped builds (should_sign, decided by prepare-release).
-      # Pull requests and ordinary branch artifacts remain unsigned development
-      # artifacts. Component signing
-      # requests happen before installer packaging so the installer contains the
-      # signed application binaries; four SignPath requests cover the three
-      # Windows executables and the final installer.
-      - name: Prepare THRM.exe for SignPath
+      # Sign only release-shaped builds (should_sign, decided by prepare-release); pull requests
+      # and ordinary branch artifacts remain unsigned development artifacts. Signed in only after
+      # the build, so no build tool runs with the signing session open. The three own executables
+      # are signed first, then the installer is rebuilt from them; FluentSetup signs the installer
+      # and the uninstall.exe it installs. LibreHardwareMonitorLib.dll, the NuGet libraries and the
+      # vendor-signed PawnIO_setup.exe are third-party and stay as they are.
+      - name: Code signing login (Certum)
         if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/signing-input/thrm | Out-Null
-          Copy-Item build/bin/THRM.exe build/signing-input/thrm/THRM.exe -Force
-
-      - name: Upload THRM.exe for SignPath
-        id: upload-thrm
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: actions/upload-artifact@v7
+        uses: TIANLI0/codesign@v1
         with:
-          name: signpath-thrm-${{ github.run_id }}
-          path: build/signing-input/thrm/THRM.exe
-          archive: false
-          if-no-files-found: error
-          retention-days: 1
+          email: ${{ secrets.CERTUM_EMAIL }}
+          otpauth: ${{ secrets.CERTUM_OTPAUTH }}
+          thumbprint: ${{ vars.CERTUM_THUMBPRINT }}
 
-      - name: Sign THRM.exe with SignPath
-        id: sign-thrm
+      - name: Sign THRM executables
         if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
+        uses: TIANLI0/codesign/sign@v1
         with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
-          github-artifact-id: ${{ steps.upload-thrm.outputs.artifact-id }}
-          wait-for-completion: true
-          skip-decompress: true
-          output-artifact-directory: build/signed/thrm
+          root: build/bin
+          files: |
+            THRM.exe
+            THRM Core.exe
+            bridge/THRM TempBridge.exe
+          description: THRM
+          description-url: https://github.com/TIANLI0/THRM
 
-      - name: Replace THRM.exe with the signed artifact
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          $signed = Get-ChildItem build/signed/thrm -Filter 'THRM.exe' -File -Recurse | Select-Object -First 1
-          if (-not $signed) { throw 'SignPath did not return THRM.exe' }
-          Copy-Item $signed.FullName build/bin/THRM.exe -Force
-
-      - name: Prepare THRM Core.exe for SignPath
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/signing-input/core | Out-Null
-          Copy-Item 'build/bin/THRM Core.exe' 'build/signing-input/core/THRM Core.exe' -Force
-
-      - name: Upload THRM Core.exe for SignPath
-        id: upload-core
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: signpath-thrm-core-${{ github.run_id }}
-          path: 'build/signing-input/core/THRM Core.exe'
-          archive: false
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Sign THRM Core.exe with SignPath
-        id: sign-core
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
-          github-artifact-id: ${{ steps.upload-core.outputs.artifact-id }}
-          wait-for-completion: true
-          skip-decompress: true
-          output-artifact-directory: build/signed/core
-
-      - name: Replace THRM Core.exe with the signed artifact
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          $signed = Get-ChildItem build/signed/core -Filter 'THRM Core.exe' -File -Recurse | Select-Object -First 1
-          if (-not $signed) { throw 'SignPath did not return THRM Core.exe' }
-          Copy-Item $signed.FullName 'build/bin/THRM Core.exe' -Force
-
-      - name: Prepare THRM TempBridge.exe for SignPath
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/signing-input/tempbridge | Out-Null
-          Copy-Item 'build/bin/bridge/THRM TempBridge.exe' 'build/signing-input/tempbridge/THRM TempBridge.exe' -Force
-
-      - name: Upload THRM TempBridge.exe for SignPath
-        id: upload-tempbridge
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: signpath-thrm-tempbridge-${{ github.run_id }}
-          path: 'build/signing-input/tempbridge/THRM TempBridge.exe'
-          archive: false
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Sign THRM TempBridge.exe with SignPath
-        id: sign-tempbridge
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
-          github-artifact-id: ${{ steps.upload-tempbridge.outputs.artifact-id }}
-          wait-for-completion: true
-          skip-decompress: true
-          output-artifact-directory: build/signed/tempbridge
-
-      - name: Replace THRM TempBridge.exe with the signed artifact
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          $signed = Get-ChildItem build/signed/tempbridge -Filter 'THRM TempBridge.exe' -File -Recurse | Select-Object -First 1
-          if (-not $signed) { throw 'SignPath did not return THRM TempBridge.exe' }
-          Copy-Item $signed.FullName 'build/bin/bridge/THRM TempBridge.exe' -Force
-
-      - name: Rebuild the installer from signed binaries
+      - name: Rebuild and sign the installer from signed binaries
         if: needs.prepare-release.outputs.should_sign == 'true'
         shell: pwsh
         run: |
@@ -538,51 +423,14 @@ jobs:
           if (-not $productVersion) { throw 'version missing from build/config.yml' }
           Push-Location build/windows/installer
           try {
-            fluentsetup build fluentsetup.json -D "Version=$productVersion" -D "PawnIOVersion=$($pawnioVersion.Trim())" -o ../../bin
+            fluentsetup build fluentsetup.json -D "Version=$productVersion" -D "PawnIOVersion=$($pawnioVersion.Trim())" `
+              --sign -D "CodesignThumbprint=$env:CODESIGN_THUMBPRINT" -o ../../bin
             if ($LASTEXITCODE -ne 0) { throw "fluentsetup failed with exit code $LASTEXITCODE" }
           } finally {
             Pop-Location
           }
-
-      - name: Prepare installer for SignPath
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build/signing-input/installer | Out-Null
-          Copy-Item build/bin/THRM-amd64-installer.exe build/signing-input/installer/THRM-amd64-installer.exe -Force
-
-      - name: Upload installer for SignPath
-        id: upload-installer
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: actions/upload-artifact@v7
-        with:
-          name: signpath-thrm-installer-${{ github.run_id }}
-          path: build/signing-input/installer/THRM-amd64-installer.exe
-          archive: false
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Sign installer with SignPath
-        id: sign-installer
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY_SLUG }}
-          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
-          wait-for-completion: true
-          skip-decompress: true
-          output-artifact-directory: build/signed/installer
-
-      - name: Replace installer with the signed artifact
-        if: needs.prepare-release.outputs.should_sign == 'true'
-        shell: pwsh
-        run: |
-          $signed = Get-ChildItem build/signed/installer -Filter 'THRM-amd64-installer.exe' -File -Recurse | Select-Object -First 1
-          if (-not $signed) { throw 'SignPath did not return THRM-amd64-installer.exe' }
-          Copy-Item $signed.FullName build/bin/THRM-amd64-installer.exe -Force
+          $sig = Get-AuthenticodeSignature build/bin/THRM-amd64-installer.exe
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Thumbprint -ne $env:CODESIGN_THUMBPRINT) { throw "Installer signature: $($sig.Status)" }
 
       - name: Collect release files
         shell: pwsh
@@ -596,6 +444,10 @@ jobs:
             Copy-Item 'build/bin/THRM-amd64-installer.exe' 'build/output/THRM-amd64-installer.exe'
           }
           Compress-Archive -Path build/output/* -DestinationPath build/bin/THRM-windows-portable.zip -Force
+
+      - name: Code signing logout
+        if: always() && needs.prepare-release.outputs.should_sign == 'true'
+        uses: TIANLI0/codesign/logout@v1
 
       - name: Upload PR artifacts
         if: github.event_name == 'pull_request'
@@ -1273,10 +1125,10 @@ jobs:
             $notes = New-FallbackNotes -ReleaseName $env:RELEASE_NAME -ReleaseTag $env:RELEASE_TAG -ReleaseDate $env:RELEASE_DATE -CommitLines $fallbackCommitLines -FileLines $fallbackFileLines
           }
 
-          if ($env:RELEASE_LABEL -eq 'SignPath test pre-release') {
+          if ($env:RELEASE_LABEL -eq 'Test pre-release') {
             $testNotice = @(
-              '> ⚠️ 测试说明：此版本仅用于验证 SignPath 自动签名链路，使用自签名测试证书，不是生产发布；Windows 默认不会信任该证书，可能显示安全提示。'
-              '> ⚠️ Test notice: this build is only for validating the SignPath automated-signing pipeline. It uses a self-signed test certificate, is not a production release, and may show Windows security warnings.'
+              '> ⚠️ 测试说明：此版本仅用于验证发布流程，不是正式发布。'
+              '> ⚠️ Test notice: this build only validates the release pipeline and is not a production release.'
               ''
             ) -join [Environment]::NewLine
             $notes = $testNotice + [Environment]::NewLine + $notes.Trim()

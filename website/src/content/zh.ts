@@ -188,7 +188,7 @@ export const zh: Dict = {
     ],
     linuxDeps: "需要 GTK 3、WebKit2GTK 4.1、hidapi 和 udev。使用 BS1 时还需要 BlueZ 蓝牙服务正常运行。",
     signing:
-      "Windows 发布包由 SignPath.io 免费提供代码签名，证书由 SignPath Foundation 签发，证明安装包由 GitHub Actions 从公开源码自动构建。请只从 GitHub Releases 下载。",
+      "Windows 发布包使用 Certum 代码签名证书签名，由 GitHub Actions 从公开源码构建后自动签名。请只从 GitHub Releases 下载。",
     releases: "全部版本",
     changelog: "更新日志",
     copy: "复制命令",
