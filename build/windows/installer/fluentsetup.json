@@ -19,7 +19,10 @@
     "publisher": "TIANLI0",
     "version": "$(Version)",
     "description": "THRM 桌面控制中心",
-    "website": "https://github.com/TIANLI0/THRM",
+    "website": "https://thrm.vercel.app",
+    "supportUrl": "https://github.com/TIANLI0/THRM/issues",
+    "releaseNotesUrl": "https://github.com/TIANLI0/THRM/releases",
+    "links": [{ "url": "https://github.com/TIANLI0/THRM" }],
     "icon": "../icon.ico",
     "mainExecutable": "THRM.exe"
   },
@@ -129,6 +132,7 @@
   },
   "ui": {
     "license": "resources/license_en-US.txt",
+    "licenseStyle": "inline",
     "licenseMode": "always",
     "localization": "locales",
     "defaultLanguage": "auto"
