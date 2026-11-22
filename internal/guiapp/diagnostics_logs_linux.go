@@ -43,6 +43,7 @@ func addPlatformDiagnosticLogs(archive *zip.Writer) error {
 	if stateDir := appmeta.UserStateDir(homeDir); stateDir != "" {
 		_ = addRecentDiagnosticLogs(archive, filepath.Join(stateDir, "logs"), "fallback", 8)
 	}
+	_ = addDiagnosticHIDSnapshot(archive)
 
 	ctx, cancel := context.WithTimeout(context.Background(), diagnosticJournalTimeout)
 	defer cancel()
