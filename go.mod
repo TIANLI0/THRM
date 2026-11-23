@@ -1,11 +1,11 @@
 module github.com/TIANLI0/THRM
 
-go 1.27.3
+go 1.27.4
 
 require (
 	fyne.io/systray v1.12.2
 	github.com/Microsoft/go-winio v0.6.4
-	github.com/gen2brain/beeep v0.11.3
+	github.com/gen2brain/beeep v0.12.0
 	github.com/go-ole/go-ole v1.3.0
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/shirou/gopsutil/v4 v4.26.10
@@ -13,7 +13,7 @@ require (
 	github.com/wailsapp/wails/v3 v3.1.0
 	go.uber.org/zap v1.28.0
 	golang.design/x/hotkey v0.6.4
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	tinygo.org/x/bluetooth v0.17.0
 )
@@ -23,9 +23,7 @@ require (
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/esiqveland/notify v0.14.0 // indirect
-	github.com/jackmordaunt/icns/v3 v3.0.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/saltosystems/winrt-go v0.0.0-20261016124014-b298124d7472 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
