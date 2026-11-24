@@ -1,7 +1,6 @@
 'use client';
 
 import React, { memo, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import type { TFunction } from 'i18next';
 // m + AppShell 里的 LazyMotion：动画特性异步加载，见 lib/motion-features.ts
 import { m as motion, AnimatePresence } from 'framer-motion';
 import {
@@ -24,7 +23,6 @@ import {
   BarChart3,
   Spline,
   Sparkles,
-  X,
   RotateCw,
   RotateCcw,
   FileArchive,
@@ -51,19 +49,14 @@ import { useAppStore } from '../store/app-store';
 import FanCurveProfileSelect from './FanCurveProfileSelect';
 import LightStripPreview from './LightStripPreview';
 import {
-  SMART_TEMP_PRESET_MAX,
-  SMART_TEMP_PRESET_MIN,
   buildLightProgram,
   buildSmartTempPresetProgram,
-  rgbToCss,
-  smartTempPresetBaseColor,
   smartTempPresetDependsOnRuntimeProfile,
 } from '../lib/lightProgram';
 import {
   ToggleSwitch,
   Button,
   Select,
-  MultiSelect,
   Slider,
   Dialog,
   DialogContent,
@@ -75,6 +68,75 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
+import { getErrorMessage } from './control-panel/helpers';
+import {
+  SMART_TEMP_MAX_BANDS,
+  SMART_TEMP_MAX_TEMP,
+  SMART_TEMP_MAX_HYSTERESIS,
+  smartTempPresetOptions,
+  normalizeSmartTempBands,
+  selectSmartTempBand,
+  normalizeLightStripConfig,
+  rgbToHex,
+  hexToRgb,
+  getRequiredColorCount,
+  LIGHT_MODE_OPTIONS,
+  LIGHT_SPEED_OPTIONS,
+  LIGHT_COLOR_PRESETS,
+} from './control-panel/light-strip';
+import {
+  renderDebugFrameSummary,
+  DANGEROUS_DEBUG_COMMANDS,
+  FIRMWARE_MAINTENANCE_COMMANDS,
+  parseDebugCommandByte,
+} from './control-panel/debug';
+import {
+  RTSS_UPDATE_INTERVALS,
+  RTSS_POSITION_MIN,
+  RTSS_POSITION_MAX,
+  RTSS_POSITION_COMMIT_DELAY,
+  RTSS_POSITION_PREVIEW_INTERVAL,
+  RTSS_POSITION_HOLD_DELAY,
+  RTSS_POSITION_CLICK_STEP,
+  RTSS_POSITION_HOLD_INITIAL_SPEED,
+  RTSS_POSITION_HOLD_MAX_SPEED,
+  RTSS_POSITION_HOLD_ACCELERATION_MS,
+  type RTSSPosition,
+  clampRTSSPosition,
+} from './control-panel/rtss';
+import {
+  LEGION_POWER_MODE_VALUES,
+  FAN_GEAR_VALUES,
+  FAN_LEVEL_VALUES,
+  getDefaultLegionFnQConfig,
+  normalizeLegionFnQConfig,
+} from './control-panel/legion-fnq';
+import {
+  SMART_START_STOP_OPTIONS,
+  SAMPLE_COUNT_OPTIONS,
+  TEMP_SOURCE_OPTIONS,
+  THEME_MODE_OPTIONS,
+} from './control-panel/options';
+import {
+  normalizeHotkeyForDisplay,
+  buildShortcutFromKeyboardEvent,
+} from './control-panel/hotkeys';
+import {
+  Section,
+  SettingRow,
+  HotkeyField,
+  SelectionField,
+} from './control-panel/settings-layout';
+import { ControlOverview } from './control-panel/ControlOverview';
+import {
+  type ControlTemperatureMeta,
+  selectControlTemperatureSignature,
+  LiveCpuSensorMultiSelect,
+  LiveGpuSensorSelect,
+  LiveBaselineTemperatureText,
+  LiveControlSourceText,
+  LiveSmartTempText,
+} from './control-panel/temperature-source';
 
 interface ControlPanelProps {
   config: types.AppConfig;
@@ -86,668 +148,6 @@ interface ControlPanelProps {
 }
 
 type CurveProfile = { id: string; name: string; curve: types.FanCurvePoint[] };
-type ParsedGearTable = { type?: string; table?: Array<{ gear?: number; label?: string; rpm?: number }> };
-
-/* ── Helpers ── */
-
-/* ── 智能温控灯效 ──
-
-固件自己读不到电脑温度，温度分区完全由主机驱动：主机按当前最高温决定用哪个
-原生预设，再用 0x44 下发。这里只用原生预设，不上传自定义帧——固件的自定义帧
-提交命令 0x43 每次都会擦写一页数据闪存，而分区切换是随负载持续发生的。
-*/
-
-const SMART_TEMP_MAX_BANDS = 5;
-const SMART_TEMP_MAX_TEMP = 110;
-const SMART_TEMP_MAX_HYSTERESIS = 10;
-
-/**
- * 固件原生预设 1..5。颜色表与速度都是从固件生成器里还原出来的，
- * 见 lib/lightProgram.ts 顶部的说明。预设 5 的表随设备的运行配置字节切换。
- */
-function smartTempPresetOptions(runtimeProfile: number | null) {
-  return Array.from({ length: SMART_TEMP_PRESET_MAX - SMART_TEMP_PRESET_MIN + 1 }, (_, i) => {
-    const value = SMART_TEMP_PRESET_MIN + i;
-    const color = smartTempPresetBaseColor(value, runtimeProfile);
-    return {
-      value,
-      swatch: color ? rgbToCss(color) : null,
-      labelKey: `controlPanel.light.smartTemp.preset${value}`,
-    };
-  });
-}
-
-function getDefaultSmartTempBands(): types.SmartTempLightBand[] {
-  return [
-    types.SmartTempLightBand.createFrom({ minTemp: 0, preset: 1 }),
-    types.SmartTempLightBand.createFrom({ minTemp: 71, preset: 2 }),
-    types.SmartTempLightBand.createFrom({ minTemp: 81, preset: 3 }),
-  ];
-}
-
-/** 与 Go 侧 types.NormalizeSmartTempLightBands 保持一致：下限升序、首段为 0、预设 1..5。 */
-function normalizeSmartTempBands(raw: unknown): types.SmartTempLightBand[] {
-  if (!Array.isArray(raw) || raw.length === 0) return getDefaultSmartTempBands();
-
-  const result: types.SmartTempLightBand[] = [];
-  let previousMin = -1;
-  for (const [index, item] of raw.slice(0, SMART_TEMP_MAX_BANDS).entries()) {
-    const source = (item || {}) as { minTemp?: number; preset?: number };
-    let preset = Number(source.preset);
-    if (!Number.isFinite(preset) || preset < SMART_TEMP_PRESET_MIN || preset > SMART_TEMP_PRESET_MAX) preset = SMART_TEMP_PRESET_MIN;
-
-    let minTemp = index === 0 ? 0 : Number(source.minTemp);
-    if (!Number.isFinite(minTemp)) minTemp = previousMin + 1;
-    if (index > 0) {
-      minTemp = Math.min(Math.round(minTemp), SMART_TEMP_MAX_TEMP);
-      if (minTemp <= previousMin) minTemp = previousMin + 1;
-    }
-    if (minTemp > SMART_TEMP_MAX_TEMP) break;
-
-    result.push(types.SmartTempLightBand.createFrom({ minTemp, preset }));
-    previousMin = minTemp;
-  }
-  return result.length > 0 ? result : getDefaultSmartTempBands();
-}
-
-/**
- * 与 Go 侧 types.SelectSmartTempLightBand 保持一致的区间判定。
- * currentIndex 为负表示首次判定，直接按阈值取值，不套用回差。
- */
-function selectSmartTempBand(
-  bands: types.SmartTempLightBand[],
-  hysteresis: number,
-  temperature: number,
-  currentIndex: number,
-): number {
-  if (bands.length === 0) return -1;
-  const gap = Math.min(Math.max(hysteresis, 0), SMART_TEMP_MAX_HYSTERESIS);
-
-  if (currentIndex < 0 || currentIndex >= bands.length) {
-    let index = 0;
-    bands.forEach((band, i) => {
-      if (temperature >= band.minTemp) index = i;
-    });
-    return index;
-  }
-
-  let index = currentIndex;
-  while (index + 1 < bands.length && temperature >= bands[index + 1].minTemp + gap) index++;
-  while (index > 0 && temperature < bands[index].minTemp - gap) index--;
-  return index;
-}
-
-function getDefaultLightStripConfig(): types.LightStripConfig {
-  return types.LightStripConfig.createFrom({
-    mode: 'smart_temp',
-    speed: 'medium',
-    brightness: 100,
-    colors: [
-      { r: 255, g: 0, b: 0 },
-      { r: 0, g: 255, b: 0 },
-      { r: 0, g: 128, b: 255 },
-    ],
-    smartTempBands: getDefaultSmartTempBands(),
-    smartTempHysteresis: 2,
-  });
-}
-
-function normalizeLightStripConfig(config: types.AppConfig): types.LightStripConfig {
-  const defaults = getDefaultLightStripConfig();
-  const raw = (config as any).lightStrip;
-  if (!raw) return defaults;
-
-  const normalized = types.LightStripConfig.createFrom({
-    mode: raw.mode || defaults.mode,
-    speed: raw.speed || defaults.speed,
-    brightness: typeof raw.brightness === 'number' ? Math.max(0, Math.min(100, raw.brightness)) : defaults.brightness,
-    colors: Array.isArray(raw.colors) && raw.colors.length > 0 ? raw.colors : defaults.colors,
-    smartTempBands: normalizeSmartTempBands(raw.smartTempBands),
-    smartTempHysteresis:
-      typeof raw.smartTempHysteresis === 'number'
-        ? Math.max(0, Math.min(SMART_TEMP_MAX_HYSTERESIS, Math.round(raw.smartTempHysteresis)))
-        : defaults.smartTempHysteresis,
-  });
-
-  if ((normalized.colors || []).length < 3) {
-    const merged = [...(normalized.colors || [])];
-    while (merged.length < 3) merged.push(defaults.colors[merged.length]);
-    normalized.colors = merged;
-  }
-  return normalized;
-}
-
-function renderDebugFrameSummary(frame: { decoded?: string; parsed?: unknown; command?: string; payloadHex?: string }) {
-  const parsed = frame.parsed as ParsedGearTable | null | undefined;
-  if (parsed?.type === 'gearRpmTable' && Array.isArray(parsed.table)) {
-    return parsed.table
-      .map((item) => `${item.label || item.gear}: ${item.rpm} RPM`)
-      .join(' | ');
-  }
-  return frame.decoded || `${frame.command || '--'} ${frame.payloadHex || ''}`.trim();
-}
-
-function rgbToHex(color: types.RGBColor): string {
-  const h = (v: number) => v.toString(16).padStart(2, '0');
-  return `#${h(color.r || 0)}${h(color.g || 0)}${h(color.b || 0)}`;
-}
-
-function hexToRgb(hex: string): types.RGBColor {
-  const n = Number.parseInt(hex.replace('#', ''), 16);
-  return types.RGBColor.createFrom({ r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 });
-}
-
-function getRequiredColorCount(mode: string): number {
-  switch (mode) {
-    case 'static_single': return 1;
-    case 'off': case 'smart_temp': case 'flowing': return 0;
-    case 'static_multi': return 3;
-    default: return 3;
-  }
-}
-
-const LEGION_POWER_MODE_VALUES = ['Quiet', 'Balance', 'Performance', 'Extreme', 'GodMode'] as const;
-const FAN_GEAR_VALUES = ['静音', '标准', '强劲', '超频'] as const;
-const FAN_LEVEL_VALUES = ['低', '中', '高'] as const;
-const RTSS_UPDATE_INTERVALS = [250, 500, 1000, 2000] as const;
-const RTSS_POSITION_MIN = -1000;
-const RTSS_POSITION_MAX = 1000;
-const RTSS_POSITION_COMMIT_DELAY = 250;
-const RTSS_POSITION_PREVIEW_INTERVAL = 40;
-const RTSS_POSITION_HOLD_DELAY = 350;
-const RTSS_POSITION_CLICK_STEP = 2;
-const RTSS_POSITION_HOLD_INITIAL_SPEED = 28;
-const RTSS_POSITION_HOLD_MAX_SPEED = 56;
-const RTSS_POSITION_HOLD_ACCELERATION_MS = 1600;
-
-type RTSSPosition = { x: number; y: number };
-
-function clampRTSSPosition(value: number): number {
-  return Math.max(RTSS_POSITION_MIN, Math.min(RTSS_POSITION_MAX, value));
-}
-
-// 高危调试命令：直接读写固件底层/调试寄存器，误用可能导致设备异常甚至变砖，需在发送前红色提醒。
-const DANGEROUS_DEBUG_COMMANDS = new Set<number>([
-  0x03, // initializes controller and can select fixed gear 1
-  0x05, // clears only the firmware initialization latch
-  0x06, // resets RPM slots plus runtime/startup/LED state
-  0xed,
-  0xee,
-  0xf0,
-  0xf1,
-  0xf2,
-]);
-const FIRMWARE_MAINTENANCE_COMMANDS = new Set<number>([0x03, 0x05, 0x06]);
-
-// 从用户输入中解析出命令字节：兼容 "27" 与 "5A A5 27 02 29"（带帧头时命令为第三字节）。
-function parseDebugCommandByte(input: string): number | null {
-  const bytes = input
-    .trim()
-    .split(/[^0-9a-fA-F]+/)
-    .filter(Boolean)
-    .map((h) => Number.parseInt(h, 16));
-  if (bytes.length === 0 || bytes.some((b) => Number.isNaN(b))) return null;
-  if (bytes.length >= 3 && bytes[0] === 0x5a && bytes[1] === 0xa5) return bytes[2];
-  return bytes[0];
-}
-
-// 模块级常量：在组件外定义，所有 render 共享同一个引用，避免每次重渲染都新建数组导致下游 Select 等组件 props 引用变化。
-const SMART_START_STOP_OPTIONS = [
-  { value: 'off', labelKey: 'controlPanel.options.smartStartStop.off.label', descriptionKey: 'controlPanel.options.smartStartStop.off.description' },
-  { value: 'immediate', labelKey: 'controlPanel.options.smartStartStop.immediate.label', descriptionKey: 'controlPanel.options.smartStartStop.immediate.description' },
-  { value: 'delayed', labelKey: 'controlPanel.options.smartStartStop.delayed.label', descriptionKey: 'controlPanel.options.smartStartStop.delayed.description' },
-];
-
-// 温度平滑度（EMA 系数）选项。
-// 数字越大平滑越强、对突发温度反应越慢；越小越灵敏但可能跟着抖。
-// 后端 α = 2/(N+1)：1→即时，5→约 5 周期窗口，10→约 10 周期窗口。
-const SAMPLE_COUNT_OPTIONS = [
-  { value: 1, labelKey: 'controlPanel.options.sampleCount.1' },
-  { value: 2, labelKey: 'controlPanel.options.sampleCount.2' },
-  { value: 3, labelKey: 'controlPanel.options.sampleCount.3' },
-  { value: 5, labelKey: 'controlPanel.options.sampleCount.5' },
-  { value: 10, labelKey: 'controlPanel.options.sampleCount.10' },
-];
-
-const TEMP_SOURCE_OPTIONS = [
-  { value: 'max', labelKey: 'controlPanel.options.tempSource.max' },
-  { value: 'cpu', labelKey: 'controlPanel.options.tempSource.cpu' },
-  { value: 'gpu', labelKey: 'controlPanel.options.tempSource.gpu' },
-];
-
-// 内置基础主题选项。自定义主题（如 THRM）改为运行时从安装目录动态发现并追加。
-const THEME_MODE_OPTIONS = [
-  { value: 'light', labelKey: 'controlPanel.options.themeMode.light' },
-  { value: 'dark', labelKey: 'controlPanel.options.themeMode.dark' },
-  { value: 'system', labelKey: 'controlPanel.options.themeMode.system' },
-];
-
-const LIGHT_MODE_OPTIONS = [
-  { value: 'off', labelKey: 'controlPanel.options.lightMode.off.label', descriptionKey: 'controlPanel.options.lightMode.off.description' },
-  { value: 'smart_temp', labelKey: 'controlPanel.options.lightMode.smart_temp.label', descriptionKey: 'controlPanel.options.lightMode.smart_temp.description' },
-  { value: 'static_single', labelKey: 'controlPanel.options.lightMode.static_single.label', descriptionKey: 'controlPanel.options.lightMode.static_single.description' },
-  { value: 'static_multi', labelKey: 'controlPanel.options.lightMode.static_multi.label', descriptionKey: 'controlPanel.options.lightMode.static_multi.description' },
-  { value: 'rotation', labelKey: 'controlPanel.options.lightMode.rotation.label', descriptionKey: 'controlPanel.options.lightMode.rotation.description' },
-  { value: 'flowing', labelKey: 'controlPanel.options.lightMode.flowing.label', descriptionKey: 'controlPanel.options.lightMode.flowing.description' },
-  { value: 'breathing', labelKey: 'controlPanel.options.lightMode.breathing.label', descriptionKey: 'controlPanel.options.lightMode.breathing.description' },
-];
-
-const LIGHT_SPEED_OPTIONS = [
-  { value: 'fast', labelKey: 'controlPanel.options.lightSpeed.fast' },
-  { value: 'medium', labelKey: 'controlPanel.options.lightSpeed.medium' },
-  { value: 'slow', labelKey: 'controlPanel.options.lightSpeed.slow' },
-];
-
-const LIGHT_COLOR_PRESETS = [
-  { nameKey: 'controlPanel.options.lightPresets.neon', colors: [{ r: 255, g: 0, b: 128 }, { r: 0, g: 255, b: 255 }, { r: 128, g: 0, b: 255 }] },
-  { nameKey: 'controlPanel.options.lightPresets.forest', colors: [{ r: 86, g: 169, b: 84 }, { r: 161, g: 210, b: 106 }, { r: 44, g: 120, b: 115 }] },
-  { nameKey: 'controlPanel.options.lightPresets.glacier', colors: [{ r: 80, g: 170, b: 255 }, { r: 116, g: 214, b: 255 }, { r: 200, g: 240, b: 255 }] },
-];
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function translateWorkMode(
-  workMode: string | null | undefined,
-  t: TFunction,
-) {
-  switch (workMode) {
-    case '挡位工作模式':
-      return t('controlPanel.overview.workModes.manual');
-    case '自动模式(实时转速)':
-      return t('controlPanel.overview.workModes.auto');
-    default:
-      return workMode || '--';
-  }
-}
-
-function translateControlSource(
-  source: string | null | undefined,
-  t: (key: string) => string,
-) {
-  switch (source) {
-    case 'cpu':
-      return t('controlPanel.options.tempSource.cpu');
-    case 'gpu':
-      return t('controlPanel.options.tempSource.gpu');
-    default:
-      return t('controlPanel.options.tempSource.max');
-  }
-}
-
-function getDefaultLegionFnQConfig() {
-  return {
-    enabled: false,
-    takeOverFan: false,
-    modeMapping: {
-      Quiet: { gear: '静音', level: '中' },
-      Balance: { gear: '标准', level: '中' },
-      Performance: { gear: '强劲', level: '中' },
-      Extreme: { gear: '超频', level: '中' },
-      GodMode: { gear: '超频', level: '高' },
-    },
-  };
-}
-
-function normalizeLegionFnQConfig(raw: any) {
-  const defaults = getDefaultLegionFnQConfig();
-  const mapping = { ...defaults.modeMapping, ...(raw?.modeMapping || {}) };
-  return {
-    enabled: !!raw?.enabled,
-    takeOverFan: !!raw?.takeOverFan,
-    modeMapping: mapping,
-  };
-}
-
-function normalizeHotkeyForDisplay(value: string): string {
-  return (value || '').trim();
-}
-
-function buildShortcutFromKeyboardEvent(e: {
-  key: string;
-  ctrlKey: boolean;
-  altKey: boolean;
-  shiftKey: boolean;
-  metaKey: boolean;
-}): string {
-  if (e.key === 'Backspace' || e.key === 'Delete') {
-    return '';
-  }
-
-  const parts: string[] = [];
-  if (e.ctrlKey) parts.push('Ctrl');
-  if (e.altKey) parts.push('Alt');
-  if (e.shiftKey) parts.push('Shift');
-  if (e.metaKey) parts.push('Win');
-
-  const key = e.key;
-  if (['Control', 'Alt', 'Shift', 'Meta'].includes(key)) {
-    return '';
-  }
-
-  let mainKey = '';
-  if (/^[a-z]$/i.test(key)) {
-    mainKey = key.toUpperCase();
-  } else if (/^[0-9]$/.test(key)) {
-    mainKey = key;
-  } else if (/^F\d{1,2}$/i.test(key)) {
-    mainKey = key.toUpperCase();
-  }
-
-  if (!mainKey || parts.length === 0) {
-    return '';
-  }
-
-  return [...parts, mainKey].join('+');
-}
-
-/* ── Section wrapper ── */
-
-function Section({
-  title,
-  icon: Icon,
-  children,
-  className,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={clsx('rounded-2xl border border-border bg-card shadow-sm', className)}>
-      <div className="flex items-center gap-2.5 border-b border-border/60 px-5 py-4">
-        <Icon className="h-4.5 w-4.5 text-muted-foreground" />
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
-      </div>
-      <div className="divide-y divide-border/60">{children}</div>
-    </section>
-  );
-}
-
-/* ── Setting row ── */
-
-function SettingRow({
-  icon,
-  title,
-  description,
-  tip,
-  children,
-  disabled,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  description?: string;
-  tip?: string;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
-  return (
-    <div className={clsx('flex items-center justify-between gap-4 px-5 py-4', disabled && 'opacity-50')}>
-      <div className="flex items-center gap-3 min-w-0">
-        {icon && (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            {icon}
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="text-base font-medium text-foreground">{title}</div>
-          {description && <div className="text-sm text-muted-foreground line-clamp-2">{description}</div>}
-          {tip && <div className="mt-0.5 text-xs text-primary/80">{tip}</div>}
-        </div>
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-function HotkeyField({
-  title,
-  description,
-  value,
-  placeholder,
-  clearAriaLabel,
-  recording,
-  onFocus,
-  onBlur,
-  onKeyDown,
-  onClear,
-}: {
-  title: string;
-  description: string;
-  value: string;
-  placeholder: string;
-  clearAriaLabel: string;
-  recording: boolean;
-  onFocus: () => void;
-  onBlur: () => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 md:flex-row md:items-center md:gap-4">
-      <div className="min-w-0 flex-1 pr-2">
-        <div className="text-sm text-foreground">{title}</div>
-        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</div>
-      </div>
-
-      <div className="w-full md:ml-auto md:w-[240px] md:flex-none">
-        <div className="relative">
-          <input
-            value={value}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            onKeyDown={onKeyDown}
-            readOnly
-            placeholder={placeholder}
-            className={clsx(
-              'w-full rounded-lg border bg-background px-3 py-2.5 pr-9 text-center font-mono text-sm text-foreground outline-none transition',
-              recording
-                ? 'border-primary shadow-[0_0_0_1px_var(--color-primary)] ring-2 ring-primary/20'
-                : 'border-border/70 hover:border-border',
-            )}
-          />
-          {value && (
-            <button
-              type="button"
-              aria-label={clearAriaLabel}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={onClear}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SelectionField({
-  label,
-  children,
-  hint,
-}: {
-  label: string;
-  children: React.ReactNode;
-  hint?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
-      {children}
-      {hint && <div className="text-[11px] leading-relaxed text-muted-foreground">{hint}</div>}
-    </div>
-  );
-}
-
-/* ── 实时概览 ── */
-
-// 概览自己订阅遥测：转速每秒最多推送 4 次，只刷新这三张卡片，不带动整个设置页重渲染。
-function ControlOverview({ isBs1 }: { isBs1: boolean }) {
-  const { t } = useTranslation();
-  const fanData = useAppStore((state) => state.fanData);
-  const temperature = useAppStore((state) => state.temperature);
-
-  return (
-    <Section title={t('controlPanel.overview.title')} icon={Settings}>
-      <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-3">
-        <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-          <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentTemperature')}</div>
-          <div className={clsx(
-            'mt-1 text-2xl font-semibold tabular-nums',
-            (temperature?.maxTemp ?? 0) > 80 ? 'text-red-500' : (temperature?.maxTemp ?? 0) > 70 ? 'text-amber-500' : 'text-primary'
-          )}>
-            {temperature?.maxTemp ?? '--'}°C
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">{t('controlPanel.overview.cpuGpuTemperature', { cpu: temperature?.cpuTemp ?? '--', gpu: temperature?.gpuTemp ?? '--' })}</div>
-        </div>
-        <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-          <div className="text-sm text-muted-foreground">{t('controlPanel.overview.currentRpm')}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{fanData?.currentRpm ?? '--'} RPM</div>
-          <div className="mt-1 text-xs text-muted-foreground">{translateWorkMode(fanData?.workMode, t)}</div>
-        </div>
-        <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-center">
-          <div className="text-sm text-muted-foreground">{isBs1 ? t('controlPanel.overview.currentGear') : t('controlPanel.overview.targetRpm')}</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums text-primary">{isBs1 ? (getManualGearLabel(fanData?.setGear) || '--') : `${fanData?.targetRpm ?? '--'} RPM`}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{isBs1 ? translateWorkMode(fanData?.workMode, t) : t('controlPanel.overview.gearValue', { gear: getManualGearLabel(fanData?.setGear) || '--' })}</div>
-        </div>
-      </div>
-    </Section>
-  );
-}
-
-/* ── 温度基准 ──
-
-传感器结构体带着实时读数，温度每次推送都是新数组。设置页主体只关心清单本身（key、名称、
-显卡归属）和型号这类慢变化字段：序列化成签名来订阅，签名不变就不重渲染这个三千多行的组件。
-实时读数、温度文字交给下面几个小组件各自订阅 store。 */
-
-type AppState = ReturnType<typeof useAppStore.getState>;
-type SensorRef = { key: string; name: string };
-type GpuDeviceRef = { key: string; name: string; vendor: string; sensors: SensorRef[] };
-interface ControlTemperatureMeta {
-  cpuModel?: string;
-  gpuModel?: string;
-  selectedGpuDevice?: string;
-  cpuSensors: SensorRef[];
-  gpuSensors: SensorRef[];
-  gpuDevices: GpuDeviceRef[];
-}
-
-const EMPTY_SENSORS: types.TemperatureSensor[] = [];
-
-const toSensorRefs = (sensors: unknown): SensorRef[] =>
-  Array.isArray(sensors)
-    ? (sensors as types.TemperatureSensor[]).map((sensor) => ({ key: sensor.key, name: sensor.name }))
-    : [];
-
-// 选择器在每次 store 变化（含每秒数次的转速推送）时都会执行，同一帧温度只序列化一次。
-let temperatureSignatureSource: types.TemperatureData | null | undefined;
-let temperatureSignature: string | null = null;
-const selectControlTemperatureSignature = (state: AppState): string | null => {
-  const temperature = state.temperature;
-  if (temperature === temperatureSignatureSource) return temperatureSignature;
-  temperatureSignatureSource = temperature;
-  if (!temperature) {
-    temperatureSignature = null;
-    return null;
-  }
-  const meta: ControlTemperatureMeta = {
-    cpuModel: temperature.cpuModel,
-    gpuModel: temperature.gpuModel,
-    selectedGpuDevice: temperature.selectedGpuDevice,
-    cpuSensors: toSensorRefs(temperature.cpuSensors),
-    gpuSensors: toSensorRefs(temperature.gpuSensors),
-    gpuDevices: Array.isArray(temperature.gpuDevices)
-      ? temperature.gpuDevices.map((device) => ({
-        key: device.key,
-        name: device.name,
-        vendor: device.vendor,
-        sensors: toSensorRefs(device.sensors),
-      }))
-      : [],
-  };
-  temperatureSignature = JSON.stringify(meta);
-  return temperatureSignature;
-};
-
-// 与主体里 effectiveGpuSensors 同一规则，只是取带实时读数的原始清单（store 复用未变的引用）。
-const selectEffectiveGpuSensors = (state: AppState, activeGpuDeviceKey: string): types.TemperatureSensor[] => {
-  const temperature = state.temperature;
-  const devices = temperature?.gpuDevices;
-  const device = Array.isArray(devices) ? devices.find((item) => item.key === activeGpuDeviceKey) : undefined;
-  if (device && Array.isArray(device.sensors) && device.sensors.length > 0) return device.sensors;
-  return Array.isArray(temperature?.gpuSensors) ? temperature.gpuSensors : EMPTY_SENSORS;
-};
-
-const LiveCpuSensorMultiSelect = memo(function LiveCpuSensorMultiSelect(
-  props: Omit<React.ComponentProps<typeof MultiSelect>, 'options'>,
-) {
-  const sensors = useAppStore((state) => state.temperature?.cpuSensors);
-  const options = useMemo(
-    () => (Array.isArray(sensors) ? sensors : EMPTY_SENSORS).map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
-    [sensors],
-  );
-  return <MultiSelect {...props} options={options} />;
-});
-
-const LiveGpuSensorSelect = memo(function LiveGpuSensorSelect({
-  activeGpuDeviceKey,
-  value,
-  onChange,
-  disabled,
-}: {
-  activeGpuDeviceKey: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled: boolean;
-}) {
-  const { t, i18n } = useTranslation();
-  const sensors = useAppStore((state) => selectEffectiveGpuSensors(state, activeGpuDeviceKey));
-  const options = useMemo(() => [
-    { value: 'auto', label: sensors.length > 0 ? t('controlPanel.options.sensor.autoRecommended') : t('controlPanel.options.sensor.auto') },
-    ...sensors.map((sensor) => ({ value: sensor.key, label: `${sensor.name} (${sensor.value}°C)` })),
-  ], [sensors, t, i18n.language]);
-  return (
-    <Select
-      value={value}
-      onChange={onChange}
-      options={options}
-      size="sm"
-      className="w-full min-w-0"
-      disabled={disabled}
-    />
-  );
-});
-
-const LiveBaselineTemperatureText = memo(function LiveBaselineTemperatureText({ channel }: { channel: 'cpu' | 'gpu' }) {
-  const { t } = useTranslation();
-  const temp = useAppStore((state) => (channel === 'cpu' ? state.temperature?.cpuTemp : state.temperature?.gpuTemp));
-  if (temp && temp > 0) return <>{t('controlPanel.fan.currentBaselineTemperature', { temperature: temp })}</>;
-  return <>{channel === 'cpu' ? t('controlPanel.fan.noCpuTemperatureData') : t('controlPanel.fan.noGpuTemperatureData')}</>;
-});
-
-const LiveControlSourceText = memo(function LiveControlSourceText() {
-  const { t } = useTranslation();
-  const controlTemp = useAppStore((state) => state.temperature?.controlTemp);
-  const controlSource = useAppStore((state) => state.temperature?.controlSource);
-  return (
-    <>
-      {controlTemp && controlTemp > 0
-        ? t('controlPanel.fan.currentControlSource', { source: translateControlSource(controlSource, t), temperature: controlTemp })
-        : t('controlPanel.fan.noControlTemperature')}
-    </>
-  );
-});
-
-const LiveSmartTempText = memo(function LiveSmartTempText() {
-  const { t } = useTranslation();
-  const current = useAppStore((state) => Math.max(state.temperature?.cpuTemp || 0, state.temperature?.gpuTemp || 0));
-  return <>{current > 0 ? t('controlPanel.light.smartTemp.liveTemp', { temp: current }) : t('controlPanel.light.smartTemp.noTemp')}</>;
-});
 
 /* ── Main ControlPanel ── */
 
