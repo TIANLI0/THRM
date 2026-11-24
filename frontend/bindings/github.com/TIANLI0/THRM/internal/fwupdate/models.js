@@ -57,6 +57,15 @@ export class FirmwareInfo {
              */
             this["url"] = "";
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * SHA256 是下载内容（.hex/.bin 文件原始字节）的十六进制 SHA-256。
+             * THRM 自定义固件必填，刷写前校验；官方接口不提供，为空。
+             * @member
+             * @type {string | undefined}
+             */
+            this["sha256"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }

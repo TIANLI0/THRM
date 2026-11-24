@@ -2,6 +2,7 @@ package fwflash
 
 import (
 	"bytes"
+	"path/filepath"
 	"testing"
 )
 
@@ -95,5 +96,66 @@ func TestPadToSectorBoundary(t *testing.T) {
 	p2 := padToSectorBoundary(make([]byte, 2048))
 	if len(p2) != 2048 {
 		t.Fatalf("pad len = %d, want 2048 (已对齐不应变)", len(p2))
+	}
+}
+
+func TestParseIntelHexRejectsMalformed(t *testing.T) {
+	cases := map[string]string{
+		// 声明 0x10 字节数据，实际只有 1 字节（校验和按实际内容算对，专门测长度检查）。
+		"声明长度大于实际": ":10000000AA46\n:00000001FF\n",
+		// 扩展线性地址记录的数据必须正好 2 字节。
+		"扩展地址长度错误": ":0100000400FB\n:00000001FF\n",
+		// 两条数据相距约 4GB，展开会要求分配巨大镜像。
+		"地址跨度过大": ":0100000000FF\n:02000004FFFFFC\n:01FFFF00AA57\n:00000001FF\n",
+	}
+	for name, src := range cases {
+		if _, err := parseIntelHex([]byte(src)); err == nil {
+			t.Errorf("%s: 应解析失败", name)
+		}
+	}
+}
+
+func TestCheckImageFits(t *testing.T) {
+	chip := Chip{Name: "CH591", FlashSize: 196608}
+	ok := make([]byte, 1024)
+	ok[0] = 0x6F
+	if err := checkImageFits(ok, chip); err != nil {
+		t.Errorf("正常镜像应通过: %v", err)
+	}
+	full := make([]byte, chip.FlashSize)
+	full[0] = 0x6F
+	if err := checkImageFits(full, chip); err != nil {
+		t.Errorf("正好填满代码区应通过: %v", err)
+	}
+	if err := checkImageFits(append(full, 0x01), chip); err == nil {
+		t.Error("超出代码区容量应被拒")
+	}
+	if err := checkImageFits(nil, chip); err == nil {
+		t.Error("空镜像应被拒")
+	}
+	blank := make([]byte, 2048)
+	for i := range blank[:1024] {
+		blank[i] = 0xFF
+	}
+	if err := checkImageFits(blank, chip); err == nil {
+		t.Error("全空白镜像应被拒")
+	}
+}
+
+// 仓库里随清单分发的固件必须能被解析并放进 CH591。
+func TestRepositoryFirmwareFits(t *testing.T) {
+	files, _ := filepath.Glob(filepath.Join("..", "..", "firmware", "*.hex"))
+	if len(files) == 0 {
+		t.Fatal("没有找到仓库固件")
+	}
+	for _, f := range files {
+		img, err := LoadFirmware(f)
+		if err != nil {
+			t.Errorf("%s: %v", f, err)
+			continue
+		}
+		if err := checkImageFits(img, Chip{Name: "CH591", FlashSize: 196608}); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
 	}
 }

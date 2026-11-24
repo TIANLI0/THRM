@@ -228,11 +228,21 @@ func (a *CoreApp) runFlash(params ipc.FlashFirmwareParams) error {
 		log.Infof("读取本地固件: %s", params.LocalPath)
 		raw, err = fwflash.LoadFirmware(params.LocalPath)
 	} else {
+		// 地址由前端经 IPC 传入，不能直接信：按来源限定到飞智域名或本仓库 firmware 目录。
+		if err := fwupdate.ValidateURL(params.Source, params.URL); err != nil {
+			return err
+		}
 		log.Infof("下载固件: %s", params.Version)
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		var data []byte
 		data, err = fwupdate.Download(ctx, params.URL)
+		// 自定义固件的清单带 sha256，必须对上才刷；官方接口不提供哈希，无从校验。
+		if err == nil && params.Source == fwupdate.SourceCustom {
+			if err = fwupdate.VerifySHA256(data, params.SHA256); err == nil {
+				log.Infof("sha256 校验通过")
+			}
+		}
 		if err == nil {
 			raw, err = fwflash.ParseFirmwareBytes(params.URL, data)
 		}

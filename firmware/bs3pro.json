@@ -4,6 +4,7 @@
     "name": "BS3PRO · THRM v1 (0.0.2.4)",
     "info": "THRM 定制固件：在设备上报里带 THRM 版本标识，解锁「休眠时关闭输出」。基于官方 0.0.2.4。",
     "date": "2026-10-20",
-    "url": "https://raw.githubusercontent.com/TIANLI0/THRM/main/firmware/CH591_For_BS3PRO_Ver0.0.2.4_THRMv1.hex"
+    "url": "https://raw.githubusercontent.com/TIANLI0/THRM/main/firmware/CH591_For_BS3PRO_Ver0.0.2.4_THRMv1.hex",
+    "sha256": "883fbe007746a32b178e4e23f2cc2cb534e732d0cd1bad83e76d7e9c9fdfdd7a"
   }
 ]

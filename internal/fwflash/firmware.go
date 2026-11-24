@@ -37,6 +37,10 @@ func looksLikeIntelHex(data []byte) bool {
 	return false
 }
 
+// maxImageSpan 是 Intel HEX 允许覆盖的最大地址跨度。远大于任何受支持芯片的代码区
+// （见 chip.go），只用来挡住地址字段异常的文件：否则一条高地址记录就能让镜像膨胀到数 GB。
+const maxImageSpan = 1024 * 1024
+
 // parseIntelHex 解析 Intel HEX，返回从最小地址到最大地址的扁平镜像（空洞填 0xFF）。
 func parseIntelHex(data []byte) ([]byte, error) {
 	mem := map[uint32]byte{}
@@ -60,9 +64,16 @@ func parseIntelHex(data []byte) ([]byte, error) {
 			return nil, fmt.Errorf("Intel HEX 校验失败: %q", line)
 		}
 		n := b[0]
+		// 行长必须正好是 长度+地址+类型+数据+校验，否则下面取 payload 会越界或读到校验字节。
+		if len(b) != int(n)+5 {
+			return nil, fmt.Errorf("Intel HEX 行长度与声明不符: %q", line)
+		}
 		addr := uint32(b[1])<<8 | uint32(b[2])
 		rtype := b[3]
 		payload := b[4 : 4+int(n)]
+		if (rtype == 0x02 || rtype == 0x04) && n != 2 {
+			return nil, fmt.Errorf("Intel HEX 扩展地址记录长度错误: %q", line)
+		}
 		switch rtype {
 		case 0x00: // data
 			for i, v := range payload {
@@ -86,6 +97,9 @@ done:
 	}
 	sort.Slice(addrs, func(i, j int) bool { return addrs[i] < addrs[j] })
 	lo, hi := addrs[0], addrs[len(addrs)-1]
+	if hi-lo >= maxImageSpan {
+		return nil, fmt.Errorf("Intel HEX 地址跨度过大（0x%08X–0x%08X），不是有效的固件", lo, hi)
+	}
 	out := make([]byte, hi-lo+1)
 	for i := range out {
 		out[i] = 0xFF

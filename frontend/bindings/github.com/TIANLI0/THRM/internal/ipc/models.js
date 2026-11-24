@@ -21,7 +21,7 @@ export class FlashFirmwareParams {
     constructor($$source = {}) {
         if (!("source" in $$source)) {
             /**
-             * official | hosted | local
+             * official | custom | local
              * @member
              * @type {string}
              */
@@ -29,7 +29,7 @@ export class FlashFirmwareParams {
         }
         if (!("url" in $$source)) {
             /**
-             * 官方/托管的下载地址
+             * 官方/自定义固件的下载地址
              * @member
              * @type {string}
              */
@@ -50,6 +50,14 @@ export class FlashFirmwareParams {
              * @type {string}
              */
             this["version"] = "";
+        }
+        if (!("sha256" in $$source)) {
+            /**
+             * 自定义固件清单里的 SHA-256，刷写前校验（官方/本地为空）
+             * @member
+             * @type {string}
+             */
+            this["sha256"] = "";
         }
 
         Object.assign(this, $$source);

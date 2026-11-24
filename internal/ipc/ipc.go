@@ -1294,10 +1294,11 @@ type SetBoolParams struct {
 
 // FlashFirmwareParams 是 ReqFlashFirmware 的参数。
 type FlashFirmwareParams struct {
-	Source    string `json:"source"`    // official | hosted | local
-	URL       string `json:"url"`       // 官方/托管的下载地址
+	Source    string `json:"source"`    // official | custom | local
+	URL       string `json:"url"`       // 官方/自定义固件的下载地址
 	LocalPath string `json:"localPath"` // 本地文件路径
 	Version   string `json:"version"`   // 仅用于展示
+	SHA256    string `json:"sha256"`    // 自定义固件清单里的 SHA-256，刷写前校验（官方/本地为空）
 }
 
 // SetStringParams 字符串参数

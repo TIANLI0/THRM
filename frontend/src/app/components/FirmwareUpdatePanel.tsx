@@ -101,7 +101,7 @@ export function FirmwareUpdatePanel({ open, onOpenChange, t }: Props) {
       const path = await apiService.selectFirmwareFile();
       if (path) {
         setLocalPath(path);
-        setSelected({ source: 'local', version: '', name: path, info: '', date: '', url: '' });
+        setSelected({ source: 'local', version: '', name: path, info: '', date: '', url: '', sha256: '' });
       }
     } catch { /* noop */ }
   }, []);
@@ -117,6 +117,7 @@ export function FirmwareUpdatePanel({ open, onOpenChange, t }: Props) {
         url: selected.url,
         localPath: selected.source === 'local' ? localPath : '',
         version: selected.version,
+        sha256: selected.sha256 ?? '',
       });
     } catch (e) {
       setFlashing(false);

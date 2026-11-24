@@ -152,6 +152,10 @@ func randByte() byte {
 // Flash 擦除并写入整片代码区镜像（会先补齐到扇区边界），带写后校验与复位。
 // 完整流程：擦除 → isp_key → 分块 program → 空块 → isp_key → 分块 verify → 复位。
 func (f *Flashing) Flash(raw []byte, verify, reset bool) error {
+	// 先确认镜像合理再动设备：擦除之后才发现写不进去，设备就只剩下载模式可用了。
+	if err := checkImageFits(raw, f.Chip); err != nil {
+		return err
+	}
 	bin := padToSectorBoundary(raw)
 	sectors := uint32(len(bin)/sectorSize) + 1
 
@@ -203,6 +207,22 @@ func (f *Flashing) Flash(raw []byte, verify, reset bool) error {
 		}
 	}
 	return nil
+}
+
+// checkImageFits 确认镜像非空、不是全空白，且放得进芯片的代码区。
+func checkImageFits(raw []byte, chip Chip) error {
+	if len(raw) == 0 {
+		return fmt.Errorf("固件为空")
+	}
+	if chip.FlashSize > 0 && uint32(len(raw)) > chip.FlashSize {
+		return fmt.Errorf("固件 %d 字节超出 %s 代码区容量 %d 字节，拒绝刷写", len(raw), chip.Name, chip.FlashSize)
+	}
+	for _, b := range raw {
+		if b != 0xFF && b != 0x00 {
+			return nil
+		}
+	}
+	return fmt.Errorf("固件内容全为空白，拒绝刷写")
 }
 
 // Verify 逐块比对代码区内容与 raw（raw 应已补齐到扇区边界）。
