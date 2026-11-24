@@ -1,6 +1,7 @@
 package guiapp
 
 import (
+	"net/http"
 	"net/url"
 	"reflect"
 	"testing"
@@ -13,7 +14,8 @@ func TestIsAllowedUpdateHost(t *testing.T) {
 			t.Errorf("isAllowedUpdateHost(%q) = false, want true", host)
 		}
 	}
-	denied := []string{"tianli0.top", "evil-thrm.tianli0.top", "github.com.evil.com", "example.com"}
+	denied := []string{"tianli0.top", "evil-thrm.tianli0.top", "github.com.evil.com", "example.com",
+		"evilgithubusercontent.com", "evilgithub.com", "githubusercontent.com.evil.com"}
 	for _, host := range denied {
 		if isAllowedUpdateHost(host) {
 			t.Errorf("isAllowedUpdateHost(%q) = true, want false", host)
@@ -58,6 +60,29 @@ func TestUpdateDownloadCandidates(t *testing.T) {
 		}
 		if got := updateDownloadCandidates(u); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("updateDownloadCandidates(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestCheckUpdateRedirect(t *testing.T) {
+	cases := []struct {
+		target string
+		ok     bool
+	}{
+		{"https://release-assets.githubusercontent.com/x", true},
+		{"https://github.com/TIANLI0/THRM/releases/download/v1/a.exe", true},
+		{"http://github.com/TIANLI0/THRM/releases/download/v1/a.exe", false},
+		{"https://example.com/a.exe", false},
+		{"https://evilgithubusercontent.com/a.exe", false},
+	}
+	for _, c := range cases {
+		u, err := url.Parse(c.target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = checkUpdateRedirect(&http.Request{URL: u}, nil)
+		if (err == nil) != c.ok {
+			t.Errorf("checkUpdateRedirect(%q) err = %v, want ok=%v", c.target, err, c.ok)
 		}
 	}
 }

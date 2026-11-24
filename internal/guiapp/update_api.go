@@ -54,36 +54,51 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 		a.emitUpdateProgress(UpdateProgress{Percent: -1, Stage: "error", Message: e.Error()})
 		return e
 	}
-	if !isAllowedUpdateHost(parsed.Host) {
-		e := fmt.Errorf("下载地址不在允许的来源内: %s", parsed.Host)
+	if !isAllowedUpdateHost(parsed.Hostname()) {
+		e := fmt.Errorf("下载地址不在允许的来源内: %s", parsed.Hostname())
 		a.emitUpdateProgress(UpdateProgress{Percent: -1, Stage: "error", Message: e.Error()})
 		return e
 	}
-
-	var installerPath string
-	for i, candidate := range updateDownloadCandidates(parsed) {
-		if i > 0 {
-			guiLogger.Warnf("从官网下载更新失败，改用 GitHub 重试: %v", err)
-			a.emitUpdateProgress(UpdateProgress{Percent: 0, Stage: "downloading"})
-		}
-		installerPath, err = a.downloadUpdateInstaller(candidate)
-		if err == nil {
-			break
-		}
-	}
-	if err != nil {
-		guiLogger.Errorf("下载更新安装包失败: %v", err)
-		a.emitUpdateProgress(UpdateProgress{Percent: -1, Stage: "error", Message: err.Error()})
-		return err
-	}
-
-	a.emitUpdateProgress(UpdateProgress{Percent: 100, Stage: "installing", Message: ""})
 
 	exePath, exeErr := os.Executable()
 	if exeErr != nil {
 		guiLogger.Warnf("获取当前可执行文件路径失败，安装后可能无法自动重启: %v", exeErr)
 		exePath = ""
 	}
+
+	updateDir, err := createUpdateDir()
+	if err != nil {
+		guiLogger.Errorf("创建更新目录失败: %v", err)
+		a.emitUpdateProgress(UpdateProgress{Percent: -1, Stage: "error", Message: err.Error()})
+		return err
+	}
+
+	var installerPath string
+	for i, candidate := range updateDownloadCandidates(parsed) {
+		if i > 0 {
+			guiLogger.Warnf("从官网获取更新失败，改用 GitHub 重试: %v", err)
+			a.emitUpdateProgress(UpdateProgress{Percent: 0, Stage: "downloading"})
+		}
+		installerPath, err = a.downloadUpdateInstaller(candidate, updateDir)
+		if err != nil {
+			continue
+		}
+		// 安装包会被提权执行：签名不对的文件既不运行也不留在磁盘上。
+		// 校验放在循环内，官网反代给出的文件不可信时还能回退到 GitHub。
+		if err = verifyUpdateInstaller(installerPath, exePath); err != nil {
+			_ = os.Remove(installerPath)
+			continue
+		}
+		break
+	}
+	if err != nil {
+		guiLogger.Errorf("获取更新安装包失败: %v", err)
+		_ = os.RemoveAll(updateDir)
+		a.emitUpdateProgress(UpdateProgress{Percent: -1, Stage: "error", Message: err.Error()})
+		return err
+	}
+
+	a.emitUpdateProgress(UpdateProgress{Percent: 100, Stage: "installing", Message: ""})
 
 	if err := launchUpdateInstaller(installerPath, exePath, windowTitle, windowBody, windowRestarting); err != nil {
 		guiLogger.Errorf("启动更新安装程序失败: %v", err)
@@ -103,12 +118,25 @@ func (a *App) DownloadAndInstallUpdate(downloadURL, windowTitle, windowBody, win
 	return nil
 }
 
-// isAllowedUpdateHost 只允许从官网反代和 GitHub 下载安装包。
+// isAllowedUpdateHost 只允许从官网反代和 GitHub 下载安装包。host 不带端口。
+// 后缀匹配必须带前导点，否则 evilgithubusercontent.com 这类域名也会通过。
 func isAllowedUpdateHost(host string) bool {
 	host = strings.ToLower(host)
 	return host == appmeta.WebsiteHost ||
 		host == "github.com" || strings.HasSuffix(host, ".github.com") ||
-		strings.HasSuffix(host, "githubusercontent.com")
+		host == "githubusercontent.com" || strings.HasSuffix(host, ".githubusercontent.com")
+}
+
+// checkUpdateRedirect 让重定向的每一跳都受同一份来源白名单约束。GitHub Release 的
+// 下载地址本身会跳到 *.githubusercontent.com，所以不能禁止重定向，只能逐跳检查。
+func checkUpdateRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("重定向次数过多")
+	}
+	if req.URL.Scheme != "https" || !isAllowedUpdateHost(req.URL.Hostname()) {
+		return fmt.Errorf("下载被重定向到不允许的来源: %s://%s", req.URL.Scheme, req.URL.Hostname())
+	}
+	return nil
 }
 
 // updateDownloadCandidates 返回依次尝试的下载地址。官网反代的地址
@@ -129,11 +157,7 @@ func updateDownloadCandidates(u *url.URL) []string {
 	return append(candidates, appmeta.RepositoryURL+"/releases/download/"+parts[1]+"/"+parts[2])
 }
 
-func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
-	dir := filepath.Join(os.TempDir(), "THRM-update")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("创建临时目录失败: %w", err)
-	}
+func (a *App) downloadUpdateInstaller(downloadURL, dir string) (string, error) {
 	target := filepath.Join(dir, updateInstallerName)
 
 	// 清理可能残留的旧安装包，避免半成品文件被误用。
@@ -148,7 +172,8 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{CheckRedirect: checkUpdateRedirect}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("下载失败: %w", err)
 	}
@@ -164,7 +189,7 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	defer out.Close()
 
 	total := resp.ContentLength
-	a.emitUpdateProgress(UpdateProgress{Percent: 0, Total: max64(total, 0), Stage: "downloading"})
+	a.emitUpdateProgress(UpdateProgress{Percent: 0, Total: max(total, 0), Stage: "downloading"})
 
 	buf := make([]byte, 64*1024)
 	var received int64
@@ -182,7 +207,7 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 			}
 			if percent < 0 || percent-lastPercent >= updateProgressMinDelta || percent >= 100 {
 				lastPercent = percent
-				a.emitUpdateProgress(UpdateProgress{Percent: percent, Received: received, Total: max64(total, 0), Stage: "downloading"})
+				a.emitUpdateProgress(UpdateProgress{Percent: percent, Received: received, Total: max(total, 0), Stage: "downloading"})
 			}
 		}
 		if readErr == io.EOF {
@@ -196,12 +221,9 @@ func (a *App) downloadUpdateInstaller(downloadURL string) (string, error) {
 	if err := out.Sync(); err != nil {
 		return "", fmt.Errorf("刷新安装包到磁盘失败: %w", err)
 	}
-	return target, nil
-}
-
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
+	// 先关闭再返回：调用方紧接着要校验签名并执行它，不能留着写句柄。
+	if err := out.Close(); err != nil {
+		return "", fmt.Errorf("关闭安装包文件失败: %w", err)
 	}
-	return b
+	return target, nil
 }
