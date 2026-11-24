@@ -28,4 +28,3 @@ func isProcessRunning(cmd *exec.Cmd) bool {
 
 	return exitCode == windowsStillActive
 }
-

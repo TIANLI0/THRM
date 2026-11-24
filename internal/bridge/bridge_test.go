@@ -10,14 +10,14 @@ import (
 
 type testLogger struct{}
 
-func (l testLogger) Info(format string, v ...any)    {}
-func (l testLogger) Error(format string, v ...any)   {}
-func (l testLogger) Warn(format string, v ...any)    {}
-func (l testLogger) Debug(format string, v ...any)   {}
-func (l testLogger) Close()                          {}
-func (l testLogger) CleanOldLogs()                   {}
-func (l testLogger) SetDebugMode(enabled bool)       {}
-func (l testLogger) GetLogDir() string               { return "" }
+func (l testLogger) Info(format string, v ...any)  {}
+func (l testLogger) Error(format string, v ...any) {}
+func (l testLogger) Warn(format string, v ...any)  {}
+func (l testLogger) Debug(format string, v ...any) {}
+func (l testLogger) Close()                        {}
+func (l testLogger) CleanOldLogs()                 {}
+func (l testLogger) SetDebugMode(enabled bool)     {}
+func (l testLogger) GetLogDir() string             { return "" }
 
 func TestNewManager(t *testing.T) {
 	m := NewManager(testLogger{})

@@ -6,4 +6,3 @@ import "os/exec"
 
 func configureCmdSysProcAttr(cmd *exec.Cmd) {
 }
-

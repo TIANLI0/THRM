@@ -1,7 +1,7 @@
 //go:build ignore
 
 // 独立调试脚本，不属于 THRM 构建：ignore 约束让 go build/vet/test ./... 跳过它。
-// 运行方式：go run scripts/hid_controller.go
+// 运行方式：go run scripts/dev/hid_controller.go
 package main
 
 import (

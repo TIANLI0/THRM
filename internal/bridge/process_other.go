@@ -18,4 +18,3 @@ func isProcessRunning(cmd *exec.Cmd) bool {
 
 	return cmd.Process.Signal(syscall.Signal(0)) == nil
 }
-

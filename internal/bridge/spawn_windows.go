@@ -10,4 +10,3 @@ import (
 func configureCmdSysProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 }
-

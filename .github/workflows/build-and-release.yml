@@ -273,10 +273,8 @@ jobs:
 
       - name: gofmt
         run: |
-          # internal/bridge is excluded for now: its files predate gofmt and have
-          # uncommitted local work on them. Drop the filter once that lands gofmt-clean.
           # .gitattributes checks *.go out with LF everywhere, so this is OS-independent.
-          unformatted=$(git ls-files -z '*.go' | grep -zv '^internal/bridge/' | xargs -0 gofmt -l)
+          unformatted=$(git ls-files -z '*.go' | xargs -0 gofmt -l)
           if [ -n "$unformatted" ]; then
             echo "::error::These files are not gofmt-formatted (run gofmt -w):"
             echo "$unformatted"
