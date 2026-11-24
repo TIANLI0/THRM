@@ -3,466 +3,108 @@ package coreapp
 import (
 	"encoding/json"
 	"fmt"
-	"sync/atomic"
-	"time"
 
 	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/types"
 )
+
+// ipcRequestHandler 是单个 IPC 请求类型的处理函数。
+type ipcRequestHandler func(a *CoreApp, req ipc.Request) ipc.Response
+
+// ipcRequestHandlers 是请求类型到处理函数的分发表，各处理函数按领域放在 ipc_handlers_*.go。
+// ipc.ReqSubscribeEvents / ipc.ReqUnsubscribeEvents 由 ipc.Server 直接处理，不经过这里。
+var ipcRequestHandlers = map[ipc.RequestType]ipcRequestHandler{
+	// 设备相关
+	ipc.ReqConnect:               (*CoreApp).handleIPCConnect,
+	ipc.ReqDisconnect:            (*CoreApp).handleIPCDisconnect,
+	ipc.ReqGetDeviceStatus:       (*CoreApp).handleIPCGetDeviceStatus,
+	ipc.ReqGetCurrentFanData:     (*CoreApp).handleIPCGetCurrentFanData,
+	ipc.ReqRefreshDeviceSettings: (*CoreApp).handleIPCRefreshDeviceSettings,
+	ipc.ReqReinitializeFirmware:  (*CoreApp).handleIPCReinitializeFirmware,
+
+	// 配置相关
+	ipc.ReqGetConfig:                (*CoreApp).handleIPCGetConfig,
+	ipc.ReqUpdateConfig:             (*CoreApp).handleIPCUpdateConfig,
+	ipc.ReqGetFlydigiCompatStatus:   (*CoreApp).handleIPCGetFlydigiCompatStatus,
+	ipc.ReqSetFlydigiCompat:         (*CoreApp).handleIPCSetFlydigiCompat,
+	ipc.ReqPreviewRTSSPosition:      (*CoreApp).handleIPCPreviewRTSSPosition,
+	ipc.ReqSetUILanguage:            (*CoreApp).handleIPCSetUILanguage,
+	ipc.ReqSetFanCurve:              (*CoreApp).handleIPCSetFanCurve,
+	ipc.ReqGetFanCurve:              (*CoreApp).handleIPCGetFanCurve,
+	ipc.ReqResetLearnedOffsets:      (*CoreApp).handleIPCResetLearnedOffsets,
+	ipc.ReqSetExtendedSensors:       (*CoreApp).handleIPCSetExtendedSensors,
+	ipc.ReqGetCoolingBenefit:        (*CoreApp).handleIPCGetCoolingBenefit,
+	ipc.ReqSaveCoolingBenefitReport: (*CoreApp).handleIPCSaveCoolingBenefitReport,
+	ipc.ReqExportCoolingBenefitText: (*CoreApp).handleIPCExportCoolingBenefitText,
+	ipc.ReqClearCoolingBenefit:      (*CoreApp).handleIPCClearCoolingBenefit,
+	ipc.ReqGetFanCurveProfiles:      (*CoreApp).handleIPCGetFanCurveProfiles,
+	ipc.ReqSetActiveFanCurveProfile: (*CoreApp).handleIPCSetActiveFanCurveProfile,
+	ipc.ReqSaveFanCurveProfile:      (*CoreApp).handleIPCSaveFanCurveProfile,
+	ipc.ReqDeleteFanCurveProfile:    (*CoreApp).handleIPCDeleteFanCurveProfile,
+	ipc.ReqExportFanCurveProfiles:   (*CoreApp).handleIPCExportFanCurveProfiles,
+	ipc.ReqImportFanCurveProfiles:   (*CoreApp).handleIPCImportFanCurveProfiles,
+
+	// 控制相关
+	ipc.ReqSetAutoControl:      (*CoreApp).handleIPCSetAutoControl,
+	ipc.ReqSetManualGear:       (*CoreApp).handleIPCSetManualGear,
+	ipc.ReqGetAvailableGears:   (*CoreApp).handleIPCGetAvailableGears,
+	ipc.ReqSetCustomSpeed:      (*CoreApp).handleIPCSetCustomSpeed,
+	ipc.ReqSetGearLight:        (*CoreApp).handleIPCSetGearLight,
+	ipc.ReqSetPowerOnStart:     (*CoreApp).handleIPCSetPowerOnStart,
+	ipc.ReqSetSmartStartStop:   (*CoreApp).handleIPCSetSmartStartStop,
+	ipc.ReqSetBrightness:       (*CoreApp).handleIPCSetBrightness,
+	ipc.ReqSetLightStrip:       (*CoreApp).handleIPCSetLightStrip,
+	ipc.ReqGetSmartLightStatus: (*CoreApp).handleIPCGetSmartLightStatus,
+
+	// 固件更新
+	ipc.ReqGetFirmwareUpdateStatus: (*CoreApp).handleIPCGetFirmwareUpdateStatus,
+	ipc.ReqListFirmwareUpdates:     (*CoreApp).handleIPCListFirmwareUpdates,
+	ipc.ReqInstallFirmwareDriver:   (*CoreApp).handleIPCInstallFirmwareDriver,
+	ipc.ReqUninstallFirmwareDriver: (*CoreApp).handleIPCUninstallFirmwareDriver,
+	ipc.ReqFlashFirmware:           (*CoreApp).handleIPCFlashFirmware,
+
+	// 温度相关
+	ipc.ReqGetTemperature:                      (*CoreApp).handleIPCGetTemperature,
+	ipc.ReqGetTemperatureHistory:               (*CoreApp).handleIPCGetTemperatureHistory,
+	ipc.ReqSetTemperatureHistoryEnabled:        (*CoreApp).handleIPCSetTemperatureHistoryEnabled,
+	ipc.ReqSetTemperatureHistoryRetentionHours: (*CoreApp).handleIPCSetTemperatureHistoryRetentionHours,
+	ipc.ReqTestTemperatureReading:              (*CoreApp).handleIPCTestTemperatureReading,
+	ipc.ReqTestBridgeProgram:                   (*CoreApp).handleIPCTestBridgeProgram,
+	ipc.ReqGetBridgeProgramStatus:              (*CoreApp).handleIPCGetBridgeProgramStatus,
+	ipc.ReqRestartPawnIO:                       (*CoreApp).handleIPCRestartPawnIO,
+	ipc.ReqReinstallPawnIO:                     (*CoreApp).handleIPCReinstallPawnIO,
+
+	// 自启动相关
+	ipc.ReqSetWindowsAutoStart:    (*CoreApp).handleIPCSetWindowsAutoStart,
+	ipc.ReqCheckWindowsAutoStart:  (*CoreApp).handleIPCCheckWindowsAutoStart,
+	ipc.ReqIsRunningAsAdmin:       (*CoreApp).handleIPCIsRunningAsAdmin,
+	ipc.ReqGetAutoStartMethod:     (*CoreApp).handleIPCGetAutoStartMethod,
+	ipc.ReqSetAutoStartWithMethod: (*CoreApp).handleIPCSetAutoStartWithMethod,
+
+	// 窗口相关
+	ipc.ReqShowWindow: (*CoreApp).handleIPCShowWindow,
+	ipc.ReqHideWindow: (*CoreApp).handleIPCHideWindow,
+	ipc.ReqQuitApp:    (*CoreApp).handleIPCQuitApp,
+
+	// 调试相关
+	ipc.ReqGetDebugInfo:           (*CoreApp).handleIPCGetDebugInfo,
+	ipc.ReqSetDebugMode:           (*CoreApp).handleIPCSetDebugMode,
+	ipc.ReqSendDeviceDebugCommand: (*CoreApp).handleIPCSendDeviceDebugCommand,
+	ipc.ReqGetDeviceDebugFrames:   (*CoreApp).handleIPCGetDeviceDebugFrames,
+	ipc.ReqUpdateGuiResponseTime:  (*CoreApp).handleIPCUpdateGuiResponseTime,
+
+	// 系统相关
+	ipc.ReqPing:              (*CoreApp).handleIPCPing,
+	ipc.ReqIsAutoStartLaunch: (*CoreApp).handleIPCIsAutoStartLaunch,
+}
 
 // handleIPCRequest 处理 IPC 请求
 func (a *CoreApp) handleIPCRequest(req ipc.Request) ipc.Response {
 	a.logDebug("处理 IPC 请求[%s] type=%s", req.RequestID, req.Type)
 
-	switch req.Type {
-	// 设备相关
-	case ipc.ReqConnect:
-		success := a.ConnectDevice()
-		return a.successResponse(success)
-
-	case ipc.ReqDisconnect:
-		a.DisconnectDevice()
-		return a.successResponse(true)
-
-	case ipc.ReqGetDeviceStatus:
-		status := a.GetDeviceStatus()
-		return a.dataResponse(status)
-
-	case ipc.ReqGetCurrentFanData:
-		data := a.deviceManager.GetCurrentFanData()
-		return a.dataResponse(data)
-
-	case ipc.ReqRefreshDeviceSettings:
-		settings, err := a.RefreshDeviceSettings()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(settings)
-
-	case ipc.ReqReinitializeFirmware:
-		var factoryReset bool
-		if len(req.Data) > 0 && string(req.Data) != "null" {
-			if err := json.Unmarshal(req.Data, &factoryReset); err != nil {
-				return a.errorResponse("解析固件重新初始化参数失败: " + err.Error())
-			}
-		}
-		settings, err := a.ReinitializeDeviceFirmware(factoryReset)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(settings)
-
-	// 配置相关
-	case ipc.ReqGetConfig:
-		cfg := a.configManager.Get()
-		return a.dataResponse(cfg)
-
-	case ipc.ReqUpdateConfig:
-		var cfg types.AppConfig
-		if err := json.Unmarshal(req.Data, &cfg); err != nil {
-			return a.errorResponse("解析配置失败: " + err.Error())
-		}
-		if err := a.UpdateConfig(cfg); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqGetFlydigiCompatStatus:
-		return a.dataResponse(a.GetFlydigiCompatStatus())
-
-	case ipc.ReqSetFlydigiCompat:
-		var enabled bool
-		if err := json.Unmarshal(req.Data, &enabled); err != nil {
-			return a.errorResponse("解析飞智兼容开关失败: " + err.Error())
-		}
-		status, err := a.SetFlydigiCompat(enabled)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(status)
-
-	case ipc.ReqPreviewRTSSPosition:
-		var params ipc.PreviewRTSSPositionParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析 RTSS 位置失败: " + err.Error())
-		}
-		a.PreviewRTSSPosition(params.Mode, params.X, params.Y)
-		return a.successResponse(true)
-
-	case ipc.ReqSetUILanguage:
-		var params ipc.SetStringParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析界面语言失败: " + err.Error())
-		}
-		lang, err := a.SetUILanguage(params.Value)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(lang)
-
-	case ipc.ReqSetFanCurve:
-		var curve []types.FanCurvePoint
-		if err := json.Unmarshal(req.Data, &curve); err != nil {
-			return a.errorResponse("解析风扇曲线失败: " + err.Error())
-		}
-		if err := a.SetFanCurve(curve); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqGetFanCurve:
-		curve := a.configManager.Get().FanCurve
-		return a.dataResponse(curve)
-
-	case ipc.ReqResetLearnedOffsets:
-		if err := a.ResetLearnedOffsets(); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(map[string]bool{"ok": true})
-
-	case ipc.ReqSetExtendedSensors:
-		var enabled bool
-		if err := json.Unmarshal(req.Data, &enabled); err != nil {
-			return a.errorResponse("解析扩展传感器开关失败: " + err.Error())
-		}
-		return a.dataResponse(map[string]bool{"enabled": a.SetExtendedSensors(enabled)})
-
-	case ipc.ReqGetCoolingBenefit:
-		return a.dataResponse(a.GetCoolingBenefit())
-
-	case ipc.ReqSaveCoolingBenefitReport:
-		var params ipc.SaveCoolingBenefitReportParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析散热收益测试结果失败: " + err.Error())
-		}
-		payload, err := a.SaveCoolingBenefitReport(params)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(payload)
-
-	case ipc.ReqExportCoolingBenefitText:
-		text, err := a.ExportCoolingBenefitText()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(text)
-
-	case ipc.ReqClearCoolingBenefit:
-		payload, err := a.ClearCoolingBenefit()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(payload)
-
-	case ipc.ReqGetFanCurveProfiles:
-		return a.dataResponse(a.GetFanCurveProfiles())
-
-	case ipc.ReqSetActiveFanCurveProfile:
-		var params ipc.SetActiveFanCurveProfileParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		profile, err := a.SetActiveFanCurveProfile(params.ID)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(profile)
-
-	case ipc.ReqSaveFanCurveProfile:
-		var params ipc.SaveFanCurveProfileParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		profile, err := a.SaveFanCurveProfile(params)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(profile)
-
-	case ipc.ReqDeleteFanCurveProfile:
-		var params ipc.DeleteFanCurveProfileParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.DeleteFanCurveProfile(params.ID); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqExportFanCurveProfiles:
-		code, err := a.ExportFanCurveProfiles()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(code)
-
-	case ipc.ReqImportFanCurveProfiles:
-		var params ipc.ImportFanCurveProfilesParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.ImportFanCurveProfiles(params.Code); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	// 控制相关
-	case ipc.ReqSetAutoControl:
-		var params ipc.SetAutoControlParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetAutoControl(params.Enabled); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqSetManualGear:
-		var params ipc.SetManualGearParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		success := a.SetManualGear(params.Gear, params.Level)
-		return a.successResponse(success)
-
-	case ipc.ReqGetAvailableGears:
-		gears := types.GearCommands
-		return a.dataResponse(gears)
-
-	case ipc.ReqSetCustomSpeed:
-		var params ipc.SetCustomSpeedParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetCustomSpeed(params.Enabled, params.RPM); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqSetGearLight:
-		var params ipc.SetBoolParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		success := a.SetGearLight(params.Enabled)
-		return a.successResponse(success)
-
-	case ipc.ReqSetPowerOnStart:
-		var params ipc.SetBoolParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		success := a.SetPowerOnStart(params.Enabled)
-		return a.successResponse(success)
-
-	case ipc.ReqSetSmartStartStop:
-		var params ipc.SetStringParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		success := a.SetSmartStartStop(params.Value)
-		return a.successResponse(success)
-
-	case ipc.ReqSetBrightness:
-		var params ipc.SetIntParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		success := a.SetBrightness(params.Value)
-		return a.successResponse(success)
-
-	case ipc.ReqSetLightStrip:
-		var params ipc.SetLightStripParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetLightStrip(params.Config); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqGetSmartLightStatus:
-		return a.dataResponse(a.GetSmartLightStatus())
-
-	// 固件更新
-	case ipc.ReqGetFirmwareUpdateStatus:
-		return a.dataResponse(a.GetFirmwareUpdateStatus())
-	case ipc.ReqListFirmwareUpdates:
-		list, err := a.ListFirmwareUpdates()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(list)
-	case ipc.ReqInstallFirmwareDriver:
-		if err := a.InstallFirmwareDriver(); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-	case ipc.ReqUninstallFirmwareDriver:
-		if err := a.UninstallFirmwareDriver(); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-	case ipc.ReqFlashFirmware:
-		var params ipc.FlashFirmwareParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析固件刷写参数失败: " + err.Error())
-		}
-		if err := a.FlashFirmware(params); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	// 温度相关
-	case ipc.ReqGetTemperature:
-		a.mutex.RLock()
-		temp := a.currentTemp
-		a.mutex.RUnlock()
-		return a.dataResponse(temp)
-
-	case ipc.ReqGetTemperatureHistory:
-		return a.dataResponse(a.tempHistory.Snapshot())
-
-	case ipc.ReqSetTemperatureHistoryEnabled:
-		var params ipc.SetBoolParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetTemperatureHistoryEnabled(params.Enabled); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqSetTemperatureHistoryRetentionHours:
-		var params ipc.SetIntParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetTemperatureHistoryRetentionHours(params.Value); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqTestTemperatureReading:
-		temp := a.tempReader.Read(a.temperatureSelection(a.configManager.Get()))
-		return a.dataResponse(temp)
-
-	case ipc.ReqTestBridgeProgram:
-		data := a.bridgeManager.GetTemperature(a.temperatureSelection(a.configManager.Get()))
-		return a.dataResponse(data)
-
-	case ipc.ReqGetBridgeProgramStatus:
-		status := a.bridgeManager.GetStatus()
-		return a.dataResponse(status)
-
-	case ipc.ReqRestartPawnIO:
-		result, err := a.bridgeManager.RestartPawnIO()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(result)
-
-	case ipc.ReqReinstallPawnIO:
-		result, err := a.ReinstallPawnIO()
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(result)
-
-	// 自启动相关
-	case ipc.ReqSetWindowsAutoStart:
-		var params ipc.SetBoolParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetWindowsAutoStart(params.Enabled); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqCheckWindowsAutoStart:
-		enabled := a.autostartManager.CheckWindowsAutoStart()
-		return a.dataResponse(enabled)
-
-	case ipc.ReqIsRunningAsAdmin:
-		isAdmin := a.autostartManager.IsRunningAsAdmin()
-		return a.dataResponse(isAdmin)
-
-	case ipc.ReqGetAutoStartMethod:
-		method := a.autostartManager.GetAutoStartMethod()
-		return a.dataResponse(method)
-
-	case ipc.ReqSetAutoStartWithMethod:
-		var params ipc.SetAutoStartWithMethodParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.autostartManager.SetAutoStartWithMethod(params.Enable, params.Method); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		// 只改系统自启动项而不落盘的话，下一次配置广播会把 GUI 上的开关打回去。
-		a.persistWindowsAutoStart(params.Enable)
-		return a.successResponse(true)
-
-	// 窗口相关
-	case ipc.ReqShowWindow:
-		a.onShowWindowRequest()
-		return a.successResponse(true)
-
-	case ipc.ReqHideWindow:
-		// GUI 自己处理隐藏
-		return a.successResponse(true)
-
-	case ipc.ReqQuitApp:
-		a.safeGo("onQuitRequest", func() {
-			a.onQuitRequest()
-		})
-		return a.successResponse(true)
-
-	// 调试相关
-	case ipc.ReqGetDebugInfo:
-		info := a.GetDebugInfo()
-		return a.dataResponse(info)
-
-	case ipc.ReqSetDebugMode:
-		var params ipc.SetBoolParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		if err := a.SetDebugMode(params.Enabled); err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.successResponse(true)
-
-	case ipc.ReqSendDeviceDebugCommand:
-		var params ipc.DeviceDebugCommandParams
-		if err := json.Unmarshal(req.Data, &params); err != nil {
-			return a.errorResponse("解析参数失败: " + err.Error())
-		}
-		result, err := a.SendDeviceDebugCommand(params.Hex, params.WaitMs)
-		if err != nil {
-			return a.errorResponse(err.Error())
-		}
-		return a.dataResponse(result)
-
-	case ipc.ReqGetDeviceDebugFrames:
-		return a.dataResponse(a.GetDeviceDebugFrames())
-
-	case ipc.ReqUpdateGuiResponseTime:
-		atomic.StoreInt64(&a.guiLastResponse, time.Now().Unix())
-		return a.successResponse(true)
-
-	// 系统相关
-	case ipc.ReqPing:
-		return a.dataResponse("pong")
-
-	case ipc.ReqIsAutoStartLaunch:
-		return a.dataResponse(a.isAutoStartLaunch)
-
-	default:
-		return a.errorResponse(fmt.Sprintf("未知的请求类型: %s", req.Type))
+	if handler, ok := ipcRequestHandlers[req.Type]; ok {
+		return handler(a, req)
 	}
+	return a.errorResponse(fmt.Sprintf("未知的请求类型: %s", req.Type))
 }
 
 // 响应辅助方法

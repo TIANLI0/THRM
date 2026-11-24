@@ -1,19 +1,13 @@
 package coreapp
 
 import (
-	"fmt"
 	"math"
-	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/TIANLI0/THRM/internal/bridge"
 	"github.com/TIANLI0/THRM/internal/ipc"
-	"github.com/TIANLI0/THRM/internal/laptopfan"
 	"github.com/TIANLI0/THRM/internal/rtss"
-	"github.com/TIANLI0/THRM/internal/smartcontrol"
-	"github.com/TIANLI0/THRM/internal/temperature"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -301,50 +295,8 @@ func (a *CoreApp) startTemperatureMonitoring() {
 	// 如果在温度读取成功之前切换到软件控制模式，设备将不会收到转速指令，导致风扇停转。
 	// EnterAutoMode 和转速设置会在首次成功读取温度后，由 SetFanSpeed 内部统一完成。
 
-	cfg, cfgRevision := a.configManager.GetWithRevision()
-	hasClients := a.ipcServer != nil && a.ipcServer.HasClients()
-	hasActiveClients := a.ipcServer != nil && a.ipcServer.HasActiveClients()
-	updateInterval := effectiveTemperatureMonitorInterval(cfg.TempUpdateRate, hasActiveClients, cfg.AutoControl)
-
-	// 温度采样使用 EMA 平滑。
-	sampleCount := max(cfg.TempSampleCount, 1)
-	tempEMA := 0.0
-	tempEMAReady := false
-
-	rawTempHistory := make([]int, 0, 6)
-	recentAvgTemps := make([]int, 0, 24)
-	recentControlTemps := make([]int, 0, 24)
-	initialTemp := a.tempReader.Read(a.temperatureSelection(cfg))
-	if initialTemp.ControlTemp > 0 {
-		rawTempHistory = append(rawTempHistory, initialTemp.ControlTemp)
-	}
-	lastTargetRPM := -1
-	lastDeviceGeneration := a.deviceManager.ConnectionGeneration()
-	settingsRefreshGeneration := uint64(0)
-	// 学习偏移每次合并都会立刻进入内存配置；这里只控制落盘与向 GUI 广播的频率。
-	learningUnbroadcast := false
-	lastLearningSave := time.Now()
-	lastLearningBroadcast := time.Now()
-	lastLoggedTargetRPM := -1
-	var lastControlLog time.Time
-	lastBridgeUpdateTime := initialTemp.UpdateTime
-	staleBridgeUpdateCount := 0
-	bridgeFailureCount := 0
-	invalidControlTempCount := 0
-	safeFallbackActive := false
-	lastBridgeRestart := time.Time{}
-	var smartCfg types.SmartControlConfig
-	smartCfgRevision := cfgRevision - 1
-	// cachedCfg 是最近一次按修订号取到的配置深拷贝。配置没变的周期直接复用它，
-	// 不再每个周期深拷贝整份配置（曲线方案、各方案学习偏移、散热收益报告……）。
-	cachedCfg, cachedCfgRevision := cfg, cfgRevision
-
-	// 每个曲线点对应一个稳态采样桶。
-	steadyObserver := smartcontrol.NewStableObserver(len(cfg.FanCurve))
-	// 观测器里的分桶样本与效率历史只对学到它们的那条曲线有意义。
-	observerProfileID := cfg.ActiveFanCurveProfileID
-	observerCurve := slices.Clone(cfg.FanCurve)
-	timer := time.NewTimer(updateInterval)
+	s := a.newTemperatureMonitorState()
+	timer := time.NewTimer(s.updateInterval)
 	defer timer.Stop()
 	// 只统计"定时器等待"期间流逝的时间，不把本轮采样/控温的耗时算进去。
 	// 桥接一次 GetTemperature 超时就是 10 秒，加上兜底读取轻松突破 20 秒的
@@ -357,12 +309,6 @@ func (a *CoreApp) startTemperatureMonitoring() {
 		timer.Reset(d)
 	}
 
-	prevHasClients := hasClients
-	prevHasActiveClients := hasActiveClients
-	var lastMemRelease time.Time
-	var laptopSpeeds laptopfan.FanSpeeds
-	laptopSpeedsOK := false
-	var lastLaptopFanRead time.Time
 	var activeClientsChanged <-chan struct{}
 	if a.ipcServer != nil {
 		activeClientsChanged = a.ipcServer.ActiveClientsChanged()
@@ -379,357 +325,23 @@ monitorLoop:
 			// 休眠唤醒判定仍按真实的等待时长计算。智能控温开启时间隔本就未放慢，不受影响。
 			// HID 读循环也立即恢复常规轮询，下一次采样会按最新状态重新判定。
 			a.deviceManager.SetIdlePolling(false)
-			if updateInterval > temperatureMonitorInterval(cfg.TempUpdateRate) && timer.Stop() {
+			if s.updateInterval > temperatureMonitorInterval(s.cfg.TempUpdateRate) && timer.Stop() {
 				timer.Reset(0)
 			}
 		case <-timer.C:
 			now := time.Now()
 			gap := now.Sub(lastTimerReset)
-			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, updateInterval) {
-				resetTimer(updateInterval)
+			if a.maybeRecoverFromSystemResume("temperature-monitor", gap, s.updateInterval) {
+				resetTimer(s.updateInterval)
 				continue
 			}
 			if a.systemSuspended.Load() {
-				resetTimer(updateInterval)
+				resetTimer(s.updateInterval)
 				continue
 			}
-			deviceGeneration := a.deviceManager.ConnectionGeneration()
-			if deviceGeneration != lastDeviceGeneration {
-				// A reconnect starts the device in its own default gear mode. Forget
-				// the target sent through the old HID handle so the next valid
-				// temperature sample re-enters realtime mode and writes a target.
-				lastDeviceGeneration = deviceGeneration
-				lastTargetRPM = -1
-				steadyObserver.Reset()
-				a.logInfo("检测到设备重连（连接代次=%d），重置智能控温输出状态", deviceGeneration)
-			}
+			a.temperatureMonitorTick(s, now)
 
-			if a.configManager.Revision() != cachedCfgRevision {
-				cachedCfg, cachedCfgRevision = a.configManager.GetWithRevision()
-			}
-			// 浅拷贝：本周期对 cfg 字段的重新赋值不会带进缓存；其中的切片/映射在循环里只读。
-			cfg, cfgRevision = cachedCfg, cachedCfgRevision
-			if a.applyTimeCurveSchedule(cfg, now) {
-				// 刚切换了曲线方案：重取快照，本周期就按新曲线控温，后面也不会拿旧快照回写。
-				cachedCfg, cachedCfgRevision = a.configManager.GetWithRevision()
-				cfg, cfgRevision = cachedCfg, cachedCfgRevision
-			}
-			// 后台空闲（无前台 GUI 且未开启智能控温）时放慢采样：此时温度读取不驱动风扇，
-			// 仅服务托盘提示与历史记录，降低采样频率可显著减少桥接传感器扫描带来的后台 CPU 占用。
-			// 窗口隐藏的 GUI 已退订高频事件，不消费遥测，与没有 GUI 同样对待。
-			hasClients = a.ipcServer != nil && a.ipcServer.HasClients()
-			hasActiveClients = a.ipcServer != nil && a.ipcServer.HasActiveClients()
-			updateInterval = effectiveTemperatureMonitorInterval(cfg.TempUpdateRate, hasActiveClients, cfg.AutoControl)
-			a.deviceManager.SetIdlePolling(hidIdlePollingAllowed(hasActiveClients, cfg.RTSS))
-			// GUI 断开瞬间把会话期间膨胀的堆内存归还操作系统，降低核心常驻后台时的 RSS。
-			if prevHasClients && !hasClients && now.Sub(lastMemRelease) > idleMemoryReleaseCooldown {
-				lastMemRelease = now
-				a.safeGo("release-idle-memory", func() { debug.FreeOSMemory() })
-			}
-			// 扩展传感器只为散热收益测试临时开启，而测试跑在 GUI 里。
-			a.releaseExtendedSensorsIfIdle(hasClients)
-			// 刚有 GUI 连上或恢复订阅：它没收到过上一帧，差分掉的传感器清单对它来说就是缺失。
-			clientsJustConnected := hasActiveClients && !prevHasActiveClients
-			prevHasClients = hasClients
-			prevHasActiveClients = hasActiveClients
-
-			selection := a.temperatureSelection(cfg)
-			selection.Compact = useCompactBridgeSample(hasActiveClients, selection.ExtendedSensors)
-			temp := a.tempReader.Read(selection)
-			// 补充笔记本内置风扇转速（机械革命等 Uniwill/同方准系统），不支持时保持 0。
-			// 每次读取是两次 WMI ExecMethod。没有 GUI 时它只服务于温度历史（托盘、RTSS 不显示它），
-			// 因此只在历史本轮要记录样本、或上次读数已过旧时才读取，其余周期沿用上次读数。
-			// 【读取判据集中于此】GUI 最小化时不算活跃，同样按无 GUI 处理。
-			if laptopFanReadDue(hasActiveClients, a.tempHistory.SampleDue(temp), now.Sub(lastLaptopFanRead)) {
-				laptopSpeeds, laptopSpeedsOK = a.laptopFanReader.Read()
-				lastLaptopFanRead = now
-			}
-			if laptopSpeedsOK {
-				temp.CPUFanRPM = laptopSpeeds.CPUFanRPM
-				temp.GPUFanRPM = laptopSpeeds.GPUFanRPM
-			}
-			if temp.ControlTemp <= 0 {
-				// 桥接正在后台启动时读不到温度属于预期过渡态，不能计入"传感器失效"，
-				// 否则每次启动/自愈窗口都会把风扇推到安全兜底转速。
-				if !bridge.IsStarting(temp.BridgeMsg) {
-					invalidControlTempCount++
-				}
-			} else {
-				if safeFallbackActive {
-					a.logInfo("Temperature source recovered; resuming normal automatic control")
-					if a.ipcServer != nil {
-						a.ipcServer.BroadcastEvent(ipc.EventDeviceError, "Temperature source recovered; normal fan control resumed")
-					}
-				}
-				invalidControlTempCount = 0
-				safeFallbackActive = false
-			}
-			if temp.BridgeOk {
-				bridgeFailureCount = 0
-				staleBridge := false
-				lastBridgeUpdateTime, staleBridgeUpdateCount, staleBridge = trackBridgeTemperatureStaleness(temp, lastBridgeUpdateTime, staleBridgeUpdateCount)
-				if staleBridge && time.Since(lastBridgeRestart) >= temperatureBridgeRestartCooldown {
-					a.logError("温度桥接返回的 updateTime 连续 %d 次未变化，触发桥接重连自愈", staleBridgeUpdateCount+1)
-					a.recoverTemperatureBridge("stale-update")
-					lastBridgeRestart = time.Now()
-					lastBridgeUpdateTime = 0
-					staleBridgeUpdateCount = 0
-				}
-			} else {
-				lastBridgeUpdateTime = 0
-				staleBridgeUpdateCount = 0
-				if shouldRestartTemperatureBridge(temp) {
-					bridgeFailureCount++
-					if bridgeFailureCount >= consecutiveBridgeFailureRestartThreshold && time.Since(lastBridgeRestart) >= temperatureBridgeRestartCooldown {
-						a.logError("温度桥接连续 %d 次读取失败，触发桥接重连自愈: %s", bridgeFailureCount, temp.BridgeMsg)
-						a.recoverTemperatureBridge("read-failure")
-						lastBridgeRestart = time.Now()
-						bridgeFailureCount = 0
-					}
-				} else {
-					bridgeFailureCount = 0
-				}
-			}
-
-			a.mutex.Lock()
-			previousTemp := a.currentTemp
-			a.currentTemp = temp
-			a.mutex.Unlock()
-
-			historyPoint, recorded := a.tempHistory.Add(temp, a.deviceManager.GetCurrentFanData())
-
-			// 广播温度更新（无前台 GUI 时跳过差分与序列化，核心常驻后台时显著降低每秒开销）
-			if hasActiveClients {
-				sensorValues := a.ipcServer.ActiveClientsSupport(ipc.FeatureTemperatureSensorValues)
-				a.ipcServer.BroadcastEvent(ipc.EventTemperatureUpdate, temperatureEventPayload(temp, previousTemp, clientsJustConnected, sensorValues))
-				if recorded {
-					a.ipcServer.BroadcastEvent(ipc.EventTemperatureHistoryUpdate, historyPoint)
-				}
-			}
-
-			if cfgRevision != smartCfgRevision {
-				smartChanged := false
-				smartCfg, smartChanged = smartcontrol.NormalizeConfig(cfg.SmartControl, cfg.FanCurve, cfg.DebugMode)
-				smartCfgRevision = cfgRevision
-				if smartChanged {
-					cfg.SmartControl = smartCfg
-					// 只改写智能控温段，并以最新配置为准重新归一化，不回写本周期开头的整份快照。
-					_, persisted := a.configManager.Mutate(func(cur *types.AppConfig) bool {
-						next, changed := smartcontrol.NormalizeConfig(cur.SmartControl, cur.FanCurve, cur.DebugMode)
-						if changed {
-							cur.SmartControl = next
-						}
-						return changed
-					})
-					if persisted {
-						if err := a.configManager.Save(); err != nil {
-							a.logError("保存智能控温配置失败: %v", err)
-						}
-					}
-				}
-			}
-
-			controlReady := a.isDeviceControlReady()
-			if cfg.LightStrip.Mode == "smart_temp" && temp.MaxTemp > 0 && controlReady {
-				// Smart lighting is host-driven: the cooler firmware exposes native
-				// green/yellow/red animations through 0x44, but it cannot read the
-				// computer's CPU/GPU temperature by itself. The device manager applies
-				// hysteresis and suppresses duplicate writes.
-				if a.lockDeviceControlIfReady() {
-					err := a.deviceManager.UpdateSmartTemperatureLight(temp.MaxTemp)
-					a.deviceControlMutex.Unlock()
-					if err != nil {
-						a.logError("智能温控灯效更新失败: %v", err)
-					}
-					a.broadcastSmartLightStatus()
-				}
-			}
-			if cfg.AutoControl && controlReady && invalidControlTempCount >= 3 && !safeFallbackActive {
-				_, safeRPM := smartcontrol.GetCurveRPMBounds(cfg.FanCurve)
-				if safeRPM <= 0 {
-					safeRPM = 3000
-				}
-				ready, written := a.setAutomaticFanSpeed(safeRPM)
-				if ready && written {
-					safeFallbackActive = true
-					lastTargetRPM = safeRPM
-					message := fmt.Sprintf("Temperature readings are unavailable; fan switched to safe fallback at %d RPM", safeRPM)
-					a.logError("%s", message)
-					if a.ipcServer != nil {
-						a.ipcServer.BroadcastEvent(ipc.EventDeviceError, message)
-					}
-				}
-			}
-			if cfg.AutoControl && temp.ControlTemp > 0 && controlReady {
-				// 采样窗口变化时重置 EMA，避免阶跃。
-				newSampleCount := max(cfg.TempSampleCount, 1)
-				if newSampleCount != sampleCount {
-					sampleCount = newSampleCount
-					tempEMAReady = false
-				}
-
-				// 切换方案或编辑曲线后点数通常不变，只比较点数会让新曲线沿用旧曲线的样本与效率历史。
-				if steadyObserver == nil || cfg.ActiveFanCurveProfileID != observerProfileID || !slices.Equal(cfg.FanCurve, observerCurve) {
-					steadyObserver = smartcontrol.NewStableObserver(len(cfg.FanCurve))
-					observerProfileID = cfg.ActiveFanCurveProfileID
-					observerCurve = slices.Clone(cfg.FanCurve)
-				}
-
-				activeCurve := cfg.FanCurve
-				tickCfg := smartCfg
-
-				sampleTemp := temp.ControlTemp
-				sampleSpikeSuppressed := false
-				if tickCfg.FilterTransientSpike {
-					sampleTemp, sampleSpikeSuppressed = smartcontrol.FilterTransientSample(temp.ControlTemp, rawTempHistory, tickCfg.Hysteresis)
-				}
-				rawTempHistory = append(rawTempHistory, temp.ControlTemp)
-				if len(rawTempHistory) > 6 {
-					rawTempHistory = rawTempHistory[len(rawTempHistory)-6:]
-				}
-
-				if !tempEMAReady {
-					tempEMA = float64(sampleTemp)
-					tempEMAReady = true
-				} else {
-					tempEMA = nextTemperatureEMA(tempEMA, sampleTemp, sampleCount)
-				}
-				avgTemp := int(math.Round(tempEMA))
-
-				recentAvgTemps = append(recentAvgTemps, avgTemp)
-				if len(recentAvgTemps) > 24 {
-					recentAvgTemps = recentAvgTemps[len(recentAvgTemps)-24:]
-				}
-
-				controlTemp := avgTemp
-				controlSpikeSuppressed := false
-				if tickCfg.FilterTransientSpike {
-					controlTemp, controlSpikeSuppressed = smartcontrol.FilterTransientSpike(avgTemp, recentAvgTemps, tickCfg.TargetTemp, tickCfg.Hysteresis)
-				}
-				spikeSuppressed := sampleSpikeSuppressed || controlSpikeSuppressed
-				recentControlTemps = append(recentControlTemps, controlTemp)
-				if len(recentControlTemps) > 24 {
-					recentControlTemps = recentControlTemps[len(recentControlTemps)-24:]
-				}
-
-				curveMinRPM, curveMaxRPM := smartcontrol.GetCurveRPMBounds(activeCurve)
-
-				baseRPM := temperature.CalculateTargetRPM(controlTemp, activeCurve)
-				prevTargetRPM := lastTargetRPM
-
-				targetRPM := smartcontrol.CalculateTargetRPM(controlTemp, activeCurve, tickCfg)
-				if targetRPM <= 0 {
-					targetRPM = baseRPM
-				}
-
-				if targetRPM > 0 {
-					targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
-				}
-
-				if shouldApplyRampLimit(targetRPM, prevTargetRPM) {
-					targetRPM = smartcontrol.ApplyRampLimit(targetRPM, prevTargetRPM, tickCfg.RampUpLimit, tickCfg.RampDownLimit)
-					if targetRPM > 0 {
-						targetRPM = min(max(targetRPM, curveMinRPM), curveMaxRPM)
-					}
-				}
-
-				fanData := a.deviceManager.GetCurrentFanData()
-				observedRPM := targetRPM
-				if fanData != nil && fanData.CurrentRPM > 0 {
-					observedRPM = int(fanData.CurrentRPM)
-				}
-				if shouldSendTargetRPM(targetRPM, prevTargetRPM, tickCfg.MinRPMChange, fanData) {
-					ready, written := a.setAutomaticFanSpeed(targetRPM)
-					if written {
-						lastTargetRPM = targetRPM
-						if deviceGeneration != settingsRefreshGeneration {
-							settingsRefreshGeneration = deviceGeneration
-							a.safeGo("refreshDeviceSettings@realtime-mode", func() {
-								// The device applies a mode change asynchronously. Query after a
-								// short settle period so the cached status shown to the GUI is
-								// the new realtime mode rather than the pre-reconnect gear mode.
-								time.Sleep(200 * time.Millisecond)
-								if _, err := a.RefreshDeviceSettings(); err != nil {
-									a.logError("实时模式切换后刷新设备状态失败: %v", err)
-								}
-							})
-						}
-					} else if ready {
-						lastTargetRPM = -1
-						a.logError("智能控温转速下发失败，将在下个周期重试: %d RPM", targetRPM)
-					}
-				}
-
-				switch {
-				case smartCfg.Learning:
-					if !spikeSuppressed {
-						steady := steadyObserver.Observe(controlTemp, observedRPM, cfg.FanCurve, smartCfg)
-						if steady.Ready && steady.BucketIdx >= 0 {
-							newOffsets, changed := smartcontrol.LearnSteadyOffset(
-								steady.BucketIdx,
-								steady.MeanTemp,
-								steady.MeanRPM,
-								steady.LocalEff,
-								steady.HaveEff,
-								cfg.FanCurve,
-								smartCfg.LearnedOffsets,
-								smartCfg,
-							)
-							if changed {
-								smartCfg.LearnedOffsets = newOffsets
-								cfg.SmartControl = smartCfg
-								// 只合并学习偏移。期间若切换了方案或改了曲线，这批偏移是按旧曲线学的，丢弃。
-								learnedProfileID := cfg.ActiveFanCurveProfileID
-								learnedCurve := cfg.FanCurve
-								_, merged := a.configManager.Mutate(func(cur *types.AppConfig) bool {
-									if cur.ActiveFanCurveProfileID != learnedProfileID || !slices.Equal(cur.FanCurve, learnedCurve) {
-										return false
-									}
-									cur.SmartControl.LearnedOffsets = cloneIntSlice(newOffsets)
-									storeSmartControlOffsetsForActiveProfile(cur)
-									return true
-								})
-								if merged {
-									a.learnedOffsetsUnsaved.Store(true)
-									learningUnbroadcast = true
-								}
-							}
-						}
-					}
-
-				default:
-					steadyObserver.Reset()
-				}
-
-				// 学习偏移在控温环里高频改写，每次都写盘既伤 SSD 也会拖慢采样周期。
-				// 落盘放慢到 learnedOffsetsSaveInterval；退出、系统挂起前、重置学习与切换方案
-				// 都会另行把内存中的配置整份落盘，不会因此丢失学习结果。
-				if a.learnedOffsetsUnsaved.Load() && time.Since(lastLearningSave) >= learnedOffsetsSaveInterval {
-					a.saveLearnedOffsetsIfDirty("periodic")
-					lastLearningSave = time.Now()
-				}
-				// GUI 展示学习后的曲线，广播仍保持原来的 25 秒节奏，不随落盘一起放慢。
-				if learningUnbroadcast && time.Since(lastLearningBroadcast) >= learnedOffsetsBroadcastInterval {
-					learningUnbroadcast = false
-					lastLearningBroadcast = time.Now()
-					if a.ipcServer != nil && a.ipcServer.HasClients() {
-						a.ipcServer.BroadcastEvent(ipc.EventConfigUpdate, a.configManager.Get())
-					}
-				}
-
-				// 目标转速变化时立即记录；不变时按 controlDebugLogInterval 记一行，仍能看出温度走势。
-				if baseRPM > 0 && (targetRPM != lastLoggedTargetRPM || time.Since(lastControlLog) >= controlDebugLogInterval) {
-					lastLoggedTargetRPM = targetRPM
-					lastControlLog = time.Now()
-					a.logDebug("智能控温: 最高=%d°C 基准=%s 当前=%d°C 平均=%d°C 控制温度=%d°C 基础=%dRPM 目标=%dRPM", temp.MaxTemp, temp.ControlSource, temp.ControlTemp, avgTemp, controlTemp, baseRPM, targetRPM)
-				}
-			}
-
-			if !cfg.AutoControl || !controlReady {
-				lastTargetRPM = -1
-			}
-
-			resetTimer(updateInterval)
+			resetTimer(s.updateInterval)
 		}
 	}
 
