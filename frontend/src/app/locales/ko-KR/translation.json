@@ -961,6 +961,7 @@
       "autoStartTip": "관리자 권한으로 실행하면 매번 UAC 승인을 받지 않아도 됩니다",
       "autoStartTitleLinux": "로그인 시 실행",
       "autoStartDescriptionLinux": "데스크톱에 로그인하면 자동으로 실행합니다(XDG 자동 시작 항목)",
+      "autoStartDescriptionMac": "로그인하면 자동으로 실행합니다(LaunchAgent, 시스템 설정 → 일반 → 로그인 항목에서 관리)",
       "trayTitle": "시스템 트레이 아이콘",
       "trayDescription": "작업 표시줄 알림 영역에 트레이 아이콘을 표시합니다",
       "trayTip": "온도 제어는 백그라운드에서 계속 실행되지만, 창을 다시 열려면 앱을 다시 실행해야 합니다",

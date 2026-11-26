@@ -13,6 +13,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/coremsg"
 	"github.com/TIANLI0/THRM/internal/logger"
+	"github.com/TIANLI0/THRM/internal/mainthread"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -533,15 +534,18 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 	defer runtime.UnlockOSThread()
 
 	start := time.Now()
-	func() {
+	// macOS 的 NSApp 只能在进程主线程上运行，mainthread.Call 把消息循环交给主线程；
+	// 其它平台就地执行，仍在当前已锁定的线程上。
+	mainthread.Call(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				m.logError("托盘消息循环发生panic: %v", r)
 			}
 		}()
+		prepareNativeTrayApp()
 		// onReady 由 systray 在内部 goroutine 触发；消息循环在此阻塞。
 		systray.Run(m.onTrayReady, m.onTrayExit)
-	}()
+	})
 	ran = time.Since(start)
 
 	atomic.StoreInt32(&m.readyState, 0)

@@ -961,6 +961,7 @@
       "autoStartTip": "以管理员身份运行可避免每次 UAC 授权",
       "autoStartTitleLinux": "开机自启动",
       "autoStartDescriptionLinux": "登录桌面后自动运行（XDG 自启动项）",
+      "autoStartDescriptionMac": "登录后自动运行（LaunchAgent，可在“系统设置 → 通用 → 登录项”中管理）",
       "trayTitle": "系统托盘图标",
       "trayDescription": "在任务栏通知区域显示托盘图标",
       "trayTip": "关闭后控温后台照常运行，但需要重新启动本程序才能再打开窗口",

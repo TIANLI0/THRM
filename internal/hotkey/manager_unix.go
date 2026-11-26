@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package hotkey
 
@@ -39,6 +39,7 @@ type Manager struct {
 }
 
 func NewManager(logger types.Logger, onAction func(action Action, shortcut string)) *Manager {
+	// Wayland 不允许客户端抢全局快捷键；macOS 上两个变量都不存在。
 	isWayland := os.Getenv("XDG_SESSION_TYPE") == "wayland" ||
 		os.Getenv("WAYLAND_DISPLAY") != ""
 	return &Manager{
@@ -209,21 +210,6 @@ func ParseShortcut(input string) ([]hotkeylib.Modifier, hotkeylib.Key, error) {
 	}
 
 	return mods, key, nil
-}
-
-func parseModifier(part string) (hotkeylib.Modifier, bool) {
-	switch strings.ToUpper(strings.TrimSpace(part)) {
-	case "CTRL", "CONTROL":
-		return hotkeylib.ModCtrl, true
-	case "ALT":
-		return hotkeylib.Mod1, true
-	case "SHIFT":
-		return hotkeylib.ModShift, true
-	case "WIN", "WINDOWS", "SUPER":
-		return hotkeylib.Mod4, true
-	default:
-		return hotkeylib.Modifier(0), false
-	}
 }
 
 func parseKey(part string) (hotkeylib.Key, error) {

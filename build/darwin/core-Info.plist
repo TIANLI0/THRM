@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 链接进 thrm-core 的 __TEXT,__info_plist 段（见 build.sh）。核心脱离 .app 单独运行
+     （开发调试、命令行启动）时没有包级 Info.plist，CoreBluetooth 就靠这份找到蓝牙权限说明；
+     在 THRM.app 里运行时以包里的 Info.plist 为准。 -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>top.tianli0.thrm.core</string>
+	<key>CFBundleName</key>
+	<string>THRM Core</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>THRM 通过蓝牙连接飞智散热器（BS1 等型号）以控制风扇与灯光。</string>
+</dict>
+</plist>

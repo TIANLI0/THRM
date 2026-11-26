@@ -37,7 +37,10 @@ func hidReportFormatForDescriptor(bus hid.BusType, descriptor []byte) hidReportF
 func (m *Manager) configureHIDReportFormatLocked(device *hid.Device) {
 	// Re-detect on every connection: a reconnect can switch USB/Bluetooth.
 	m.hidReportFormat = hidReportFormat{}
-	if runtime.GOOS != "linux" {
+	// Linux（hidraw）与 macOS（IOHIDDevice）都按描述符原样收发：无编号 USB 报告
+	// 需要 31 字节数据 + hidapi 的 0x00 前缀。macOS 上曾沿用 Windows 的格式，结果
+	// 所有命令超时（PR #58 在 BS2 Pro 真机上确认）。
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return
 	}
 	info, err := device.GetDeviceInfo()

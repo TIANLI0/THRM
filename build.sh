@@ -4,7 +4,8 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 
-echo "=== THRM Linux Build ==="
+OS_NAME="$(uname -s)"
+echo "=== THRM $OS_NAME Build ==="
 
 # Resolve build version: THRM_BUILD_VERSION env override -> build/config.yml info.version -> "dev".
 VERSION="${THRM_BUILD_VERSION:-}"
@@ -20,6 +21,50 @@ echo "Building version: $VERSION"
 LDFLAGS="-s -w -X github.com/TIANLI0/THRM/internal/version.BuildVersion=$VERSION"
 
 mkdir -p "$BUILD_DIR"
+
+if [ "$OS_NAME" = "Darwin" ]; then
+    # macOS: core + GUI are packaged together into build/bin/THRM.app (+ .dmg).
+    BIN_DIR="$BUILD_DIR/bin"
+    mkdir -p "$BIN_DIR"
+    # Info.plist / Finder only accept a purely numeric x.y.z version.
+    PRODUCT_VERSION=$(printf '%s' "$VERSION" | sed -nE 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
+    PRODUCT_VERSION="${PRODUCT_VERSION:-0.0.0}"
+    # Universal build (Apple Silicon + Intel) by default; THRM_MACOS_ARCHS=arm64 builds one slice.
+    MAC_ARCHS="${THRM_MACOS_ARCHS:-arm64 amd64}"
+    # Go 1.27 supports macOS 13+. cgo objects must use the same floor, otherwise the
+    # binary's minos follows the build machine's SDK.
+    MACOS_MIN="${THRM_MACOS_MIN:-13.0}"
+    export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+    export CGO_CFLAGS="-mmacosx-version-min=$MACOS_MIN"
+    export CGO_LDFLAGS="-mmacosx-version-min=$MACOS_MIN"
+
+    echo "--- Building core service ($MAC_ARCHS) ---"
+    # Embed an Info.plist so CoreBluetooth finds the Bluetooth usage string
+    # even when thrm-core runs outside THRM.app.
+    # The plist path is relative so a project path containing spaces cannot split -extldflags.
+    cd "$PROJECT_ROOT"
+    CORE_SLICES=()
+    for arch in $MAC_ARCHS; do
+        CGO_ENABLED=1 GOARCH="$arch" go build \
+            -trimpath \
+            -ldflags="$LDFLAGS -linkmode=external -extldflags=-Wl,-sectcreate,__TEXT,__info_plist,build/darwin/core-Info.plist" \
+            -o "$BIN_DIR/thrm-core-$arch" \
+            ./cmd/core/
+        CORE_SLICES+=("$BIN_DIR/thrm-core-$arch")
+    done
+    lipo -create -output "$BIN_DIR/thrm-core" "${CORE_SLICES[@]}"
+    rm -f "${CORE_SLICES[@]}"
+
+    echo "--- Building GUI and app bundle ---"
+    wails3 task package:darwin VERSION="$VERSION" PRODUCT_VERSION="$PRODUCT_VERSION" BIN_DIR=build/bin \
+        MAC_ARCHS="$MAC_ARCHS" MACOS_MIN="$MACOS_MIN"
+
+    echo "=== Build complete ==="
+    ls -lh "$BIN_DIR"/*.dmg
+    du -sh "$BIN_DIR/THRM.app"
+    lipo -info "$BIN_DIR/THRM.app/Contents/MacOS/THRM" "$BIN_DIR/THRM.app/Contents/MacOS/thrm-core"
+    exit 0
+fi
 
 # 1. Build core service (requires CGO for go-hid)
 echo "--- Building core service ---"

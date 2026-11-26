@@ -961,6 +961,7 @@
       "autoStartTip": "管理者権限で実行すると毎回の UAC 確認を省略できます",
       "autoStartTitleLinux": "ログイン時に起動",
       "autoStartDescriptionLinux": "デスクトップにログインすると自動実行します（XDG 自動起動エントリ）",
+      "autoStartDescriptionMac": "ログイン後に自動実行します（LaunchAgent。システム設定 → 一般 → ログイン項目で管理できます）",
       "trayTitle": "システムトレイアイコン",
       "trayDescription": "タスクバーの通知領域にトレイアイコンを表示します",
       "trayTip": "オフでもファン制御はバックグラウンドで動作しますが、ウィンドウを再表示するにはアプリを再起動する必要があります",

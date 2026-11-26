@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package coreapp
 
@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/TIANLI0/THRM/internal/appmeta"
 )
@@ -14,8 +15,16 @@ import (
 func (a *CoreApp) ReinstallPawnIO() (map[string]any, error) {
 	return map[string]any{
 		"success": false,
-		"message": "PawnIO is not supported on Linux",
+		"message": "PawnIO is not supported on " + platformDisplayName(),
 	}, nil
+}
+
+// platformDisplayName 返回面向用户的系统名称（runtime.GOOS 是小写的 linux/darwin）。
+func platformDisplayName() string {
+	if runtime.GOOS == "darwin" {
+		return "macOS"
+	}
+	return "Linux"
 }
 
 func launchGUI() error {
@@ -39,7 +48,7 @@ func launchGUI() error {
 		return fmt.Errorf("GUI executable not found: %v", candidates)
 	}
 
-	cmd := exec.Command(guiPath)
+	cmd := guiLaunchCommand(guiPath)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start GUI: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/TIANLI0/THRM/internal/autostart"
 	"github.com/TIANLI0/THRM/internal/coreapp"
+	"github.com/TIANLI0/THRM/internal/mainthread"
 )
 
 // idleCoreGCPercent 收紧核心进程的 GC 触发阈值。
@@ -20,6 +21,12 @@ import (
 const idleCoreGCPercent = 50
 
 func main() {
+	// macOS 的托盘（NSApp）只能跑在进程主线程上：主线程留给 mainthread 调度，
+	// 核心逻辑在 runCore 里跑。其它平台上等同于直接调用 runCore。
+	mainthread.Run(runCore)
+}
+
+func runCore() {
 	// 必须排在 setupFatalOutput 之前：该模式的输出要交给调用它的安装器捕获，
 	// 而 setupFatalOutput 会把 stdout/stderr 重定向进日志文件，顺带还会为这条
 	// 装完即退的命令留下一个空的 fatal 日志。
