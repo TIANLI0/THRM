@@ -7,12 +7,14 @@ import (
 	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/guiapp"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// appIcon 是 Linux 下的窗口/任务栏图标；Windows 的图标随 .syso 资源嵌进可执行文件。
+// appIcon 是 Linux 下的窗口/任务栏图标；Windows 的图标随 .syso 资源嵌进可执行文件，
+// macOS 的 Dock 图标来自 .app 包里的 icons.icns。
 //
 //go:embed build/appicon.png
 var appIcon []byte
@@ -53,6 +55,15 @@ func main() {
 			ProgramName:   "thrm",
 			ApplicationID: "top.tianli0.thrm",
 		},
+		Mac: application.MacOptions{
+			// 与 Windows/Linux 一致：关掉主窗口即退出 GUI，后台控温与菜单栏图标由核心负责。
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
+		},
+	})
+
+	// macOS：窗口被“隐藏到托盘”后点 Dock 图标，要把它重新显示出来。
+	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
+		gui.ShowWindow()
 	})
 
 	windowOptions := application.WebviewWindowOptions{

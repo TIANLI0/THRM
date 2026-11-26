@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- THRM.app 的 Info.plist。@VERSION@ 由 Taskfile 的 package:darwin 替换为 x.y.z。
+     GUI（THRM）与核心（thrm-core）同在 Contents/MacOS 下，共用这一份声明：
+     蓝牙权限说明缺失时，CoreBluetooth 会在首次访问时直接终止进程。 -->
+<plist version="1.0">
+<dict>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleName</key>
+	<string>THRM</string>
+	<key>CFBundleDisplayName</key>
+	<string>THRM</string>
+	<key>CFBundleExecutable</key>
+	<string>THRM</string>
+	<key>CFBundleIdentifier</key>
+	<string>top.tianli0.thrm</string>
+	<key>CFBundleVersion</key>
+	<string>@VERSION@</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleIconFile</key>
+	<string>icons</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 TIANLI0</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>THRM 通过蓝牙连接飞智散热器（BS1 等型号）以控制风扇与灯光。</string>
+</dict>
+</plist>

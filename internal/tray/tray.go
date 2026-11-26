@@ -13,6 +13,7 @@ import (
 	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/coremsg"
 	"github.com/TIANLI0/THRM/internal/logger"
+	"github.com/TIANLI0/THRM/internal/mainthread"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
@@ -390,28 +391,9 @@ func (m *Manager) Init() {
 
 	m.logInfo("正在初始化系统托盘")
 
-	// macOS 的 [NSApplication sharedApplication] / [NSApp run] 必须在主线程调用，
-	// 放在 goroutine 里会直接 SIGILL。所以 darwin 上只做初始化标记，
-	// 真正的消息循环由 RunBlocking() 在主线程启动。
-	if runtime.GOOS == "darwin" {
-		return
-	}
-
-	// 其他平台：启动监督协程，负责等待外壳就绪、运行 systray，
-	// 并在消息循环异常退出后自动重建。
+	// 启动监督协程：负责等待外壳就绪、运行 systray，并在消息循环异常退出后自动重建。
 	m.superviseOnce.Do(func() {
 		go m.supervise()
-	})
-}
-
-// RunBlocking 在调用者所在的线程上运行托盘消息循环，阻塞直到托盘退出。
-// macOS 专用：必须在 main goroutine（主线程）调用。
-func (m *Manager) RunBlocking() {
-	if runtime.GOOS != "darwin" {
-		return
-	}
-	m.superviseOnce.Do(func() {
-		m.supervise()
 	})
 }
 
@@ -552,15 +534,18 @@ func (m *Manager) runSystrayInstance() (ran time.Duration) {
 	defer runtime.UnlockOSThread()
 
 	start := time.Now()
-	func() {
+	// macOS 的 NSApp 只能在进程主线程上运行，mainthread.Call 把消息循环交给主线程；
+	// 其它平台就地执行，仍在当前已锁定的线程上。
+	mainthread.Call(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				m.logError("托盘消息循环发生panic: %v", r)
 			}
 		}()
+		prepareNativeTrayApp()
 		// onReady 由 systray 在内部 goroutine 触发；消息循环在此阻塞。
 		systray.Run(m.onTrayReady, m.onTrayExit)
-	}()
+	})
 	ran = time.Since(start)
 
 	atomic.StoreInt32(&m.readyState, 0)

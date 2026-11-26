@@ -3,21 +3,26 @@
 package autostart
 
 import (
+	"bytes"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/TIANLI0/THRM/internal/appmeta"
 	"github.com/TIANLI0/THRM/internal/types"
 )
 
-const (
-	darwinLaunchAgentLabel = "com.tianli0.thrm.core"
-	autoStartMethodDarwin  = "launchagent"
-)
+// MethodLaunchAgent 是 macOS 上唯一的自启动方式：~/Library/LaunchAgents 下的
+// 用户级 launchd 条目。方法名只为与其它平台共用同一套接口，传什么都按它处理。
+const MethodLaunchAgent = "launchagent"
 
-// Manager 在 macOS 上用 LaunchAgent 实现开机自启。
+// launchAgentLabel 同时是 plist 文件名，“系统设置 → 通用 → 登录项”里按
+// AssociatedBundleIdentifiers 归到 THRM 名下。
+const launchAgentLabel = appmeta.BundleIdentifier + ".core"
+
 type Manager struct {
 	logger types.Logger
 }
@@ -26,40 +31,39 @@ func NewManager(logger types.Logger) *Manager {
 	return &Manager{logger: logger}
 }
 
-func darwinLaunchAgentPath() string {
+func launchAgentPath() string {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
+	if err != nil {
+		home = os.Getenv("HOME")
 	}
-	return filepath.Join(home, "Library", "LaunchAgents", darwinLaunchAgentLabel+".plist")
+	return filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
 }
 
 func (m *Manager) IsRunningAsAdmin() bool {
 	return os.Geteuid() == 0
 }
 
-// SetWindowsAutoStart 名称沿用跨平台接口，macOS 下写 LaunchAgent。
 func (m *Manager) SetWindowsAutoStart(enable bool) error {
-	return m.SetAutoStartWithMethod(enable, autoStartMethodDarwin)
+	return m.SetAutoStartWithMethod(enable, MethodLaunchAgent)
 }
 
 func (m *Manager) GetAutoStartMethod() string {
-	if m.CheckWindowsAutoStart() {
-		return autoStartMethodDarwin
+	if launchAgentEnabled(launchAgentPath()) {
+		return MethodLaunchAgent
 	}
 	return "none"
 }
 
-func (m *Manager) SetAutoStartWithMethod(enable bool, method string) error {
-	plistPath := darwinLaunchAgentPath()
-	if plistPath == "" {
-		return fmt.Errorf("cannot resolve LaunchAgents directory")
-	}
-
+// SetAutoStartWithMethod 写入/删除 LaunchAgent。只落文件、不调用 launchctl
+// bootstrap：条目在下次登录时由 launchd 加载；现在就加载会立刻再拉起一个核心。
+func (m *Manager) SetAutoStartWithMethod(enable bool, _ string) error {
+	plistPath := launchAgentPath()
 	if !enable {
-		_ = exec.Command("/bin/launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), darwinLaunchAgentLabel)).Run()
+		// 已加载的条目要先卸载，否则本次登录会话里 launchd 仍记着它。
+		// 未加载时 bootout 会报错，忽略即可。
+		_ = exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/%s", os.Getuid(), launchAgentLabel)).Run()
 		if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
-			return err
+			return fmt.Errorf("remove launch agent: %w", err)
 		}
 		return nil
 	}
@@ -68,57 +72,92 @@ func (m *Manager) SetAutoStartWithMethod(enable bool, method string) error {
 	if err != nil {
 		return fmt.Errorf("get executable path: %w", err)
 	}
-
-	if err := os.MkdirAll(filepath.Dir(plistPath), 0o755); err != nil {
-		return err
-	}
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>Label</key><string>%s</string>
-	<key>ProgramArguments</key>
-	<array><string>%s</string></array>
-	<key>RunAtLoad</key><true/>
-	<key>KeepAlive</key><false/>
-	<key>ProcessType</key><string>Interactive</string>
-</dict>
-</plist>
-`, darwinLaunchAgentLabel, exePath)
-
-	if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil {
-		return err
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
 	}
 
-	_ = exec.Command("/bin/launchctl", "bootout",
-		fmt.Sprintf("gui/%d/%s", os.Getuid(), darwinLaunchAgentLabel)).Run()
-	if out, err := exec.Command("/bin/launchctl", "bootstrap",
-		fmt.Sprintf("gui/%d", os.Getuid()), plistPath).CombinedOutput(); err != nil {
-		// 已经加载过时不视为失败
-		if !strings.Contains(string(out), "already") {
-			return fmt.Errorf("launchctl bootstrap: %v (%s)", err, strings.TrimSpace(string(out)))
-		}
+	if err := os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil {
+		return fmt.Errorf("create LaunchAgents dir: %w", err)
+	}
+	if err := os.WriteFile(plistPath, buildLaunchAgentPlist(exePath), 0644); err != nil {
+		return fmt.Errorf("write launch agent: %w", err)
 	}
 	return nil
 }
 
+func buildLaunchAgentPlist(exePath string) []byte {
+	var escaped bytes.Buffer
+	_ = xml.EscapeText(&escaped, []byte(exePath))
+	// KeepAlive 不开：用户从托盘退出后不该被 launchd 立刻拉起来。
+	// ProcessType=Interactive 让 App Nap 不去节流控温循环。
+	return fmt.Appendf(nil, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>%s</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>%s</string>
+		<string>--autostart</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>AssociatedBundleIdentifiers</key>
+	<string>%s</string>
+</dict>
+</plist>
+`, launchAgentLabel, escaped.String(), appmeta.BundleIdentifier)
+}
+
 func (m *Manager) CheckWindowsAutoStart() bool {
-	plistPath := darwinLaunchAgentPath()
-	if plistPath == "" {
+	return launchAgentEnabled(launchAgentPath())
+}
+
+// EnsureAutoStartTaskHealthy 与 Windows 侧同名方法配平。条目指向的可执行文件
+// 不存在了（.app 被挪了位置）时按当前路径重写，否则登录后什么也不会启动。
+func (m *Manager) EnsureAutoStartTaskHealthy() (bool, error) {
+	plistPath := launchAgentPath()
+	data, err := os.ReadFile(plistPath)
+	if err != nil {
+		return false, nil
+	}
+	exePath, err := os.Executable()
+	if err != nil {
+		return false, nil
+	}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		exePath = resolved
+	}
+	if bytes.Equal(data, buildLaunchAgentPlist(exePath)) {
+		return false, nil
+	}
+	if err := os.WriteFile(plistPath, buildLaunchAgentPlist(exePath), 0644); err != nil {
+		return false, fmt.Errorf("rewrite launch agent: %w", err)
+	}
+	return true, nil
+}
+
+// launchAgentEnabled 只看 plist 是否存在且没被写成 Disabled。用户在“登录项”
+// 里关掉后台项目时 launchd 自己记录禁用状态、不改文件，这种情况读不到。
+func launchAgentEnabled(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return false
 	}
-	_, err := os.Stat(plistPath)
-	return err == nil
+	compact := strings.Join(strings.Fields(string(data)), "")
+	return !strings.Contains(compact, "<key>Disabled</key><true/>")
 }
 
-func (m *Manager) EnsureAutoStartTaskHealthy() (bool, error) {
-	return m.CheckWindowsAutoStart(), nil
-}
-
-// DetectAutoStartLaunch 判断本次启动是否由 LaunchAgent 触发。
 func DetectAutoStartLaunch(args []string) bool {
-	for _, a := range args {
-		if a == "--autostart" || a == "-autostart" {
+	for _, arg := range args {
+		if arg == "--autostart" || arg == "/autostart" || arg == "-autostart" {
 			return true
 		}
 	}

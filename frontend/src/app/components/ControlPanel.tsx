@@ -214,10 +214,9 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
     let disposed = false;
     void System.Environment()
       .then((env) => {
-        if (!disposed) {
-          setIsWindowsPlatform(env.OS === 'windows');
-          setIsMacPlatform(env.OS === 'darwin');
-        }
+        if (disposed) return;
+        setIsWindowsPlatform(env.OS === 'windows');
+        setIsMacPlatform(env.OS === 'darwin');
       })
       .catch(() => {});
     return () => {
@@ -463,7 +462,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
     setLoading('windowsAutoStart', true);
     try {
       if (enabled) {
-        // 注册表/计划任务只有 Windows 有；Linux 走 XDG autostart 条目。
+        // 注册表/计划任务只有 Windows 有；Linux 走 XDG autostart 条目，macOS 走 LaunchAgent（后端忽略 method）。
         let method = 'desktop';
         if (isWindowsPlatform) {
           method = (await apiService.isRunningAsAdmin()) ? 'task_scheduler' : 'registry';
@@ -2172,20 +2171,12 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
 
           <SettingRow
             icon={<Monitor className={clsx('h-4 w-4', config.windowsAutoStart ? 'text-emerald-500' : '')} />}
-            title={
-              isWindowsPlatform
-                ? t('controlPanel.system.autoStartTitle')
-                : isMacPlatform
-                  ? t('controlPanel.system.autoStartTitleMac')
-                  : t('controlPanel.system.autoStartTitleLinux')
-            }
-            description={
-              isWindowsPlatform
-                ? t('controlPanel.system.autoStartDescription')
-                : isMacPlatform
-                  ? t('controlPanel.system.autoStartDescriptionMac')
-                  : t('controlPanel.system.autoStartDescriptionLinux')
-            }
+            title={isWindowsPlatform ? t('controlPanel.system.autoStartTitle') : t('controlPanel.system.autoStartTitleLinux')}
+            description={isWindowsPlatform
+              ? t('controlPanel.system.autoStartDescription')
+              : isMacPlatform
+                ? t('controlPanel.system.autoStartDescriptionMac')
+                : t('controlPanel.system.autoStartDescriptionLinux')}
             tip={isWindowsPlatform ? t('controlPanel.system.autoStartTip') : undefined}
           >
             <ToggleSwitch
@@ -2545,9 +2536,7 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
                   {t('controlPanel.debug.refresh')}
                 </Button>
 
-                {/* PawnIO 是 Windows 的 NT 驱动，macOS 上不存在。
-                    这里用条件渲染而不是删掉代码，是为了让 git merge upstream 时
-                    不必手工解决「一方删除、另一方修改」的冲突。 */}
+                {/* PawnIO 是 Windows 驱动，其它平台不显示重装入口。 */}
                 {isWindowsPlatform && (
                   <div className="rounded-xl border border-border/70 bg-background px-3 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">

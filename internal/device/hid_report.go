@@ -37,9 +37,9 @@ func hidReportFormatForDescriptor(bus hid.BusType, descriptor []byte) hidReportF
 func (m *Manager) configureHIDReportFormatLocked(device *hid.Device) {
 	// Re-detect on every connection: a reconnect can switch USB/Bluetooth.
 	m.hidReportFormat = hidReportFormat{}
-	// macOS 的 hidapi 与 Linux 行为一致：无编号报告需要补一个 0x00 前缀。
-	// 之前这里只放行 linux，导致 macOS 用 25 字节带 Report ID 的格式发命令，
-	// 设备不认（表现为 0x23 进入实时模式超时）。
+	// Linux（hidraw）与 macOS（IOHIDDevice）都按描述符原样收发：无编号 USB 报告
+	// 需要 31 字节数据 + hidapi 的 0x00 前缀。macOS 上曾沿用 Windows 的格式，结果
+	// 所有命令超时（PR #58 在 BS2 Pro 真机上确认）。
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return
 	}

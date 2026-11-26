@@ -3,6 +3,7 @@
 #
 #   wails3 task build            构建 GUI（build/bin/THRM[.exe]）
 #   wails3 task package          Windows：构建并用 FluentSetup 打安装包
+#   wails3 task package:darwin   macOS：构建并打成 THRM.app + .dmg（需事先构建 build/bin/thrm-core）
 #   wails3 task bindings         只重新生成前端绑定
 #   wails3 dev                   开发模式（见 dev 任务）
 version: '3'
@@ -92,6 +93,43 @@ tasks:
     env:
       CGO_ENABLED: 1
 
+  build:darwin:
+    internal: true
+    deps:
+      - task: frontend:build
+    cmds:
+      - go build {{if .GO_TAGS}}-tags {{.GO_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="{{if ne .DEV "true"}}-s -w {{end}}{{.LDFLAGS}}" -o "{{.BIN_DIR}}/{{.APP_NAME}}" .
+    env:
+      CGO_ENABLED: 1
+      CGO_CFLAGS: -mmacosx-version-min=12.0
+      CGO_LDFLAGS: -mmacosx-version-min=12.0
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+  package:darwin:
+    summary: macOS：构建 GUI，与 {{.BIN_DIR}}/thrm-core 一起打成 THRM.app（ad-hoc 签名）和 .dmg
+    platforms: [darwin]
+    deps: [build]
+    vars:
+      APP_BUNDLE: '{{.BIN_DIR}}/{{.APP_NAME}}.app'
+      DMG_PATH: '{{.BIN_DIR}}/{{.APP_NAME}}-macos-{{ARCH}}.dmg'
+    preconditions:
+      - sh: test -x "{{.BIN_DIR}}/thrm-core"
+        msg: "缺少 {{.BIN_DIR}}/thrm-core：先运行 ./build.sh，或手动构建 ./cmd/core"
+    cmds:
+      - rm -rf -- "{{.APP_BUNDLE}}" "{{.DMG_PATH}}"
+      - mkdir -p "{{.APP_BUNDLE}}/Contents/MacOS" "{{.APP_BUNDLE}}/Contents/Resources" "{{.ASSETS_DIR}}"
+      # 图标只生成到构建中间目录，不覆盖仓库里的 Windows icon.ico。
+      - wails3 generate icons -input build/appicon.png -macfilename "{{.APP_BUNDLE}}/Contents/Resources/icons.icns" -windowsfilename "{{.ASSETS_DIR}}/icon.ico"
+      - sed "s/@VERSION@/{{.PRODUCT_VERSION}}/g" build/darwin/Info.plist > "{{.APP_BUNDLE}}/Contents/Info.plist"
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.APP_BUNDLE}}/Contents/MacOS/{{.APP_NAME}}"
+      - cp "{{.BIN_DIR}}/thrm-core" "{{.APP_BUNDLE}}/Contents/MacOS/thrm-core"
+      # 没有 Developer ID 时用 ad-hoc 签名：Apple Silicon 拒绝运行未签名代码，且签名要把
+      # Info.plist 绑进去，蓝牙权限说明才会生效。
+      - xattr -cr "{{.APP_BUNDLE}}"
+      - codesign --force --deep --sign - "{{.APP_BUNDLE}}"
+      - codesign --verify --deep --strict "{{.APP_BUNDLE}}"
+      - hdiutil create -volname "{{.APP_NAME}}" -srcfolder "{{.APP_BUNDLE}}" -ov -format UDZO "{{.DMG_PATH}}"
+
   package:
     summary: Windows：构建 GUI 并用 FluentSetup 打安装包 build/bin/THRM-amd64-installer.exe（THRM Core.exe 需事先构建好）
     deps: [build]
@@ -104,7 +142,7 @@ tasks:
 
   run:
     cmds:
-      - '{{.BIN_DIR}}/{{if eq OS "windows"}}{{.APP_NAME}}.exe{{else}}thrm{{end}}'
+      - '{{.BIN_DIR}}/{{if eq OS "windows"}}{{.APP_NAME}}.exe{{else if eq OS "darwin"}}{{.APP_NAME}}{{else}}thrm{{end}}'
 
   dev:
     summary: 开发模式：Go 改动自动重编译，前端由 Next 开发服务器热更新

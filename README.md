@@ -222,6 +222,24 @@ thrm
 > [!NOTE]
 > Linux 支持仍在持续完善。Windows 专属的 PawnIO、云母窗口材质、静默更新以及部分厂商硬件联动在 Linux 上不可用。
 
+### macOS（实验性）
+
+macOS 版本支持 Apple Silicon 与 Intel Mac，要求 macOS 12 或更高版本，目前需要自行构建（见下文“macOS 构建”），CI 会为每次提交产出未公证的 `.dmg`。
+
+* GUI 与核心服务打包在同一个 `THRM.app` 中，核心以菜单栏图标常驻，不占 Dock。
+* 应用只做了 ad-hoc 签名、没有 Apple 公证，首次打开前需要移除隔离属性：
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/THRM.app
+  ```
+
+* 首次连接 BS1 时系统会请求蓝牙权限；全局快捷键需要在“系统设置 → 隐私与安全性 → 辅助功能”中允许 THRM。
+* CPU 温度来自系统传感器（Apple Silicon 读 PMU/簇温度，Intel 读 SMC），不需要额外驱动。
+* 开机自启动通过 `~/Library/LaunchAgents/top.tianli0.thrm.core.plist` 实现，可在“系统设置 → 通用 → 登录项”中管理。
+
+> [!NOTE]
+> macOS 暂不支持：固件更新、休眠/唤醒联动、RTSS 游戏内显示、PawnIO 与厂商笔记本风扇联动、自动安装更新。
+
 ## 快速开始
 
 1. 为散热器正常供电。
@@ -274,6 +292,8 @@ Windows 运行日志保存在安装目录的 `logs` 文件夹中；Linux 优先�
 journalctl --identifier=thrm --identifier=thrm-core --since today
 journalctl --follow --identifier=thrm --identifier=thrm-core
 ```
+
+macOS 配置、窗口状态与温度历史位于 `~/Library/Application Support/THRM`，日志写入 `~/Library/Logs/THRM`（可在“控制台”应用中查看）。
 
 在不提供 systemd journal 的 Linux 环境中，日志会输出到 stderr，并轮转写入 `$XDG_STATE_HOME/thrm/logs`（默认 `~/.local/state/thrm/logs`）。设置页的“导出诊断包”会一并收集这些文件或 journal 日志。
 
@@ -402,7 +422,7 @@ BS2, BS2 Pro, BS3 and BS3 Pro must first be paired through the operating system'
 * Automatic device reconnection
 * Optional RTSS OSD output for cooler fan RPM on Windows
 * In-app updates and diagnostics export
-* Windows and Linux builds
+* Windows, Linux and (experimental) macOS builds
 * Simplified Chinese, English and Japanese interfaces
 
 Download the latest installer or portable package from the [Releases page](https://github.com/TIANLI0/THRM/releases/latest).
@@ -441,7 +461,7 @@ THRM is an independent community project and is not affiliated with or endorsed 
 
 GUI 与 Core 采用独立进程设计。关闭 GUI 后，Core 可以继续维持设备连接、温度采样和自动控温。
 
-Windows 通过命名管道通信，Linux 使用 Unix Domain Socket。
+Windows 通过命名管道通信，Linux 与 macOS 使用 Unix Domain Socket。
 
 ## 技术栈
 
@@ -594,6 +614,23 @@ build/thrm-core
 makepkg -f
 sudo pacman -U ./thrm-bin-*.pkg.tar.zst
 ```
+
+## macOS 构建
+
+需要 Xcode Command Line Tools（`xcode-select --install`）、Go、Bun 与 Wails v3 CLI，必须在 Mac 上构建（依赖 cgo 与 Cocoa/IOKit/CoreBluetooth）：
+
+```bash
+./build.sh
+```
+
+输出：
+
+```text
+build/bin/THRM.app
+build/bin/THRM-macos-<arch>.dmg
+```
+
+`THRM.app/Contents/MacOS` 下同时包含 GUI（`THRM`）与核心服务（`thrm-core`）。
 
 ## 测试与检查
 

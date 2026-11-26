@@ -4,7 +4,8 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 
-echo "=== THRM Linux Build ==="
+OS_NAME="$(uname -s)"
+echo "=== THRM $OS_NAME Build ==="
 
 # Resolve build version: THRM_BUILD_VERSION env override -> build/config.yml info.version -> "dev".
 VERSION="${THRM_BUILD_VERSION:-}"
@@ -20,6 +21,37 @@ echo "Building version: $VERSION"
 LDFLAGS="-s -w -X github.com/TIANLI0/THRM/internal/version.BuildVersion=$VERSION"
 
 mkdir -p "$BUILD_DIR"
+
+if [ "$OS_NAME" = "Darwin" ]; then
+    # macOS: core + GUI are packaged together into build/bin/THRM.app (+ .dmg).
+    BIN_DIR="$BUILD_DIR/bin"
+    mkdir -p "$BIN_DIR"
+    # Info.plist / Finder only accept a purely numeric x.y.z version.
+    PRODUCT_VERSION=$(printf '%s' "$VERSION" | sed -nE 's/^v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
+    PRODUCT_VERSION="${PRODUCT_VERSION:-0.0.0}"
+    export MACOSX_DEPLOYMENT_TARGET=12.0
+    export CGO_CFLAGS="-mmacosx-version-min=12.0"
+    export CGO_LDFLAGS="-mmacosx-version-min=12.0"
+
+    echo "--- Building core service ---"
+    # Embed an Info.plist so CoreBluetooth finds the Bluetooth usage string
+    # even when thrm-core runs outside THRM.app.
+    # The plist path is relative so a project path containing spaces cannot split -extldflags.
+    cd "$PROJECT_ROOT"
+    CGO_ENABLED=1 go build \
+        -trimpath \
+        -ldflags="$LDFLAGS -linkmode=external -extldflags=-Wl,-sectcreate,__TEXT,__info_plist,build/darwin/core-Info.plist" \
+        -o "$BIN_DIR/thrm-core" \
+        ./cmd/core/
+
+    echo "--- Building GUI and app bundle ---"
+    wails3 task package:darwin VERSION="$VERSION" PRODUCT_VERSION="$PRODUCT_VERSION" BIN_DIR=build/bin
+
+    echo "=== Build complete ==="
+    ls -lh "$BIN_DIR"/*.dmg
+    du -sh "$BIN_DIR/THRM.app"
+    exit 0
+fi
 
 # 1. Build core service (requires CGO for go-hid)
 echo "--- Building core service ---"

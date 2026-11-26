@@ -961,6 +961,7 @@
       "autoStartTip": "Running as administrator avoids a UAC prompt each time",
       "autoStartTitleLinux": "Start on login",
       "autoStartDescriptionLinux": "Run automatically after you log in to the desktop (XDG autostart entry)",
+      "autoStartDescriptionMac": "Run automatically after you log in (LaunchAgent; manage it under System Settings → General → Login Items)",
       "trayTitle": "System tray icon",
       "trayDescription": "Show the tray icon in the taskbar notification area",
       "trayTip": "Fan control keeps running in the background, but you have to relaunch the app to reopen this window",
@@ -1030,9 +1031,7 @@
       "rtssAnchorBackupLabel": "Layout backup file",
       "rtssBackupUnknown": "backup path unavailable",
       "blurTitle": "Window material",
-      "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart.",
-      "autoStartTitleMac": "Launch at login",
-      "autoStartDescriptionMac": "Runs automatically at login (LaunchAgent)"
+      "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart."
     },
     "offline": {
       "message": "Device is not connected. Some features are unavailable."

@@ -6,9 +6,10 @@ import (
 	"runtime/debug"
 )
 
-// macOS 下致命错误直接走 stderr，由 launchd 或终端接管，
-// 不在用户目录里偷偷写文件。
 func setupFatalOutput() (func(), string) {
 	debug.SetTraceback("all")
+
+	// 不重定向 stdout/stderr：从终端运行时直接可见；被 launchd 或 GUI 拉起时
+	// 由父进程接管。正常日志与捕获到的 panic 写在 ~/Library/Logs/THRM。
 	return func() {}, ""
 }

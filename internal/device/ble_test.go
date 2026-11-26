@@ -88,15 +88,6 @@ func TestShouldSkipBLEFallback(t *testing.T) {
 	}
 }
 
-func mustBLEAddress(t *testing.T, mac string) bluetooth.Address {
-	t.Helper()
-	parsed, err := bluetooth.ParseMAC(mac)
-	if err != nil {
-		t.Fatalf("ParseMAC(%q): %v", mac, err)
-	}
-	return bluetooth.Address{MACAddress: bluetooth.MACAddress{MAC: parsed}}
-}
-
 // BS1 静置一段时间后广播里只剩服务 UUID 0xFFF0、不带名字，只认名字会一直扫不到（issue #46）。
 func TestBS1ScanMatcher(t *testing.T) {
 	start := time.Now()

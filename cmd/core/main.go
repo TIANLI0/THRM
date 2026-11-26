@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
 	"runtime/debug"
 	"syscall"
 
 	"github.com/TIANLI0/THRM/internal/autostart"
 	"github.com/TIANLI0/THRM/internal/coreapp"
+	"github.com/TIANLI0/THRM/internal/mainthread"
 )
 
 // idleCoreGCPercent 收紧核心进程的 GC 触发阈值。
@@ -21,6 +21,12 @@ import (
 const idleCoreGCPercent = 50
 
 func main() {
+	// macOS 的托盘（NSApp）只能跑在进程主线程上：主线程留给 mainthread 调度，
+	// 核心逻辑在 runCore 里跑。其它平台上等同于直接调用 runCore。
+	mainthread.Run(runCore)
+}
+
+func runCore() {
 	// 必须排在 setupFatalOutput 之前：该模式的输出要交给调用它的安装器捕获，
 	// 而 setupFatalOutput 会把 stdout/stderr 重定向进日志文件，顺带还会为这条
 	// 装完即退的命令留下一个空的 fatal 日志。
@@ -56,11 +62,6 @@ func main() {
 		}
 	}()
 
-	// macOS 的 AppKit 必须在主线程初始化（[NSApplication sharedApplication]、
-	// [NSApp run]），而 Go 的 main goroutine 启动时正好在主线程上。
-	// 这里把它锁死，后面的托盘消息循环就能安全地在主线程跑。
-	runtime.LockOSThread()
-
 	// 检测命令行参数
 	debugMode := false
 	isAutoStart := false
@@ -85,28 +86,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 退出信号在后台等待，主线程留给托盘消息循环（macOS 必须）。
-	stopped := make(chan struct{})
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// 等待退出信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-		select {
-		case <-sigChan:
-			app.LogInfo("收到系统退出信号")
-		case <-app.QuitChan():
-			app.LogInfo("收到应用退出请求")
-		}
-
-		app.Stop()
-		close(stopped)
-	}()
-
-	if runtime.GOOS == "darwin" {
-		// 阻塞在主线程，直到托盘退出（app.Stop 会调用 trayManager.Quit）
-		app.RunTrayOnMainThread()
-		<-stopped
-	} else {
-		<-stopped
+	select {
+	case <-sigChan:
+		app.LogInfo("收到系统退出信号")
+	case <-app.QuitChan():
+		app.LogInfo("收到应用退出请求")
 	}
+
+	app.Stop()
 }
