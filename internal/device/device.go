@@ -119,6 +119,12 @@ func shouldSkipBLEFallback(preferLastTransport bool, lastDeviceType string, sinc
 	}
 	switch lastDeviceType {
 	case types.DeviceTypeHID:
+		// macOS 上没有 Windows 那套 WinRT 广播监听的内存泄漏问题，
+		// 而 BS2/BS3 系列插着 USB 时走 HID、拔掉后只能走 BLE，
+		// 所以 darwin 上不能跳过 BLE 扫描，否则拔线后永远连不上。
+		if runtime.GOOS == "darwin" {
+			return false
+		}
 		// 上次是 HID：等待 Windows 重新枚举 HID 接口即可，BLE 扫描只会白白泄漏。
 		return true
 	case types.DeviceTypeBLE:

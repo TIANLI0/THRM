@@ -1030,7 +1030,9 @@
       "rtssAnchorBackupLabel": "Layout backup file",
       "rtssBackupUnknown": "backup path unavailable",
       "blurTitle": "Window material",
-      "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart."
+      "blurDescription": "Choose Acrylic, Mica, or Mica Alt. Changes take effect after restart.",
+      "autoStartTitleMac": "Launch at login",
+      "autoStartDescriptionMac": "Runs automatically at login (LaunchAgent)"
     },
     "offline": {
       "message": "Device is not connected. Some features are unavailable."

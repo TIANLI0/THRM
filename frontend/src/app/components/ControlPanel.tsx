@@ -207,13 +207,17 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
   const [temperatureHistoryEnabled, setTemperatureHistoryEnabled] = useState(() => useAppStore.getState().historyEnabled);
   // 平台取自 Wails 运行时而不是 userAgent：WebKitGTK 的 UA 里没有可靠的平台标识。
   const [isWindowsPlatform, setIsWindowsPlatform] = useState(false);
+  const [isMacPlatform, setIsMacPlatform] = useState(false);
   const [flydigiCompat, setFlydigiCompat] = useState<FlydigiCompatStatus | null>(null);
 
   useEffect(() => {
     let disposed = false;
     void System.Environment()
       .then((env) => {
-        if (!disposed) setIsWindowsPlatform(env.OS === 'windows');
+        if (!disposed) {
+          setIsWindowsPlatform(env.OS === 'windows');
+          setIsMacPlatform(env.OS === 'darwin');
+        }
       })
       .catch(() => {});
     return () => {
@@ -2168,8 +2172,20 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
 
           <SettingRow
             icon={<Monitor className={clsx('h-4 w-4', config.windowsAutoStart ? 'text-emerald-500' : '')} />}
-            title={isWindowsPlatform ? t('controlPanel.system.autoStartTitle') : t('controlPanel.system.autoStartTitleLinux')}
-            description={isWindowsPlatform ? t('controlPanel.system.autoStartDescription') : t('controlPanel.system.autoStartDescriptionLinux')}
+            title={
+              isWindowsPlatform
+                ? t('controlPanel.system.autoStartTitle')
+                : isMacPlatform
+                  ? t('controlPanel.system.autoStartTitleMac')
+                  : t('controlPanel.system.autoStartTitleLinux')
+            }
+            description={
+              isWindowsPlatform
+                ? t('controlPanel.system.autoStartDescription')
+                : isMacPlatform
+                  ? t('controlPanel.system.autoStartDescriptionMac')
+                  : t('controlPanel.system.autoStartDescriptionLinux')
+            }
             tip={isWindowsPlatform ? t('controlPanel.system.autoStartTip') : undefined}
           >
             <ToggleSwitch
@@ -2529,23 +2545,28 @@ function ControlPanel({ config, onConfigChange, isConnected, legionFnQSupported,
                   {t('controlPanel.debug.refresh')}
                 </Button>
 
-                <div className="rounded-xl border border-border/70 bg-background px-3 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground">{t('controlPanel.debug.pawnTitle')}</div>
-                      <div className="text-[11px] leading-relaxed text-muted-foreground">{t('controlPanel.debug.pawnDescription')}</div>
+                {/* PawnIO 是 Windows 的 NT 驱动，macOS 上不存在。
+                    这里用条件渲染而不是删掉代码，是为了让 git merge upstream 时
+                    不必手工解决「一方删除、另一方修改」的冲突。 */}
+                {isWindowsPlatform && (
+                  <div className="rounded-xl border border-border/70 bg-background px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-foreground">{t('controlPanel.debug.pawnTitle')}</div>
+                        <div className="text-[11px] leading-relaxed text-muted-foreground">{t('controlPanel.debug.pawnDescription')}</div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleReinstallPawnIO}
+                        loading={loadingStates.pawnIOReinstall}
+                        icon={<RotateCw className="h-3.5 w-3.5" />}
+                      >
+                        {t('controlPanel.debug.reinstall')}
+                      </Button>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleReinstallPawnIO}
-                      loading={loadingStates.pawnIOReinstall}
-                      icon={<RotateCw className="h-3.5 w-3.5" />}
-                    >
-                      {t('controlPanel.debug.reinstall')}
-                    </Button>
                   </div>
-                </div>
+                )}
 
                 {debugInfo && (
                   <div className="min-h-56 max-h-[min(55vh,30rem)] w-full cursor-text overflow-auto rounded-xl border border-border bg-background overscroll-contain select-text">

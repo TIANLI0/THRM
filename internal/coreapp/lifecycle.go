@@ -381,6 +381,14 @@ func (a *CoreApp) initSystemTray() {
 	a.trayManager.Init()
 }
 
+// RunTrayOnMainThread 在主线程运行托盘消息循环（仅 macOS 需要）。
+// 其他平台为空操作——它们的托盘已经在 Init 里用自己的协程跑起来了。
+func (a *CoreApp) RunTrayOnMainThread() {
+	if a.trayManager != nil {
+		a.trayManager.RunBlocking()
+	}
+}
+
 // applyTrayVisibility 按配置同步系统托盘图标的可见性。
 func (a *CoreApp) applyTrayVisibility(cfg types.AppConfig) {
 	if a.trayManager == nil {

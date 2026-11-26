@@ -1030,7 +1030,9 @@
       "rtssAnchorBackupLabel": "布局备份文件",
       "rtssBackupUnknown": "备份路径未知",
       "blurTitle": "窗口材质",
-      "blurDescription": "选择亚克力、云母或云母 Alt 材质，修改后需重启应用生效。"
+      "blurDescription": "选择亚克力、云母或云母 Alt 材质，修改后需重启应用生效。",
+      "autoStartTitleMac": "开机自启动",
+      "autoStartDescriptionMac": "登录时自动运行（LaunchAgent）"
     },
     "offline": {
       "message": "设备未连接，部分功能不可用"

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"syscall"
 
@@ -55,6 +56,11 @@ func main() {
 		}
 	}()
 
+	// macOS 的 AppKit 必须在主线程初始化（[NSApplication sharedApplication]、
+	// [NSApp run]），而 Go 的 main goroutine 启动时正好在主线程上。
+	// 这里把它锁死，后面的托盘消息循环就能安全地在主线程跑。
+	runtime.LockOSThread()
+
 	// 检测命令行参数
 	debugMode := false
 	isAutoStart := false
@@ -79,16 +85,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 等待退出信号
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// 退出信号在后台等待，主线程留给托盘消息循环（macOS 必须）。
+	stopped := make(chan struct{})
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	select {
-	case <-sigChan:
-		app.LogInfo("收到系统退出信号")
-	case <-app.QuitChan():
-		app.LogInfo("收到应用退出请求")
+		select {
+		case <-sigChan:
+			app.LogInfo("收到系统退出信号")
+		case <-app.QuitChan():
+			app.LogInfo("收到应用退出请求")
+		}
+
+		app.Stop()
+		close(stopped)
+	}()
+
+	if runtime.GOOS == "darwin" {
+		// 阻塞在主线程，直到托盘退出（app.Stop 会调用 trayManager.Quit）
+		app.RunTrayOnMainThread()
+		<-stopped
+	} else {
+		<-stopped
 	}
-
-	app.Stop()
 }

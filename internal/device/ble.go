@@ -190,7 +190,15 @@ func (b *BLEManager) Connect() (bool, map[string]string) {
 	err := b.adapter.Scan(func(_ *bluetooth.Adapter, result bluetooth.ScanResult) {
 		name := result.LocalName()
 		hasService := result.HasServiceUUID(bs1ServiceUUID)
-		if !strings.Contains(name, "BS1") && !strings.Contains(name, "Flydigi") && !(name == "" && hasService) {
+		// 大小写不敏感：实际广播名是 "FlyDigi BS2PRO"，原来找 "Flydigi" 匹配不到。
+		// 同时接受 BS2/BS3 系列——它们与 BS1 共用 5A A5 帧与同一套命令码，
+		// BLE 通道同样可用（见 docs/bs2pro-ota-ble-commands.md）。
+		lowerName := strings.ToLower(name)
+		nameMatched := strings.Contains(lowerName, "bs1") ||
+			strings.Contains(lowerName, "bs2") ||
+			strings.Contains(lowerName, "bs3") ||
+			strings.Contains(lowerName, "flydigi")
+		if !nameMatched && !(name == "" && hasService) {
 			return
 		}
 		match, firstSeen := matcher.offer(result.Address, name, hasService, time.Now())

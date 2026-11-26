@@ -32,6 +32,7 @@ import {
   RotateCcw,
   Sparkles,
 } from 'lucide-react';
+import { System } from '@wailsio/runtime';
 import * as types from '@go/types';
 import { apiService } from '../services/api';
 import { useTemperatureHistory } from '../hooks/useTemperatureHistory';
@@ -996,6 +997,19 @@ export default function DeviceStatus({
     ensureTemperatureHistoryLoaded();
   }, [ensureTemperatureHistoryLoaded]);
   const [pawnIoReinstalling, setPawnIoReinstalling] = useState(false);
+  const [isWindowsPlatform, setIsWindowsPlatform] = useState(false);
+
+  useEffect(() => {
+    let disposed = false;
+    void System.Environment()
+      .then((env) => {
+        if (!disposed) setIsWindowsPlatform(env.OS === 'windows');
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+    };
+  }, []);
   const tempSource = (((config as any).tempSource as string) || 'max') as HomeTempSource;
   const modeShowsLiveRpm = !config.autoControl && !!config.customSpeedEnabled && !config.customSpeedRPM;
   const telemetry = useAppStore(useShallow(
@@ -1575,6 +1589,8 @@ export default function DeviceStatus({
                   </button>
                   {/* CPU 温度只能由 PawnIO 提供，没有替代来源。安装包随 THRM 分发，
                       因此把"重装"直接做成一次点击，而不是让用户自己去找下载页。 */}
+                  {/* 同上：PawnIO 只在 Windows 存在，保留代码而非删除以免合并冲突。 */}
+                  {isWindowsPlatform && (
                   <button
                     disabled={pawnIoReinstalling}
                     onClick={async () => {
@@ -1594,6 +1610,7 @@ export default function DeviceStatus({
                       ? t('deviceStatus.bridgeWarning.reinstallPawnIoRunning')
                       : t('deviceStatus.bridgeWarning.reinstallPawnIo')}
                   </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -1030,7 +1030,9 @@
       "rtssAnchorBackupLabel": "レイアウトのバックアップファイル",
       "rtssBackupUnknown": "バックアップパス不明",
       "blurTitle": "ウィンドウ素材",
-      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。"
+      "blurDescription": "アクリル、マイカ、またはマイカ Alt を選択します。変更は再起動後に反映されます。",
+      "autoStartTitleMac": "ログイン時に起動",
+      "autoStartDescriptionMac": "ログイン時に自動実行（LaunchAgent）"
     },
     "offline": {
       "message": "デバイスが接続されていないため、一部機能は利用できません"

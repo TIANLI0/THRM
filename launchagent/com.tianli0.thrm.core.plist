@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.tianli0.thrm.core</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__THRM_CORE_PATH__</string>
+		<string>--autostart</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>StandardOutPath</key>
+	<string>__THRM_LOG_PATH__</string>
+	<key>StandardErrorPath</key>
+	<string>__THRM_LOG_PATH__</string>
+</dict>
+</plist>
