@@ -33,3 +33,4 @@ build/windows/installer/wails_tools.nsh
 # 本地构建产物
 /thrm-core-darwin
 /thrm-gui-darwin
+frontend/package-lock.json
