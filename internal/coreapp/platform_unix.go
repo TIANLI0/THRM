@@ -15,8 +15,16 @@ import (
 func (a *CoreApp) ReinstallPawnIO() (map[string]any, error) {
 	return map[string]any{
 		"success": false,
-		"message": "PawnIO is not supported on " + runtime.GOOS,
+		"message": "PawnIO is not supported on " + platformDisplayName(),
 	}, nil
+}
+
+// platformDisplayName 返回面向用户的系统名称（runtime.GOOS 是小写的 linux/darwin）。
+func platformDisplayName() string {
+	if runtime.GOOS == "darwin" {
+		return "macOS"
+	}
+	return "Linux"
 }
 
 func launchGUI() error {
