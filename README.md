@@ -224,7 +224,7 @@ thrm
 
 ### macOS（实验性）
 
-macOS 版本支持 Apple Silicon 与 Intel Mac，要求 macOS 12 或更高版本，目前需要自行构建（见下文“macOS 构建”），CI 会为每次提交产出未公证的 `.dmg`。
+macOS 版本是同时包含 Apple Silicon 与 Intel 的 universal 包，要求 macOS 13 Ventura 或更高版本，目前需要自行构建（见下文“macOS 构建”），CI 会为每次提交产出未公证的 `.dmg`。
 
 * GUI 与核心服务打包在同一个 `THRM.app` 中，核心以菜单栏图标常驻，不占 Dock。
 * 应用只做了 ad-hoc 签名、没有 Apple 公证，首次打开前需要移除隔离属性：
@@ -627,10 +627,10 @@ sudo pacman -U ./thrm-bin-*.pkg.tar.zst
 
 ```text
 build/bin/THRM.app
-build/bin/THRM-macos-<arch>.dmg
+build/bin/THRM-macos-universal.dmg
 ```
 
-`THRM.app/Contents/MacOS` 下同时包含 GUI（`THRM`）与核心服务（`thrm-core`）。
+`THRM.app/Contents/MacOS` 下同时包含 GUI（`THRM`）与核心服务（`thrm-core`），两者都是 arm64 + x86_64 的 universal 二进制。只需要单一架构时可设置 `THRM_MACOS_ARCHS=arm64`。
 
 ## 测试与检查
 

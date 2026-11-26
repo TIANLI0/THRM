@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- THRM.app 的 Info.plist。@VERSION@ 由 Taskfile 的 package:darwin 替换为 x.y.z。
+<!-- THRM.app 的 Info.plist。@VERSION@、@MACOS_MIN@ 由 Taskfile 的 package:darwin 替换。
      GUI（THRM）与核心（thrm-core）同在 Contents/MacOS 下，共用这一份声明：
      蓝牙权限说明缺失时，CoreBluetooth 会在首次访问时直接终止进程。 -->
 <plist version="1.0">
@@ -22,7 +22,7 @@
 	<key>CFBundleIconFile</key>
 	<string>icons</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0.0</string>
+	<string>@MACOS_MIN@</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSHighResolutionCapable</key>

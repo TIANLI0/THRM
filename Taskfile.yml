@@ -3,7 +3,7 @@
 #
 #   wails3 task build            构建 GUI（build/bin/THRM[.exe]）
 #   wails3 task package          Windows：构建并用 FluentSetup 打安装包
-#   wails3 task package:darwin   macOS：构建并打成 THRM.app + .dmg（需事先构建 build/bin/thrm-core）
+#   wails3 task package:darwin   macOS：构建并打成 universal 的 THRM.app + .dmg（需事先构建 build/bin/thrm-core）
 #   wails3 task bindings         只重新生成前端绑定
 #   wails3 dev                   开发模式（见 dev 任务）
 version: '3'
@@ -21,6 +21,9 @@ vars:
   PRODUCT_VERSION: '{{.PRODUCT_VERSION | default "0.0.0"}}'
   DEV_PORT: '{{.WAILS_VITE_PORT | default "9245"}}'
   LDFLAGS: -X github.com/TIANLI0/THRM/internal/version.BuildVersion={{.VERSION}}
+  # macOS：默认打 Apple Silicon + Intel 的 universal 包；最低系统版本与 Go 1.27 的支持范围一致。
+  MAC_ARCHS: '{{.MAC_ARCHS | default "arm64 amd64"}}'
+  MACOS_MIN: '{{.MACOS_MIN | default "13.0"}}'
   GO_TAGS: '{{if eq .DEV "true"}}{{.EXTRA_TAGS}}{{else}}production{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}}{{end}}'
 
 tasks:
@@ -98,12 +101,21 @@ tasks:
     deps:
       - task: frontend:build
     cmds:
-      - go build {{if .GO_TAGS}}-tags {{.GO_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="{{if ne .DEV "true"}}-s -w {{end}}{{.LDFLAGS}}" -o "{{.BIN_DIR}}/{{.APP_NAME}}" .
+      # 每个架构单独编译（cgo 由 clang 的 -arch 交叉编译），再用 lipo 合成 universal 二进制。
+      - |
+        set -e
+        slices=""
+        for arch in {{.MAC_ARCHS}}; do
+          GOARCH=$arch go build {{if .GO_TAGS}}-tags {{.GO_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="{{if ne .DEV "true"}}-s -w {{end}}{{.LDFLAGS}}" -o "{{.BIN_DIR}}/{{.APP_NAME}}-$arch" .
+          slices="$slices {{.BIN_DIR}}/{{.APP_NAME}}-$arch"
+        done
+        lipo -create -output "{{.BIN_DIR}}/{{.APP_NAME}}" $slices
+        rm -f $slices
     env:
       CGO_ENABLED: 1
-      CGO_CFLAGS: -mmacosx-version-min=12.0
-      CGO_LDFLAGS: -mmacosx-version-min=12.0
-      MACOSX_DEPLOYMENT_TARGET: "12.0"
+      CGO_CFLAGS: -mmacosx-version-min={{.MACOS_MIN}}
+      CGO_LDFLAGS: -mmacosx-version-min={{.MACOS_MIN}}
+      MACOSX_DEPLOYMENT_TARGET: '{{.MACOS_MIN}}'
 
   package:darwin:
     summary: macOS：构建 GUI，与 {{.BIN_DIR}}/thrm-core 一起打成 THRM.app（ad-hoc 签名）和 .dmg
@@ -111,7 +123,7 @@ tasks:
     deps: [build]
     vars:
       APP_BUNDLE: '{{.BIN_DIR}}/{{.APP_NAME}}.app'
-      DMG_PATH: '{{.BIN_DIR}}/{{.APP_NAME}}-macos-{{ARCH}}.dmg'
+      DMG_PATH: '{{.BIN_DIR}}/{{.APP_NAME}}-macos-{{if contains " " (trim .MAC_ARCHS)}}universal{{else}}{{trim .MAC_ARCHS}}{{end}}.dmg'
     preconditions:
       - sh: test -x "{{.BIN_DIR}}/thrm-core"
         msg: "缺少 {{.BIN_DIR}}/thrm-core：先运行 ./build.sh，或手动构建 ./cmd/core"
@@ -120,7 +132,7 @@ tasks:
       - mkdir -p "{{.APP_BUNDLE}}/Contents/MacOS" "{{.APP_BUNDLE}}/Contents/Resources" "{{.ASSETS_DIR}}"
       # 图标只生成到构建中间目录，不覆盖仓库里的 Windows icon.ico。
       - wails3 generate icons -input build/appicon.png -macfilename "{{.APP_BUNDLE}}/Contents/Resources/icons.icns" -windowsfilename "{{.ASSETS_DIR}}/icon.ico"
-      - sed "s/@VERSION@/{{.PRODUCT_VERSION}}/g" build/darwin/Info.plist > "{{.APP_BUNDLE}}/Contents/Info.plist"
+      - sed -e "s/@VERSION@/{{.PRODUCT_VERSION}}/g" -e "s/@MACOS_MIN@/{{.MACOS_MIN}}/g" build/darwin/Info.plist > "{{.APP_BUNDLE}}/Contents/Info.plist"
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.APP_BUNDLE}}/Contents/MacOS/{{.APP_NAME}}"
       - cp "{{.BIN_DIR}}/thrm-core" "{{.APP_BUNDLE}}/Contents/MacOS/thrm-core"
       # 没有 Developer ID 时用 ad-hoc 签名：Apple Silicon 拒绝运行未签名代码，且签名要把
