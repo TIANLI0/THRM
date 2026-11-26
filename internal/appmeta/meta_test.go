@@ -106,6 +106,9 @@ func TestUserConfigDir(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		want = filepath.Join("/home/testuser", ".config", XDGDirName)
 	}
+	if runtime.GOOS == "darwin" {
+		want = filepath.Join("/home/testuser", "Library", "Application Support", ConfigDirName)
+	}
 	if got != want {
 		t.Fatalf("UserConfigDir = %q, want %q", got, want)
 	}
