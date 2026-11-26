@@ -29,6 +29,12 @@ cd "$ROOT"
 echo "--- 编译核心服务 ---"
 mkdir -p "$OUT"
 LDFLAGS="-s -w -X github.com/TIANLI0/THRM/internal/version.BuildVersion=$VERSION"
+# 目标最低 macOS：Go 1.27 官方支持 13+，但 CGO 默认用当前 SDK 编译 C 部分，
+# 会把 minos 顶到 26.0。必须同时给 CGO_CFLAGS 和 CGO_LDFLAGS 设下限。
+export CGO_CFLAGS="-mmacosx-version-min=${MACOS_MIN:-13.0}"
+export CGO_LDFLAGS="-mmacosx-version-min=${MACOS_MIN:-13.0}"
+echo "    最低 macOS: ${MACOS_MIN:-13.0}"
+
 CGO_ENABLED=1 go build -trimpath -ldflags="$LDFLAGS" -o "$OUT/thrm-core" ./cmd/core
 
 echo "--- 编译 GUI ---"
