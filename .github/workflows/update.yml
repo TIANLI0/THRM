@@ -1,0 +1,110 @@
+name: Update THRM packaging
+
+on:
+  schedule:
+    # GitHub may delay scheduled runs and disables them after 60 days without
+    # repository activity; workflow_dispatch is the manual fallback.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Re-resolve hashes and rebuild the currently packaged version
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-thrm
+  cancel-in-progress: false
+
+env:
+  CACHIX_CACHE: ${{ secrets.CACHIX_CACHE }}
+  CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out the packaging repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v32
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Set up Cachix (optional)
+        if: env.CACHIX_CACHE != ''
+        uses: cachix/cachix-action@v17
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: ${{ env.CACHIX_AUTH_TOKEN }}
+
+      - name: Update the flake and build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          args=(--update --json)
+          if [[ "${FORCE}" == "true" ]]; then
+            args+=(--force)
+          fi
+          ./scripts/update.sh "${args[@]}"
+
+      - name: Push to Cachix (optional)
+        if: env.CACHIX_CACHE != ''
+        run: |
+          set -euo pipefail
+          out=$(nix build "$PWD#thrm" --no-link --print-out-paths)
+          cachix push "$CACHIX_CACHE" "$out"
+
+      - name: Detect version bump
+        id: changes
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- nix/thrm.nix; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(sed -nE 's/^  version \? "([^"]+)",$/\1/p' nix/thrm.nix | head -n1)
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit, tag and publish a release
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.changes.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="nix-v${VERSION}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add nix/thrm.nix
+          # [skip ci] keeps the upstream build-and-release workflow from
+          # rebuilding the whole application for a packaging-only commit.
+          git commit -m "nix: update THRM packaging to v${VERSION} [skip ci]"
+          git push origin HEAD
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists; leaving it unchanged"
+            exit 0
+          fi
+          notes=$(printf 'Automated Nix packaging for THRM v%s.\n\nBuilt with nix build and nix flake check in CI on x86_64-linux.\n\nInstall:\n\n    nix run github:%s?ref=nix-v%s\n' "$VERSION" "$REPO" "$VERSION")
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            target=(--verify-tag)
+          else
+            target=(--target "$(git rev-parse HEAD)")
+          fi
+          gh release create "$tag" "${target[@]}" \
+            --title "THRM Nix packaging v${VERSION}" \
+            --notes "$notes" \
+            --latest
