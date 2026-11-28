@@ -136,12 +136,19 @@ NixOS 声明式安装（flake）：
 }
 ```
 
-在系统配置模块中导入 flake module（用户名换成你自己的）：
+在 flake 的 `modules` 中导入模块：
 
 ```nix
-{ ... }:
+modules = [
+  thrm.nixosModules.default
+  ./configuration.nix
+];
+```
+
+然后在 `configuration.nix` 中启用（用户名换成你自己的）：
+
+```nix
 {
-  imports = [ thrm.nixosModules.default ];
   programs.thrm.enable = true;
   users.users.<用户名>.extraGroups = [ "input" "bluetooth" ];
 }
