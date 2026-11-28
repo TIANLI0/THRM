@@ -114,6 +114,51 @@ build.bat
 - 推送 `v*` 或 `V*` 标签时，会自动构建并创建 GitHub Release。
 - Release 默认附带安装包 `THRM-amd64-installer.exe` 和便携包 `THRM-windows-portable.zip`。
 
+### Nix / NixOS
+
+本仓库附带 Nix Flake 打包：固定构建上游 v3.9.0 源码，使用 GTK 4 + WebKitGTK 6.0，不需要手动安装 Go、Bun、Node.js 或 Wails。
+
+> 该 flake 固定通过 fetchFromGitHub 打包上游稳定 release tag v3.9.0，不读取所在分支（包括 dev）的工作树；因此把打包放在 dev 分支也不会把 dev 快照装给用户。
+>
+> 当前 PR 目标分支为 `dev`；下面的 flake 地址均带 `?ref=dev`，合入 `main` 后去掉 `?ref=dev` 即可。
+
+```bash
+nix run "github:TIANLI0/THRM?ref=dev"      # 直接启动 GUI
+nix build "github:TIANLI0/THRM?ref=dev"    # 构建，产物在 ./result
+```
+
+NixOS 声明式安装（flake）：
+
+```nix
+{
+  inputs.thrm.url = "github:TIANLI0/THRM?ref=dev";
+  # ...
+}
+```
+
+在系统配置模块中（用户名换成你自己的）：
+
+```nix
+{ pkgs, thrm, ... }:
+let
+  thrmPkg = thrm.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in
+{
+  environment.systemPackages = [ thrmPkg ];
+  services.udev.packages = [ thrmPkg ];
+  users.users.<用户名>.extraGroups = [ "input" "bluetooth" ];
+}
+```
+
+> NVIDIA 温度/功耗由 NVML 读取。NixOS 的 `libnvidia-ml.so.1` 位于
+> `/run/opengl-driver/lib`，本包已通过 wrapper 为 `thrm` 和 `thrm-core` 追加该
+> 搜索路径，正常从包启动即可读到独立显卡温度；不要绕开 wrapper 直接运行裸二进制。
+
+完整说明（构建原理、RAPL capability、自动跟进上游版本、已知限制）见 [NIX.md](NIX.md)。
+
+> [!NOTE]
+> Linux 支持仍在持续完善。Windows 专属的 PawnIO、云母窗口材质、静默更新以及部分厂商硬件联动在 Linux 上不可用。
+
 ### 项目结构
 
 ```text
