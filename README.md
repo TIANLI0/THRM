@@ -136,19 +136,19 @@ NixOS 声明式安装（flake）：
 }
 ```
 
-在系统配置模块中（用户名换成你自己的）：
+在系统配置模块中导入 flake module（用户名换成你自己的）：
 
 ```nix
-{ pkgs, thrm, ... }:
-let
-  thrmPkg = thrm.packages.${pkgs.stdenv.hostPlatform.system}.default;
-in
+{ ... }:
 {
-  environment.systemPackages = [ thrmPkg ];
-  services.udev.packages = [ thrmPkg ];
+  imports = [ thrm.nixosModules.default ];
+  programs.thrm.enable = true;
   users.users.<用户名>.extraGroups = [ "input" "bluetooth" ];
 }
 ```
+
+`programs.thrm.enable` 会安装包和 udev 规则，并创建带
+`cap_dac_read_search+ep` 的 RAPL helper wrapper，因此 Intel CPU 功耗也能显示。
 
 > NVIDIA 温度/功耗由 NVML 读取。NixOS 的 `libnvidia-ml.so.1` 位于
 > `/run/opengl-driver/lib`，本包已通过 wrapper 为 `thrm` 和 `thrm-core` 追加该

@@ -18,6 +18,8 @@
         default = thrm;
       });
 
+      nixosModules.default = import ./nix/module.nix { inherit self; };
+
       checks = forAllSystems (pkgs: {
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.thrm;
       });

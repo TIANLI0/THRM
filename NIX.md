@@ -68,9 +68,9 @@ NixOS 的 NVIDIA 用户态库（包括 NVML 的 `libnvidia-ml.so.1`）不在默�
 
 仓库里已提交 `frontend/bindings`，所以构建**不需要** wails3 CLI。
 
-## NixOS 集成
+## NixOS 集成（推荐：flake module）
 
-把本 flake 加为 input，并通过 `specialArgs` 传进配置：
+把本 flake 加为 input，并导入 `nixosModules.default`：
 
 ```nix
 {
@@ -82,14 +82,32 @@ NixOS 的 NVIDIA 用户态库（包括 NVML 的 `libnvidia-ml.so.1`）不在默�
   outputs = { nixpkgs, thrm, ... }: {
     nixosConfigurations.host = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
-      specialArgs = { inherit thrm; };
-      modules = [ ./configuration.nix ];
+      modules = [
+        thrm.nixosModules.default
+        ./configuration.nix
+      ];
     };
   };
 }
 ```
 
-`configuration.nix`：
+`configuration.nix` 只需要：
+
+```nix
+{
+  programs.thrm.enable = true;
+
+  # 让普通用户读写飞智 HID 设备（GUI 与核心服务运行时必需）
+  users.users.<用户名>.extraGroups = [ "input" "bluetooth" ];
+}
+```
+
+`programs.thrm.enable = true` 会安装包、udev 规则，并创建带
+`cap_dac_read_search+ep` 的 `/run/wrappers/bin/thrm-rapl-helper`，同时把
+`THRM_RAPL_HELPER` 指向它。需要固定包版本或改用其他包时，用
+`programs.thrm.package` 覆盖。
+
+如果不想用 module，等价的手动写法：
 
 ```nix
 { pkgs, thrm, ... }:
@@ -98,12 +116,15 @@ let
 in
 {
   environment.systemPackages = [ thrmPkg ];
-
-  # 让普通用户读写飞智 HID 设备（GUI 与核心服务运行时必需）
   services.udev.packages = [ thrmPkg ];
-
-  # 蓝牙连接 BS1 / 非本地会话下的 HID 兜底；用户名换成你自己的
   users.users.<用户名>.extraGroups = [ "input" "bluetooth" ];
+
+  security.wrappers.thrm-rapl-helper = {
+    source = "${thrmPkg}/bin/thrm-rapl-helper";
+    capabilities = "cap_dac_read_search+ep";
+  };
+  environment.sessionVariables.THRM_RAPL_HELPER =
+    "/run/wrappers/bin/thrm-rapl-helper";
 }
 ```
 
@@ -114,38 +135,30 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=usb --subsystem-match=hidraw
 ```
 
-## 可选：CPU 功耗（Intel RAPL）
+## CPU 功耗（Intel RAPL）
 
-多数系统把 `/sys/class/powercap/intel-rapl:0/energy_uj` 设为 `0400 root`，普通用户读不到。此时 THRM 只是缺少“CPU 功耗”一项，不影响温度与风扇控制。需要这一项时给 helper 加最小 capability：
+`/sys/class/powercap/intel-rapl:0/energy_uj` 通常是 `0400 root`。Nix store 只读，
+无法对 store 里的 `thrm-rapl-helper` 执行 `setcap`；必须通过 capability wrapper
+运行。上面的 module 已自动创建。验证：
 
 ```bash
-# 注意：必须指向 /nix/store 里的真实文件（不是符号链接）
-sudo setcap cap_dac_read_search+ep "$(readlink -f "$(command -v thrm-rapl-helper)")"
+getcap /run/wrappers/bin/thrm-rapl-helper
+# 期望：cap_dac_read_search=ep
+
+/run/wrappers/bin/thrm-rapl-helper
+# 期望：约 1 秒后输出一个功率值，例如 12.34 W
 ```
 
-store 路径在 GC 或升级后会变化，届时需要重新执行。想要声明式，可以用一个 oneshot 服务代替手动操作：
+如果 helper 能输出功率、GUI 仍显示 0，请**完全退出 THRM 后重新启动**：core 只在
+第一次读取失败时尝试启动 helper，失败后不会重试，直到 core 重启。也可以确认新
+进程确实拿到了环境变量：
 
-```nix
-{ pkgs, thrm, ... }:
-let
-  thrmPkg = thrm.packages.${pkgs.stdenv.hostPlatform.system}.default;
-in
-{
-  systemd.services.thrm-rapl-cap = {
-    description = "Allow thrm-rapl-helper to read Intel RAPL energy counters";
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = `
-      ${pkgs.libcap}/bin/setcap cap_dac_read_search+ep ${thrmPkg}/bin/thrm-rapl-helper || true
-    `;
-  };
-}
+```bash
+tr '\0' '\n' < /proc/$(pgrep -f thrm-core | head -n1)/environ | grep THRM_RAPL_HELPER
 ```
 
-`security.wrappers` 也能授予能力，但 helper 会被放到 `/run/wrappers/bin`，而 GUI 优先在同目录查找 helper；此时需要用 `THRM_RAPL_HELPER` 环境变量指向 wrapper，并保证从桌面环境启动的进程也能读到它。
+没有 `/sys/class/powercap/intel-rapl:0` 的机器（部分 AMD、虚拟机、旧内核）不会
+显示 CPU 功耗，这是上游 helper 只支持 Intel RAPL 固定路径的限制。
 
 ## 开发
 

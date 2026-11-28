@@ -172,10 +172,18 @@ buildGoModule {
     # the default loader search path, so the core service must be given that
     # directory explicitly.  Wrapping both entry points also covers the case
     # where thrm-core is started directly by a user service/autostart entry.
+    # thrm-core only ever runs /run/wrappers/bin/thrm-rapl-helper when a
+    # NixOS security.wrappers entry has given it CAP_DAC_READ_SEARCH.  Prefer
+    # that wrapper over the immutable store copy (which cannot carry file
+    # capabilities on a read-only /nix/store).  An explicitly configured
+    # THRM_RAPL_HELPER still wins.
+    raplHelperBootstrap='if [ -z "''${THRM_RAPL_HELPER:-}" ] && [ -x /run/wrappers/bin/thrm-rapl-helper ]; then export THRM_RAPL_HELPER=/run/wrappers/bin/thrm-rapl-helper; fi'
     wrapProgram $out/bin/thrm \
-      --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
+      --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib \
+      --run "$raplHelperBootstrap"
     wrapProgram $out/bin/thrm-core \
-      --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
+      --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib \
+      --run "$raplHelperBootstrap"
 
     install -Dm644 ${src}/scripts/99-flydigi-fan.rules \
       $out/lib/udev/rules.d/99-flydigi-fan.rules
